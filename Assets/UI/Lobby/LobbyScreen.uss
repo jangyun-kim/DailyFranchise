@@ -1,0 +1,225 @@
+/* ───────── 토큰 (GameScreen.uss와 같은 값) ───────── */
+.screen {
+    --bg: #0E1319;
+    --panel: #161E27;
+    --panel-2: #1E2833;
+    --line: #2D3946;
+    --text: #E6EBF0;
+    --muted: #8796A6;
+    --accent: #F28C28;
+
+    width: 1920px;
+    height: 1080px;
+    flex-direction: column;
+    background-color: var(--bg);
+    color: var(--text);
+    font-size: 15px;
+    overflow: hidden;
+}
+
+Label {
+    margin: 0;
+    padding: 0;
+    white-space: nowrap;
+}
+
+.panel {
+    background-color: var(--panel);
+    border-width: 1px;
+    border-color: var(--line);
+    border-radius: 6px;
+    padding: 12px;
+}
+
+.panel-title {
+    height: 32px;
+    font-size: 18px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.section-title {
+    height: 22px;
+    font-size: 14px;
+    -unity-font-style: bold;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+.footnote {
+    margin-top: 10px;
+    height: 22px;
+    font-size: 13px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+/* ───────── 상단 120px ───────── */
+.header {
+    height: 120px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    border-bottom-width: 1px;
+    border-color: var(--line);
+    background-color: var(--panel);
+}
+
+.app-title {
+    height: 40px;
+    font-size: 30px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.season-title {
+    height: 26px;
+    font-size: 16px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+.header__team {
+    align-items: flex-end;
+}
+
+.my-team {
+    height: 34px;
+    font-size: 24px;
+    -unity-font-style: bold;
+    color: var(--accent);
+    -unity-text-align: middle-right;
+}
+
+.my-record {
+    height: 26px;
+    font-size: 16px;
+    -unity-text-align: middle-right;
+}
+
+/* ───────── 중단 3열: 330 / 15 / 1110 / 15 / 450 ───────── */
+.main {
+    height: 850px;
+    flex-direction: row;
+    padding: 10px 0;
+}
+
+.side--left {
+    width: 330px;
+    margin-right: 15px;
+}
+
+.center {
+    width: 1110px;
+}
+
+.side--right {
+    width: 450px;
+    margin-left: 15px;
+}
+
+.lobby-row {
+    height: 40px;
+    flex-direction: row;
+    align-items: center;
+    border-bottom-width: 1px;
+    border-color: var(--panel-2);
+}
+
+.lobby-row > Label {
+    font-size: 16px;
+    -unity-text-align: middle-left;
+}
+
+.lobby-row--head {
+    height: 30px;
+}
+
+.lobby-row--head > Label {
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.lobby-row--final > Label {
+    color: var(--muted);
+}
+
+.lobby-row--next {
+    background-color: var(--panel-2);
+    border-left-width: 3px;
+    border-color: var(--accent);
+}
+
+.lobby-row--next .col-status {
+    color: var(--accent);
+    -unity-font-style: bold;
+}
+
+.lobby-row--mine {
+    background-color: var(--panel-2);
+}
+
+.lobby-row--mine > Label {
+    color: var(--accent);
+    -unity-font-style: bold;
+}
+
+/* 라인업 열 */
+.col-order { width: 28px; color: var(--muted); }
+.col-pos { width: 54px; color: var(--muted); }
+.col-name { flex-grow: 1; }
+.col-hand { width: 80px; -unity-text-align: middle-right; color: var(--muted); }
+
+/* 일정 열 */
+.col-no { width: 70px; padding-left: 8px; }
+.col-date { width: 130px; }
+.col-team { width: 230px; }
+.col-vs { width: 50px; color: var(--muted); }
+.col-stadium { width: 160px; }
+.col-status { flex-grow: 1; -unity-text-align: middle-right; padding-right: 8px; }
+
+/* 순위 열 */
+.col-rank { width: 48px; padding-left: 6px; }
+.col-standing-team { flex-grow: 1; }
+.col-num { width: 48px; -unity-text-align: middle-right; }
+.col-gb { width: 64px; -unity-text-align: middle-right; padding-right: 6px; }
+
+/* ───────── 하단 110px ───────── */
+.footer {
+    height: 110px;
+    flex-direction: row;
+    align-items: center;
+    padding: 0 24px;
+    border-top-width: 1px;
+    border-color: var(--line);
+    background-color: var(--panel);
+}
+
+.footer__next {
+    flex-grow: 1;
+}
+
+.next-game {
+    height: 32px;
+    font-size: 20px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.unity-button.btn--primary {
+    width: 260px;
+    height: 60px;
+    margin: 0;
+    border-width: 2px;
+    border-radius: 6px;
+    border-color: var(--accent);
+    background-color: var(--accent);
+    color: #0E1319;
+    font-size: 20px;
+    -unity-font-style: bold;
+}
+
+.unity-button.btn--primary:disabled {
+    opacity: 0.45;
+}

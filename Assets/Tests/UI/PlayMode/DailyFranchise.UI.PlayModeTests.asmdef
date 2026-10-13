@@ -4,6 +4,7 @@
     "references": [
         "DailyFranchise.Sim",
         "DailyFranchise.UI",
+        "DailyFranchise.App",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

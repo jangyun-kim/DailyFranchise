@@ -1,0 +1,62 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="LobbyScreen.uss" />
+    <ui:VisualElement name="screen" class="screen">
+
+        <!-- 상단 120px: 타이틀 / 시즌 / 내 구단 성적 -->
+        <ui:VisualElement class="header">
+            <ui:VisualElement class="header__title">
+                <ui:Label class="app-title" text="데일리 프랜차이즈" />
+                <ui:Label name="season-title" class="season-title" text="—" />
+            </ui:VisualElement>
+            <ui:VisualElement class="header__team">
+                <ui:Label name="my-team" class="my-team" text="—" />
+                <ui:Label name="my-record" class="my-record" text="—" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- 중단 850px: 좌 330 라인업 / 중앙 1110 일정 / 우 450 순위 -->
+        <ui:VisualElement class="main">
+            <ui:VisualElement class="panel side side--left">
+                <ui:Label class="panel-title" text="내 구단 라인업" />
+                <ui:VisualElement name="roster" />
+                <ui:Label name="roster-source" class="footnote" text="" />
+            </ui:VisualElement>
+
+            <ui:VisualElement class="panel center">
+                <ui:Label class="panel-title" text="시즌 일정" />
+                <ui:VisualElement class="lobby-row lobby-row--head">
+                    <ui:Label class="col-no" text="경기" />
+                    <ui:Label class="col-date" text="날짜" />
+                    <ui:Label class="col-team" text="원정" />
+                    <ui:Label class="col-vs" text="" />
+                    <ui:Label class="col-team" text="홈" />
+                    <ui:Label class="col-stadium" text="구장" />
+                    <ui:Label class="col-status" text="상태" />
+                </ui:VisualElement>
+                <ui:VisualElement name="schedule" />
+            </ui:VisualElement>
+
+            <ui:VisualElement class="panel side side--right">
+                <ui:Label class="panel-title" text="리그 순위" />
+                <ui:VisualElement class="lobby-row lobby-row--head">
+                    <ui:Label class="col-rank" text="순위" />
+                    <ui:Label class="col-standing-team" text="팀" />
+                    <ui:Label class="col-num" text="승" />
+                    <ui:Label class="col-num" text="패" />
+                    <ui:Label class="col-num" text="무" />
+                    <ui:Label class="col-gb" text="승차" />
+                </ui:VisualElement>
+                <ui:VisualElement name="standings" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- 하단 110px: 다음 경기 / 시작 버튼 -->
+        <ui:VisualElement class="footer">
+            <ui:VisualElement class="footer__next">
+                <ui:Label class="section-title" text="다음 경기" />
+                <ui:Label name="next-game" class="next-game" text="—" />
+            </ui:VisualElement>
+            <ui:Button name="start-game" class="btn btn--primary" text="다음 경기 시작" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

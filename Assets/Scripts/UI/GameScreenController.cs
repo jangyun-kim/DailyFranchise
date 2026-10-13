@@ -62,6 +62,22 @@ namespace DailyFranchise.UI
         /// <summary>배속별 판정 점등 시간 (초). x4는 생략.</summary>
         public static float FlashSecondsFor(int speed) => speed == 1 ? 0.40f : speed == 2 ? 0.25f : 0f;
 
+        /// <summary>
+        /// [경기 종료] 요청. 이 화면은 어디로 돌아갈지 모른다. 시즌 흐름(SeasonManager)이 구독하면 그쪽이 로비 복귀를 처리하고,
+        /// 구독자가 없으면(씬 단독 실행) 기존처럼 장면 끝으로 이동한다.
+        /// </summary>
+        public event System.Action ExitRequested;
+
+        /// <summary>경기 종료를 처리할 바깥 흐름이 연결되어 있는지.</summary>
+        public bool HasExitHandler => ExitRequested != null;
+
+        public void RequestExit()
+        {
+            var handler = ExitRequested;
+            if (handler != null) handler();
+            else _playback.SkipToEnd();
+        }
+
         void OnEnable()
         {
             Bind(GetComponent<UIDocument>().rootVisualElement);
@@ -69,6 +85,8 @@ namespace DailyFranchise.UI
         }
 
         void OnDisable() => DetachPlayback();
+
+        void OnDestroy() => ExitRequested = null;
 
         /// <summary>
         /// 시나리오를 교체한다. 이전 재생기 구독, 필드 연출·토큰, ABS 점등·마커, 로그, 기록 동기화를 모두 초기화한다.
@@ -264,7 +282,7 @@ namespace DailyFranchise.UI
             _nextPitch.clicked += () => _playback.StepPitch();
             _nextPa.clicked += () => _playback.SkipToPlateAppearanceEnd();
             _inningEnd.clicked += () => _playback.SkipToHalfInningEnd();
-            _gameEnd.clicked += () => _playback.SkipToEnd();
+            _gameEnd.clicked += RequestExit;
             _auto.clicked += () => _playback.TogglePlay();
 
             // 감독 개입 버튼: 승부처에서만 켜진다. 대타·투수 교체는 이번 범위 밖이라 계속 비활성.
@@ -345,7 +363,7 @@ namespace DailyFranchise.UI
             _nextPitch.SetEnabled(!atEnd);
             _nextPa.SetEnabled(!atEnd);
             _inningEnd.SetEnabled(!atEnd);
-            _gameEnd.SetEnabled(!atEnd);
+            _gameEnd.SetEnabled(HasExitHandler || !atEnd);
             _restart.SetEnabled(_playback.Index >= 0);
 
             _position.text = _playback.AwaitingDecision ? $"투구 {_playback.Index + 1} · 작전 대기"
