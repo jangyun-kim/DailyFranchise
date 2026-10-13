@@ -62,6 +62,7 @@ namespace DailyFranchise.Sim.Fixtures
                     Result = PitchResult.InPlay, IsStrikeByRule = true,
                     CountAfter = new Count(1, 2), Outcome = PlateAppearanceOutcome.InPlay,
                     PlayResult = "우전 적시타 — 3루 주자 득점, 1루 주자 2루 진루",
+                    PlayType = PlayType.Single, SprayAngleDeg = 25,
                     RunnersBefore = corners, RunnersAfter = afterHit,
                     RunsScored = 1, OutsAfter = 1,
                 },

@@ -427,6 +427,36 @@ Label {
 .fielder--cf { left: 195px; top: 7px; }
 .fielder--rf { left: 335px; top: 30px; }
 
+/* 타구선·주자 토큰 레이어 (FieldView가 생성) */
+.field-fx,
+.field-fx__layer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+.field-fx {
+    overflow: hidden;
+}
+
+.runner-token {
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    translate: -50% -50%;
+    border-radius: 9px;
+    border-width: 2px;
+    border-color: var(--white);
+    background-color: var(--occupied);
+}
+
+.runner-token--batter {
+    background-color: var(--white);
+    border-color: var(--occupied);
+}
+
 .stage-bottom {
     height: 320px;
     flex-direction: row;

@@ -58,7 +58,7 @@
                         <ui:Label name="runner-1" class="info-line" text="—" />
                     </ui:VisualElement>
 
-                    <ui:VisualElement class="diamond-stage">
+                    <ui:VisualElement name="diamond-stage" class="diamond-stage">
                         <ui:VisualElement class="diamond" />
                         <ui:VisualElement name="base-2" class="base base--second" />
                         <ui:VisualElement name="base-1" class="base base--first" />
@@ -78,6 +78,7 @@
                     <ui:VisualElement class="field__info field__info--right">
                         <ui:Label class="section-title" text="이번 투구 결과" />
                         <ui:Label name="play-result" class="play-result" text="—" />
+                        <ui:Label name="play-type" class="info-line" text="" />
                         <ui:Label name="play-runs" class="info-line" text="" />
                         <ui:Label name="play-outs" class="info-line" text="" />
                     </ui:VisualElement>

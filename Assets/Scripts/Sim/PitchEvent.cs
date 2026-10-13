@@ -31,6 +31,13 @@ namespace DailyFranchise.Sim
         public PlateAppearanceOutcome Outcome;
         /// <summary>인플레이 결과 설명 (예: "우전 적시타"). 인플레이가 아니면 null.</summary>
         public string PlayResult;
+        /// <summary>인플레이 결과 종류. 인플레이가 아니면 None.</summary>
+        public PlayType PlayType;
+        /// <summary>
+        /// 타구 방향 (도). 0 = 중견수 방향, 음수 = 3루·좌익 쪽, 양수 = 1루·우익 쪽.
+        /// 페어 지역은 ±45도. 인플레이가 아니면 null.
+        /// </summary>
+        public double? SprayAngleDeg;
 
         public BaseState RunnersBefore;
         public BaseState RunnersAfter;

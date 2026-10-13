@@ -27,11 +27,11 @@ namespace DailyFranchise.UI
 
         VisualElement _root;
         AbsZoneView _abs;
+        FieldView _field;
         Label _awayName, _homeName, _awayBadge, _homeBadge, _awayScore, _homeScore, _statusInning, _statusCount;
         VisualElement _lineScore;
         Label _headlineMain, _headlineSub;
-        Label _runner1, _runner2, _runner3, _playResult, _playRuns, _playOuts;
-        VisualElement _base1, _base2, _base3;
+        Label _runner1, _runner2, _runner3, _playResult, _playType, _playRuns, _playOuts;
         Label _pitcherName, _pitcherTeam, _pitcherSeason, _pitcherLine1, _pitcherLine2, _pitcherFitness;
         Label _batterName, _batterTeam, _batterSeason, _batterLine1, _batterLine2, _batterFitness;
         VisualElement _lineup, _bench, _bullpen;
@@ -42,6 +42,7 @@ namespace DailyFranchise.UI
 
         public PitchPlayback Playback => _playback;
         public AbsZoneView AbsZone => _abs;
+        public FieldView Field => _field;
 
         /// <summary>배속별 판정 점등 시간 (초). x4는 생략.</summary>
         public static float FlashSecondsFor(int speed) => speed == 1 ? 0.40f : speed == 2 ? 0.25f : 0f;
@@ -61,6 +62,7 @@ namespace DailyFranchise.UI
             RenderRoster();
             Render();
             RenderControls();
+            _field.Show(CurrentState(), animate: false);
 
             if (autoPlayOnStart) _playback.Play();
         }
@@ -72,12 +74,21 @@ namespace DailyFranchise.UI
             _playback.StateChanged -= OnPlaybackStateChanged;
         }
 
-        void Update() => _playback?.Tick(Time.deltaTime);
+        void Update()
+        {
+            if (_playback == null) return;
+            _playback.Tick(Time.deltaTime);
+            _field.Tick(Time.deltaTime * _playback.Speed);
+        }
+
+        ScreenState CurrentState() =>
+            ScreenState.Build(_fixture.Events, _fixture.AwayScoreBefore, _fixture.HomeScoreBefore, _playback.Index);
 
         void OnIndexChanged(int index)
         {
             Render();
             RenderControls();
+            _field.Show(CurrentState(), animate: true);
             _abs.Flash(index >= 0 ? _fixture.Events[index] : null, FlashSecondsFor(_playback.Speed));
         }
 
@@ -91,6 +102,7 @@ namespace DailyFranchise.UI
         {
             _root = root;
             _abs = new AbsZoneView(root);
+            _field = new FieldView(root);
 
             _awayName = root.Q<Label>("away-name");
             _homeName = root.Q<Label>("home-name");
@@ -108,10 +120,8 @@ namespace DailyFranchise.UI
             _runner1 = root.Q<Label>("runner-1");
             _runner2 = root.Q<Label>("runner-2");
             _runner3 = root.Q<Label>("runner-3");
-            _base1 = root.Q("base-1");
-            _base2 = root.Q("base-2");
-            _base3 = root.Q("base-3");
             _playResult = root.Q<Label>("play-result");
+            _playType = root.Q<Label>("play-type");
             _playRuns = root.Q<Label>("play-runs");
             _playOuts = root.Q<Label>("play-outs");
 
@@ -198,7 +208,6 @@ namespace DailyFranchise.UI
 
             var featured = _roster.GetPlayer(_roster.FeaturedPlayerId);
             _featuredName.text = $"{featured.Name} · {featured.Position}";
-            _featuredLine.text = $"{featured.SeasonLine} / {featured.TodayLine}";
 
             _awayName.text = _roster.GetTeam(TeamSide.Away).Name;
             _homeName.text = _roster.GetTeam(TeamSide.Home).Name;
@@ -216,7 +225,7 @@ namespace DailyFranchise.UI
                 row.Add(Cell(entry.Order?.ToString() ?? "", "roster-order"));
                 row.Add(Cell(entry.Role, "roster-pos"));
                 row.Add(Cell(NameOf(entry.PlayerId), "roster-name"));
-                row.Add(Cell(entry.Note, "roster-state"));
+                row.Add(Cell(entry.Note ?? "", "roster-state"));
                 container.Add(row);
             }
 
@@ -231,7 +240,7 @@ namespace DailyFranchise.UI
         void Render()
         {
             var events = _fixture.Events;
-            var s = ScreenState.Build(events, _fixture.AwayScoreBefore, _fixture.HomeScoreBefore, _playback.Index);
+            var s = CurrentState();
             var e = s.Pitch;
             var away = _roster.GetTeam(TeamSide.Away);
             var home = _roster.GetTeam(TeamSide.Home);
@@ -253,14 +262,14 @@ namespace DailyFranchise.UI
             _headlineSub.text = $"{away.ShortName} {s.AwayScore} : {home.ShortName} {s.HomeScore} · " +
                                 ScoreSituation(away.ShortName, s.AwayScore, home.ShortName, s.HomeScore);
 
-            // 필드 (현재 주자)
-            _base1.EnableInClassList("base--occupied", s.Runners.First != null);
-            _base2.EnableInClassList("base--occupied", s.Runners.Second != null);
-            _base3.EnableInClassList("base--occupied", s.Runners.Third != null);
+            // 필드 (현재 주자). 루 점유·주자 토큰·타구선은 FieldView가 그린다.
             _runner3.text = $"3루  {RunnerName(s.Runners.Third)}";
             _runner2.text = $"2루  {RunnerName(s.Runners.Second)}";
             _runner1.text = $"1루  {RunnerName(s.Runners.First)}";
             _playResult.text = e == null ? "투구 대기" : e.PlayResult ?? PitchPresentation.ResultText(e);
+            SetOptional(_playType, e != null && e.PlayType != PlayType.None && e.SprayAngleDeg.HasValue
+                ? $"{PitchPresentation.PlayTypeText(e.PlayType)} · {PitchPresentation.DirectionText(e.SprayAngleDeg.Value)}"
+                : null);
             SetOptional(_playRuns, e != null && e.RunsScored > 0 ? $"득점 +{e.RunsScored}" : null);
             SetOptional(_playOuts, e != null && e.OutsAfter != e.OutsBefore ? $"아웃 {e.OutsBefore} → {e.OutsAfter}" : null);
 
@@ -276,20 +285,30 @@ namespace DailyFranchise.UI
             _batterName.text = batter.Name;
             _batterTeam.text = $"{_roster.GetTeam(batter.Side).ShortName} · {batter.Handedness} · {batter.Position}";
             _batterSeason.text = batter.SeasonLine;
+            string batterToday = TodayBatting(batter, s.Index);
             _batterLine1.text = s.PitchNumberInPlateAppearance == 0
-                ? $"{batter.TodayLine} · 타석 대기"
-                : $"{batter.TodayLine} · 이번 타석 {s.PitchNumberInPlateAppearance}구째";
+                ? $"{batterToday} · 타석 대기"
+                : $"{batterToday} · 이번 타석 {s.PitchNumberInPlateAppearance}구째";
             _batterLine2.text = $"존 높이 {s.Zone.BottomCm:0.0}–{s.Zone.TopCm:0.0} cm";
             _batterFitness.text = batter.Fitness.HasValue ? $"컨디션 {batter.Fitness}%" : "컨디션 —";
 
-            // 라인업에서 현재 타자·주자 표시
+            // 라인업: 오늘 안타-타수 갱신, 현재 타자·주자 표시
             foreach (var row in _lineup.Children())
             {
                 var id = row.userData as string;
+                var player = _roster.GetPlayer(id);
+                if (player.TodayAtBats.HasValue)
+                {
+                    var (ab, h) = TodayTotals(player, s.Index);
+                    row.Q<Label>(className: "roster-state").text = $"{h}-{ab}";
+                }
                 row.EnableInClassList("roster-row--current", id == s.BatterId);
                 row.EnableInClassList("roster-row--onbase",
                     id != null && (id == s.Runners.First || id == s.Runners.Second || id == s.Runners.Third));
             }
+
+            var featured = _roster.GetPlayer(_roster.FeaturedPlayerId);
+            _featuredLine.text = $"{featured.SeasonLine} / {TodayBatting(featured, s.Index)}";
 
             bool showHistory = !(_playback.IsPlaying && _playback.Speed >= 4);
             _abs.Render(events, s, NameOf, showHistory);
@@ -339,10 +358,17 @@ namespace DailyFranchise.UI
                 }
                 row.Add(Gap());
                 row.Add(Cell(total.ToString(), "ls-cell--total"));
-                row.Add(Cell(seed.Hits.ToString(), null));
-                row.Add(Cell(seed.Errors.ToString(), null));
-                row.Add(Cell((seed.Walks + WalksInScene(half)).ToString(), null));
+                int hits = seed.Hits + (s.Index < 0 ? 0 : ScenarioReadModel.HitsThrough(events, s.Index, half));
+                row.Add(Named(Cell(hits.ToString(), null), side, "h"));
+                row.Add(Named(Cell(seed.Errors.ToString(), null), side, "e"));
+                row.Add(Named(Cell((seed.Walks + WalksInScene(half)).ToString(), null), side, "b"));
                 return row;
+            }
+
+            Label Named(Label l, TeamSide side, string column)
+            {
+                l.name = $"ls-{(side == TeamSide.Away ? "away" : "home")}-{column}";
+                return l;
             }
 
             int WalksInScene(HalfInning half)
@@ -419,6 +445,20 @@ namespace DailyFranchise.UI
 
                 _log.Add(entry);
             }
+        }
+
+        /// <summary>장면 시작 전 오늘 기록 + 장면 안에서 index까지의 타석 결과.</summary>
+        (int atBats, int hits) TodayTotals(PlayerInfo p, int index)
+        {
+            var scene = index < 0 ? (0, 0) : ScenarioReadModel.BatterLineThrough(_fixture.Events, index, p.Id);
+            return ((p.TodayAtBats ?? 0) + scene.Item1, p.TodayHits + scene.Item2);
+        }
+
+        string TodayBatting(PlayerInfo p, int index)
+        {
+            if (!p.TodayAtBats.HasValue) return p.TodayLine ?? "오늘 기록 —";
+            var (ab, h) = TodayTotals(p, index);
+            return PitchPresentation.TodayBattingText(ab, h, p.TodayExtra);
         }
 
         static void SetOptional(Label label, string text)

@@ -24,7 +24,14 @@ namespace DailyFranchise.UI.Data
         /// <summary>투타 (예: "좌투", "우타").</summary>
         public string Handedness;
         public string SeasonLine;
+        /// <summary>투수: 오늘 기록 문구. 타자는 TodayAtBats/TodayHits로 구성하므로 null.</summary>
         public string TodayLine;
+        /// <summary>타자: 장면 시작 전까지 오늘 타수. 투수·벤치 대기 선수는 null.</summary>
+        public int? TodayAtBats;
+        /// <summary>타자: 장면 시작 전까지 오늘 안타.</summary>
+        public int TodayHits;
+        /// <summary>타자: 타수·안타 외 덧붙일 기록 (예: "1볼넷"). 없으면 null.</summary>
+        public string TodayExtra;
         /// <summary>투수: 장면 시작 전까지 오늘 던진 공 수. 타자는 0.</summary>
         public int PitchesBeforeScene;
         /// <summary>체력(투수) 또는 컨디션(타자) %. 없으면 null.</summary>
@@ -37,7 +44,7 @@ namespace DailyFranchise.UI.Data
         public int? Order;
         public string Role;
         public string PlayerId;
-        /// <summary>오른쪽 칸 짧은 표기 (예: "1-3", "준비 완료").</summary>
+        /// <summary>오른쪽 칸 짧은 표기 (예: "준비"). 타순 선수는 null이면 오늘 안타-타수로 채운다.</summary>
         public string Note;
     }
 

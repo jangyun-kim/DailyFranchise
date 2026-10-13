@@ -65,6 +65,36 @@ namespace DailyFranchise.UI
             $"{e.Inning}회{(e.HalfInning == HalfInning.Top ? "초" : "말")}";
 
         public static string OutsText(int outs) => outs == 0 ? "무사" : $"{outs}사";
+
+        public static string PlayTypeText(PlayType t)
+        {
+            switch (t)
+            {
+                case PlayType.Single: return "단타";
+                case PlayType.Double: return "2루타";
+                case PlayType.Triple: return "3루타";
+                case PlayType.HomeRun: return "홈런";
+                case PlayType.GroundOut: return "땅볼 아웃";
+                case PlayType.FlyOut: return "뜬공 아웃";
+                case PlayType.LineOut: return "직선타 아웃";
+                default: return "—";
+            }
+        }
+
+        /// <summary>타구 각도 표기: 0 = 중앙, 음수 = 좌측(3루 쪽), 양수 = 우측(1루 쪽).</summary>
+        public static string DirectionText(double angleDeg)
+        {
+            if (angleDeg < -15) return $"좌측 {-angleDeg:0}°";
+            if (angleDeg > 15) return $"우측 {angleDeg:0}°";
+            return "중앙";
+        }
+
+        /// <summary>오늘 기록 "N타수 M안타[, 덧붙임]".</summary>
+        public static string TodayBattingText(int atBats, int hits, string extra)
+        {
+            string hitText = hits == 0 ? "무안타" : $"{hits}안타";
+            return extra == null ? $"오늘 {atBats}타수 {hitText}" : $"오늘 {atBats}타수 {hitText} {extra}";
+        }
     }
 
     /// <summary>
@@ -97,6 +127,29 @@ namespace DailyFranchise.UI
             for (int i = 0; i <= index; i++)
                 if (events[i].Inning == inning && events[i].HalfInning == half) runs += events[i].RunsScored;
             return runs;
+        }
+
+        /// <summary>장면 시작부터 index 투구까지 해당 공격(초=원정, 말=홈)의 안타 수.</summary>
+        public static int HitsThrough(IReadOnlyList<PitchEvent> events, int index, HalfInning battingHalf)
+        {
+            int hits = 0;
+            for (int i = 0; i <= index; i++)
+                if (events[i].HalfInning == battingHalf && PlayTypeRules.IsHit(events[i].PlayType)) hits++;
+            return hits;
+        }
+
+        /// <summary>장면 시작부터 index 투구까지 해당 타자의 (타수, 안타).</summary>
+        public static (int atBats, int hits) BatterLineThrough(IReadOnlyList<PitchEvent> events, int index, string batterId)
+        {
+            int ab = 0, h = 0;
+            for (int i = 0; i <= index; i++)
+            {
+                var e = events[i];
+                if (e.BatterId != batterId) continue;
+                if (PlayTypeRules.CountsAsAtBat(e)) ab++;
+                if (PlayTypeRules.IsHit(e.PlayType)) h++;
+            }
+            return (ab, h);
         }
 
         /// <summary>장면 시작부터 index 투구까지 해당 투수가 던진 공 수.</summary>

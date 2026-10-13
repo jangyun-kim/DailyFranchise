@@ -24,4 +24,17 @@ namespace DailyFranchise.Sim
         Walk,
         InPlay,
     }
+
+    /// <summary>인플레이 타구 결과 종류. 인플레이가 아니면 None.</summary>
+    public enum PlayType
+    {
+        None,
+        Single,
+        Double,
+        Triple,
+        HomeRun,
+        GroundOut,
+        FlyOut,
+        LineOut,
+    }
 }

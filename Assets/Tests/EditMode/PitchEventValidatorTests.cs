@@ -123,6 +123,8 @@ namespace DailyFranchise.Sim.Tests
             e.CountAfter = Count.Zero;
             e.Outcome = PlateAppearanceOutcome.InPlay;
             e.PlayResult = "희생플라이";
+            e.PlayType = PlayType.FlyOut;
+            e.SprayAngleDeg = 10;
             e.RunnersBefore = new BaseState(null, null, "r3");
             e.RunnersAfter = BaseState.Empty;
             e.RunsScored = 1;
@@ -142,6 +144,8 @@ namespace DailyFranchise.Sim.Tests
             e.Result = PitchResult.InPlay;
             e.CountAfter = Count.Zero;
             e.Outcome = PlateAppearanceOutcome.InPlay;
+            e.PlayType = PlayType.Single;
+            e.SprayAngleDeg = 0;
             e.RunnersAfter = new BaseState("b", null, null);
             AssertInvalid(e, "PlayResult가 없음");
         }
