@@ -19,6 +19,9 @@ namespace DailyFranchise.UI.Data
                 [ScenarioCatalog.EighthBottom] = (
                     new TeamBoxSeed { RunsByInning = new[] { 0, 0, 1, 0, 0, 2, 0, 0 }, Hits = 7, Errors = 1, Walks = 2 },
                     new TeamBoxSeed { RunsByInning = new[] { 0, 0, 0, 1, 0, 1, 0, 0 }, Hits = 5, Errors = 0, Walks = 3 }),
+                [ScenarioCatalog.EighthBottomTactics] = (
+                    new TeamBoxSeed { RunsByInning = new[] { 0, 0, 1, 0, 0, 2, 0, 0 }, Hits = 7, Errors = 1, Walks = 2 },
+                    new TeamBoxSeed { RunsByInning = new[] { 0, 0, 0, 1, 0, 1, 0, 0 }, Hits = 5, Errors = 0, Walks = 3 }),
                 [ScenarioCatalog.HomeRun] = (
                     new TeamBoxSeed { RunsByInning = new[] { 0, 1, 0, 2, 0, 1, 0 }, Hits = 8, Errors = 0, Walks = 3 },
                     new TeamBoxSeed { RunsByInning = new[] { 0, 0, 1, 0, 0, 1, 0 }, Hits = 6, Errors = 1, Walks = 2 }),

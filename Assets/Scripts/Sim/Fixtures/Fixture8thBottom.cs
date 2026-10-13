@@ -11,6 +11,8 @@ namespace DailyFranchise.Sim.Fixtures
         public int HomeScoreBefore;
         public ZoneRuleConfig ZoneRule;
         public IReadOnlyList<PitchEvent> Events;
+        /// <summary>작전 분기점. 없으면 null (일직선 장면).</summary>
+        public BranchPoint Branch;
     }
 
     /// <summary>

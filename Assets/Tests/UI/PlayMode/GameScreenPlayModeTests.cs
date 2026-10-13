@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Linq;
+using DailyFranchise.Sim;
 using DailyFranchise.Sim.Fixtures;
 using NUnit.Framework;
 using UnityEngine;
@@ -354,6 +355,211 @@ namespace DailyFranchise.UI.Tests
             yield return null;
             Assert.That(_controller.ScenarioId, Is.EqualTo(ScenarioCatalog.DoublePlay));
             Assert.That(Text(root, "batter-name"), Is.EqualTo("탁성호"));
+        }
+
+        IEnumerator WaitForDecision()
+        {
+            float timeout = Time.realtimeSinceStartup + 10f;
+            while (!_controller.Playback.AwaitingDecision && Time.realtimeSinceStartup < timeout) yield return null;
+            Assert.That(_controller.Playback.AwaitingDecision, Is.True, "승부처에 도달하지 않음");
+        }
+
+        IEnumerator WaitForPlaybackEnd()
+        {
+            float timeout = Time.realtimeSinceStartup + 20f;
+            while ((_controller.Playback.IsPlaying || _controller.Field.IsAnimating) && Time.realtimeSinceStartup < timeout)
+                yield return null;
+            Assert.That(_controller.Playback.IsAtEnd, Is.True, "끝까지 재생되지 않음");
+            yield return null;
+        }
+
+        static void Submit(Button button)
+        {
+            using (var submit = NavigationSubmitEvent.GetPooled())
+            {
+                submit.target = button;
+                button.SendEvent(submit);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator 승부처에서_재생이_멈추고_작전_버튼이_켜진다()
+        {
+            var root = _doc.rootVisualElement;
+            _controller.LoadScenario(ScenarioCatalog.EighthBottomTactics);
+            _controller.Playback.SetSpeed(4);
+            _controller.Playback.Play();
+            yield return WaitForDecision();
+            yield return null;
+
+            Assert.That(_controller.Playback.IsPlaying, Is.False);
+            Assert.That(_controller.Playback.Index, Is.EqualTo(1));
+            Assert.That(root.Q("tactics").ClassListContains("tactics--open"), Is.True);
+            Assert.That(Text(root, "tactics-title"), Is.EqualTo("감독 개입 · 작전을 선택하세요"));
+            foreach (var name in new[] { "tactic-default", "tactic-swing", "tactic-squeeze" })
+                Assert.That(root.Q<Button>(name).enabledSelf, Is.True, name);
+            foreach (var name in new[] { "tactic-pinch", "tactic-pitching" })
+                Assert.That(root.Q<Button>(name).enabledSelf, Is.False, name + "는 범위 밖");
+            Assert.That(root.Q<Button>("ctl-next-pitch").enabledSelf, Is.False, "작전 전에는 다음 투구 불가");
+            Assert.That(Text(root, "headline-main"), Does.Contain("작전 선택 대기"));
+            Assert.That(Text(root, "playback-position"), Is.EqualTo("투구 2 · 작전 대기"));
+
+            var issues = LayoutChecker.Check(Screen);
+            Assert.That(issues, Is.Empty, string.Join("\n", issues));
+
+            // 작전 설명 미리보기도 넘치지 않아야 한다.
+            foreach (TacticKind t in new[] { TacticKind.Default, TacticKind.SwingAway, TacticKind.SqueezeBunt })
+            {
+                _controller.PreviewTactic(t);
+                yield return null;
+                Assert.That(Text(root, "tactic-desc"), Is.EqualTo(TacticText.Detail(t)));
+                var preview = LayoutChecker.Check(Screen);
+                Assert.That(preview, Is.Empty, $"[{t} 설명]\n" + string.Join("\n", preview));
+            }
+            _controller.PreviewTactic(null);
+        }
+
+        [UnityTest]
+        public IEnumerator 스퀴즈_번트를_고르면_기록을_유지한_채_분기_장면으로_이어진다()
+        {
+            var root = _doc.rootVisualElement;
+            _controller.LoadScenario(ScenarioCatalog.EighthBottomTactics);
+            _controller.Playback.SetSpeed(4);
+            _controller.Playback.Play();
+            yield return WaitForDecision();
+            // 이음새 비교는 x1에서 한다 (x4 재생 중에는 ABS가 현재 공만 보이는 별도 규칙이 있다).
+            _controller.Playback.SetSpeed(1);
+            yield return null;
+
+            var before = _controller.Events.Take(2).ToArray();
+            int markersBefore = root.Q("abs-markers").childCount;
+            string countBefore = Text(root, "abs-count");
+
+            Submit(root.Q<Button>("tactic-squeeze"));
+            yield return null;
+
+            // 이음새: 같은 위치, 같은 투구 객체, 같은 ABS 표시에서 재생 재개
+            Assert.That(_controller.ChosenTactic, Is.EqualTo(TacticKind.SqueezeBunt));
+            Assert.That(_controller.Playback.AwaitingDecision, Is.False);
+            Assert.That(_controller.Playback.Count, Is.EqualTo(6));
+            Assert.That(_controller.Events[0], Is.SameAs(before[0]));
+            Assert.That(_controller.Events[1], Is.SameAs(before[1]));
+            Assert.That(root.Q("tactics").ClassListContains("tactics--open"), Is.False);
+            Assert.That(root.Q<Button>("tactic-squeeze").ClassListContains("btn--active"), Is.True);
+            Assert.That(root.Q<Button>("tactic-squeeze").enabledSelf, Is.False, "고른 뒤에는 다시 누를 수 없음");
+            if (_controller.Playback.Index == 1)
+            {
+                Assert.That(root.Q("abs-markers").childCount, Is.EqualTo(markersBefore));
+                Assert.That(Text(root, "abs-count"), Is.EqualTo(countBefore));
+            }
+
+            // 분기 장면 전체를 재생하며 매 투구 레이아웃 확인
+            int lastChecked = -1;
+            float timeout = Time.realtimeSinceStartup + 20f;
+            while ((_controller.Playback.IsPlaying || _controller.Field.IsAnimating) && Time.realtimeSinceStartup < timeout)
+            {
+                if (_controller.Playback.Index != lastChecked)
+                {
+                    lastChecked = _controller.Playback.Index;
+                    yield return null;
+                    var issues = LayoutChecker.Check(Screen);
+                    Assert.That(issues, Is.Empty, $"[스퀴즈 {lastChecked}]\n" + string.Join("\n", issues));
+                }
+                yield return null;
+            }
+            yield return WaitForPlaybackEnd();
+
+            Assert.That(Text(root, "home-score"), Is.EqualTo("3"), "스퀴즈로 동점");
+            Assert.That(Text(root, "status-inning"), Is.EqualTo("8회말 · 3아웃 · 이닝 종료"));
+            Assert.That(_controller.Field.TokenCenters().Keys, Is.EquivalentTo(new[] { "home_b1" }), "2루 잔루");
+            Assert.That(Text(root, "ls-home-h"), Is.EqualTo("5"), "희생 번트·직선타는 안타 아님");
+            Assert.That(LineupNote(root, "home_b3"), Is.EqualTo("1-3"), "희생 번트는 타수 아님");
+            Assert.That(root.Q("log").Query<Label>(className: "log-entry--tactic").ToList().Count, Is.EqualTo(1),
+                "분기점 직후 위치에 작전 기록 1건 (로그 5칸 안)");
+            var end = LayoutChecker.Check(Screen);
+            Assert.That(end, Is.Empty, string.Join("\n", end));
+        }
+
+        [UnityTest]
+        public IEnumerator 작전_직후_중계에_작전_기록이_보인다()
+        {
+            var root = _doc.rootVisualElement;
+            _controller.LoadScenario(ScenarioCatalog.EighthBottomTactics);
+            _controller.Playback.Pause();
+            _controller.Playback.SkipToEnd();
+            yield return null;
+            Assert.That(_controller.ChooseTactic(TacticKind.SqueezeBunt), Is.True);
+            _controller.Playback.Pause();
+            _controller.Playback.StepPitch();
+            yield return null;
+            var notes = root.Q("log").Query<Label>(className: "log-entry--tactic").ToList();
+            Assert.That(notes.Count, Is.EqualTo(1));
+            Assert.That(notes[0].text, Is.EqualTo("감독 작전 · 스퀴즈 번트"));
+            Assert.That(Text(root, "play-type"), Does.StartWith("스퀴즈 번트"));
+            var issues = LayoutChecker.Check(Screen);
+            Assert.That(issues, Is.Empty, string.Join("\n", issues));
+        }
+
+        [UnityTest]
+        public IEnumerator 강공을_고르면_기존_8회말_장면과_같은_결과로_끝난다()
+        {
+            var root = _doc.rootVisualElement;
+            _controller.LoadScenario(ScenarioCatalog.EighthBottomTactics);
+            _controller.Playback.SetSpeed(4);
+            _controller.Playback.Play();
+            yield return WaitForDecision();
+            Assert.That(_controller.ChooseTactic(TacticKind.SwingAway), Is.True);
+            yield return WaitForPlaybackEnd();
+
+            Assert.That(Text(root, "home-score"), Is.EqualTo("3"));
+            Assert.That(Text(root, "ls-home-h"), Is.EqualTo("6"));
+            Assert.That(LineupNote(root, "home_b3"), Is.EqualTo("2-4"));
+            Assert.That(Text(root, "status-inning"), Is.EqualTo("8회말 · 2사 · 1·2루"));
+        }
+
+        [UnityTest]
+        public IEnumerator 처음으로와_시나리오_전환은_작전_상태를_초기화한다()
+        {
+            var root = _doc.rootVisualElement;
+            _controller.LoadScenario(ScenarioCatalog.EighthBottomTactics);
+            _controller.Playback.Pause();
+            _controller.Playback.SkipToEnd();
+            yield return null;
+            _controller.ChooseTactic(TacticKind.SqueezeBunt);
+            _controller.Playback.Pause();
+            _controller.Playback.SkipToEnd();
+            yield return WaitForField();
+
+            Submit(root.Q<Button>("ctl-restart"));
+            yield return null;
+            Assert.That(_controller.ChosenTactic, Is.Null);
+            Assert.That(_controller.Playback.Index, Is.EqualTo(-1));
+            Assert.That(_controller.Playback.Count, Is.EqualTo(2), "기본 구간으로 복귀");
+            Assert.That(_controller.Playback.DecisionIndex, Is.EqualTo(1));
+            Assert.That(root.Q<Button>("tactic-squeeze").ClassListContains("btn--active"), Is.False);
+            Assert.That(Text(root, "home-score"), Is.EqualTo("2"));
+
+            // 작전 대기 중 다른 시나리오로 전환
+            _controller.Playback.SkipToEnd();
+            yield return null;
+            Assert.That(root.Q("tactics").ClassListContains("tactics--open"), Is.True);
+            _controller.LoadScenario(ScenarioCatalog.HomeRun);
+            _controller.Playback.Pause();
+            yield return null;
+            Assert.That(root.Q("tactics").ClassListContains("tactics--open"), Is.False);
+            Assert.That(root.Q<Button>("tactic-squeeze").enabledSelf, Is.False);
+            Assert.That(_controller.ChooseTactic(TacticKind.SqueezeBunt), Is.False, "분기점 없는 장면에서는 무시");
+            Assert.That(_controller.Playback.AwaitingDecision, Is.False);
+        }
+
+        [UnityTest]
+        public IEnumerator 분기점이_없는_장면에서는_작전_버튼이_꺼져_있다()
+        {
+            var root = _doc.rootVisualElement;
+            _controller.Playback.SkipToEnd();
+            yield return null;
+            foreach (var name in new[] { "tactic-default", "tactic-swing", "tactic-squeeze", "tactic-pinch", "tactic-pitching" })
+                Assert.That(root.Q<Button>(name).enabledSelf, Is.False, name);
         }
 
         static int CountElements(VisualElement root)

@@ -18,6 +18,7 @@ namespace DailyFranchise.Sim.Fixtures
         public const string HomeRun = "home-run";
         public const string DoublePlay = "double-play";
         public const string InningEnd = "inning-end";
+        public const string EighthBottomTactics = "8th-bottom-tactics";
 
         public static readonly IReadOnlyList<ScenarioEntry> All = new[]
         {
@@ -25,6 +26,7 @@ namespace DailyFranchise.Sim.Fixtures
             new ScenarioEntry { Id = HomeRun, Label = "홈런", Create = FixtureHomeRun.Create },
             new ScenarioEntry { Id = DoublePlay, Label = "병살타", Create = FixtureDoublePlay.Create },
             new ScenarioEntry { Id = InningEnd, Label = "이닝 교대", Create = FixtureInningEnd.Create },
+            new ScenarioEntry { Id = EighthBottomTactics, Label = "작전 승부처", Create = Fixture8thBottomTactics.Create },
         };
 
         public static ScenarioEntry Find(string id)

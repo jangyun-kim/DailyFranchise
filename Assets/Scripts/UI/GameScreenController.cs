@@ -22,6 +22,10 @@ namespace DailyFranchise.UI
         [SerializeField] bool autoPlayOnStart = true;
 
         ScenarioFixture _fixture;
+        /// <summary>현재 재생 경로. 일직선 장면은 Fixture 이벤트, 분기 장면은 작전 선택 후 기본 구간 + 후속 구간.</summary>
+        IReadOnlyList<PitchEvent> _events;
+        TacticKind? _chosenTactic;
+        TacticKind? _previewTactic;
         IRosterSource _roster;
         IScoreboardSource _scoreboard;
         PitchPlayback _playback;
@@ -41,6 +45,9 @@ namespace DailyFranchise.UI
         VisualElement _log;
         Label _featuredName, _featuredLine, _position;
         VisualElement _scenarioTabs;
+        VisualElement _tactics;
+        Label _tacticsTitle, _tacticDesc;
+        readonly Dictionary<TacticKind, Button> _tacticButtons = new Dictionary<TacticKind, Button>();
         Button _speed1, _speed2, _speed4, _pauseChip;
         Button _restart, _nextPitch, _nextPa, _inningEnd, _gameEnd, _auto;
 
@@ -49,6 +56,8 @@ namespace DailyFranchise.UI
         public FieldView Field => _field;
         public StatsSync Sync => _sync;
         public string ScenarioId => _scenarioId;
+        public TacticKind? ChosenTactic => _chosenTactic;
+        public IReadOnlyList<PitchEvent> Events => _events;
 
         /// <summary>배속별 판정 점등 시간 (초). x4는 생략.</summary>
         public static float FlashSecondsFor(int speed) => speed == 1 ? 0.40f : speed == 2 ? 0.25f : 0f;
@@ -73,12 +82,16 @@ namespace DailyFranchise.UI
 
             _scenarioId = entry.Id;
             _fixture = entry.Create();
+            _events = _fixture.Events;
+            _chosenTactic = null;
+            _previewTactic = null;
             var data = new DummyScenarioData(entry.Id);
             _roster = data;
             _scoreboard = data;
 
-            _playback = new PitchPlayback(_fixture.Events);
+            _playback = new PitchPlayback(_events);
             _playback.SetSpeed(speed);
+            if (_fixture.Branch != null) _playback.SetDecisionPoint(_fixture.Branch.AfterIndex);
             _playback.IndexChanged += OnIndexChanged;
             _playback.StateChanged += OnPlaybackStateChanged;
 
@@ -103,6 +116,46 @@ namespace DailyFranchise.UI
             _playback.Pause();
         }
 
+        /// <summary>
+        /// 승부처에서 작전을 고른다. 이미 재생한 투구·기록·필드 상태는 그대로 두고
+        /// 기본 구간 뒤에 작전 후속 구간을 이어 붙여 재생을 재개한다.
+        /// </summary>
+        /// <returns>분기했으면 true. 작전 대기 중이 아니거나 이 분기점에 없는 작전이면 false.</returns>
+        public bool ChooseTactic(TacticKind tactic)
+        {
+            var branch = _fixture.Branch;
+            if (branch == null || !_playback.AwaitingDecision || !branch.Continuations.ContainsKey(tactic)) return false;
+
+            var path = branch.PathFor(_events, tactic);
+            _events = path;
+            _chosenTactic = tactic;
+            _previewTactic = null;
+            _playback.ContinueWith(path); // StateChanged → Render
+            _playback.Play();
+            return true;
+        }
+
+        /// <summary>작전 버튼에 포인터를 올렸을 때 설명 미리보기. null이면 기본 안내.</summary>
+        public void PreviewTactic(TacticKind? tactic)
+        {
+            _previewTactic = tactic;
+            RenderTactics();
+        }
+
+        /// <summary>처음으로: 분기한 장면은 작전 선택 전 기본 구간으로 되돌린다.</summary>
+        void RestartScenario()
+        {
+            if (_chosenTactic.HasValue)
+            {
+                LoadScenario(_scenarioId);
+                _playback.Pause();
+            }
+            else
+            {
+                _playback.Restart();
+            }
+        }
+
         void Update()
         {
             if (_playback == null) return;
@@ -116,7 +169,7 @@ namespace DailyFranchise.UI
         ScreenState StatsState() => StateAt(_sync.StatsIndex);
 
         ScreenState StateAt(int index) =>
-            ScreenState.Build(_fixture.Events, _fixture.AwayScoreBefore, _fixture.HomeScoreBefore, index);
+            ScreenState.Build(_events, _fixture.AwayScoreBefore, _fixture.HomeScoreBefore, index);
 
         void OnIndexChanged(int index)
         {
@@ -124,7 +177,7 @@ namespace DailyFranchise.UI
             _sync.OnIndexChanged(index, animating);
             Render();
             RenderControls();
-            _abs.Flash(index >= 0 ? _fixture.Events[index] : null, FlashSecondsFor(_playback.Speed));
+            _abs.Flash(index >= 0 ? _events[index] : null, FlashSecondsFor(_playback.Speed));
         }
 
         void OnFieldAnimationCompleted()
@@ -207,12 +260,21 @@ namespace DailyFranchise.UI
             _inningEnd = root.Q<Button>("ctl-inning-end");
             _gameEnd = root.Q<Button>("ctl-game-end");
             _auto = root.Q<Button>("ctl-auto");
-            _restart.clicked += () => _playback.Restart();
+            _restart.clicked += RestartScenario;
             _nextPitch.clicked += () => _playback.StepPitch();
             _nextPa.clicked += () => _playback.SkipToPlateAppearanceEnd();
             _inningEnd.clicked += () => _playback.SkipToHalfInningEnd();
             _gameEnd.clicked += () => _playback.SkipToEnd();
             _auto.clicked += () => _playback.TogglePlay();
+
+            // 감독 개입 버튼: 승부처에서만 켜진다. 대타·투수 교체는 이번 범위 밖이라 계속 비활성.
+            _tactics = root.Q("tactics");
+            _tacticsTitle = root.Q<Label>("tactics-title");
+            _tacticDesc = root.Q<Label>("tactic-desc");
+            _tacticButtons.Clear();
+            BindTactic("tactic-default", TacticKind.Default);
+            BindTactic("tactic-swing", TacticKind.SwingAway);
+            BindTactic("tactic-squeeze", TacticKind.SqueezeBunt);
 
             // 디버그 전용 시나리오 탭
             _scenarioTabs.Clear();
@@ -223,6 +285,41 @@ namespace DailyFranchise.UI
                 tab.AddToClassList("debug-strip__btn");
                 _scenarioTabs.Add(tab);
             }
+        }
+
+        void BindTactic(string buttonName, TacticKind kind)
+        {
+            var button = _root.Q<Button>(buttonName);
+            button.text = TacticText.Label(kind);
+            button.clicked += () => ChooseTactic(kind);
+            button.RegisterCallback<PointerEnterEvent>(_ => PreviewTactic(kind));
+            button.RegisterCallback<PointerLeaveEvent>(_ => PreviewTactic(null));
+            _tacticButtons[kind] = button;
+        }
+
+        void RenderTactics()
+        {
+            var branch = _fixture.Branch;
+            bool open = branch != null && _playback.AwaitingDecision;
+            _tactics.EnableInClassList("tactics--open", open);
+            _tacticsTitle.text = open ? "감독 개입 · 작전을 선택하세요" : "감독 개입";
+
+            foreach (var pair in _tacticButtons)
+            {
+                bool available = open && branch.Continuations.ContainsKey(pair.Key);
+                pair.Value.SetEnabled(available);
+                pair.Value.EnableInClassList("btn--tactic-available", available);
+                pair.Value.EnableInClassList("btn--active", !open && _chosenTactic == pair.Key);
+            }
+
+            if (open && _previewTactic.HasValue)
+                _tacticDesc.text = TacticText.Detail(_previewTactic.Value);
+            else if (open)
+                _tacticDesc.text = "승부처입니다. 버튼에 포인터를 올리면 실행 조건, 성공 이득, 실패 위험을 볼 수 있습니다.";
+            else if (_chosenTactic.HasValue)
+                _tacticDesc.text = "선택한 작전 · " + TacticText.Detail(_chosenTactic.Value);
+            else
+                _tacticDesc.text = "승부처가 오면 작전을 고를 수 있습니다. 대타·투수 교체는 아직 지원하지 않습니다.";
         }
 
         void RenderScenarioTabs()
@@ -251,8 +348,8 @@ namespace DailyFranchise.UI
             _gameEnd.SetEnabled(!atEnd);
             _restart.SetEnabled(_playback.Index >= 0);
 
-            _position.text = _playback.Index < 0
-                ? $"투구 전 · 0 / {_playback.Count}"
+            _position.text = _playback.AwaitingDecision ? $"투구 {_playback.Index + 1} · 작전 대기"
+                : _playback.Index < 0 ? $"투구 전 · 0 / {_playback.Count}"
                 : $"투구 {_playback.Index + 1} / {_playback.Count}";
         }
 
@@ -298,7 +395,7 @@ namespace DailyFranchise.UI
 
         void Render()
         {
-            var events = _fixture.Events;
+            var events = _events;
             // s: 지금 보여주는 투구 (ABS·중계·결과 문구는 즉시)
             // st: 기록 반영 기준 (점수·H·아웃·주자·타자 기록은 필드 연출이 끝난 뒤)
             var s = CurrentState();
@@ -322,8 +419,10 @@ namespace DailyFranchise.UI
                 : $"B {s.Count.Balls}  ·  S {s.Count.Strikes}  ·  O {st.Outs}";
             RenderLineScore(s, st);
 
-            // 중앙 헤드라인 (투구 직전 상황 / 이닝 종료 시 공수교대)
-            _headlineMain.text = inningOver
+            // 중앙 헤드라인 (투구 직전 상황 / 작전 대기 / 이닝 종료 시 공수교대)
+            _headlineMain.text = _playback.AwaitingDecision
+                ? $"{half} · 승부처 · {PitchPresentation.OutsText(st.Outs)} {st.Runners} · 작전 선택 대기"
+                : inningOver
                 ? $"{half} 종료 · 공수교대"
                 : $"{half} · {battingTeam.ShortName} 공격 · {PitchPresentation.OutsText(s.OutsBefore)} {s.RunnersBefore}";
             _headlineSub.text = $"{away.ShortName} {st.AwayScore} : {home.ShortName} {st.HomeScore} · " +
@@ -382,6 +481,7 @@ namespace DailyFranchise.UI
             bool showHistory = !(_playback.IsPlaying && _playback.Speed >= 4);
             _abs.Render(events, s, NameOf, showHistory);
             RenderLog(events);
+            RenderTactics();
         }
 
         string RunnerName(string id) => id == null ? "—" : NameOf(id);
@@ -390,11 +490,13 @@ namespace DailyFranchise.UI
             ? $"{s.Inning + 1}회초 {_roster.GetTeam(TeamSide.Away).ShortName} 공격"
             : $"{s.Inning}회말 {_roster.GetTeam(TeamSide.Home).ShortName} 공격";
 
-        /// <summary>타구 종류 표기. 아웃이 2개 늘어난 땅볼은 병살로 표시한다.</summary>
-        static string PlayTypeLabel(PitchEvent e) =>
-            e.PlayType == PlayType.GroundOut && e.OutsAfter - e.OutsBefore >= 2
-                ? "땅볼 병살"
-                : PitchPresentation.PlayTypeText(e.PlayType);
+        /// <summary>타구 종류 표기. 아웃이 2개 늘어난 땅볼은 병살, 득점이 난 희생 번트는 스퀴즈로 표시한다.</summary>
+        static string PlayTypeLabel(PitchEvent e)
+        {
+            if (e.PlayType == PlayType.GroundOut && e.OutsAfter - e.OutsBefore >= 2) return "땅볼 병살";
+            if (e.PlayType == PlayType.SacrificeBunt && e.RunsScored > 0) return "스퀴즈 번트";
+            return PitchPresentation.PlayTypeText(e.PlayType);
+        }
 
         /// <param name="s">현재 투구 (어느 반 이닝을 강조할지).</param>
         /// <param name="st">기록 반영 기준 (득점·H·B를 어디까지 셀지).</param>
@@ -402,7 +504,7 @@ namespace DailyFranchise.UI
         {
             _lineScore.Clear();
             int innings = Mathf.Max(MinInnings, s.Inning);
-            var events = _fixture.Events;
+            var events = _events;
 
             var head = Row();
             head.Add(Cell("", "ls-cell--team"));
@@ -504,9 +606,21 @@ namespace DailyFranchise.UI
                 return;
             }
 
-            int last = Mathf.Max(0, index - MaxLogEntries + 1);
-            for (int i = index; i >= last; i--)
+            // 작전 선택 기록은 분기점 투구 바로 위(시간상 직후)에 끼우고, 투구와 같이 개수 제한에 포함한다.
+            int? tacticAfter = _chosenTactic.HasValue ? _fixture.Branch.AfterIndex : (int?)null;
+            int budget = MaxLogEntries;
+            for (int i = index; i >= 0 && budget > 0; i--)
             {
+                if (tacticAfter == i && index > i)
+                {
+                    var note = new Label($"감독 작전 · {TacticText.Label(_chosenTactic.Value)}");
+                    note.AddToClassList("log-entry");
+                    note.AddToClassList("log-entry--tactic");
+                    _log.Add(note);
+                    if (--budget == 0) break;
+                }
+
+                budget--;
                 var e = events[i];
                 int pitchNo = i - ScenarioReadModel.PlateAppearanceStart(events, i) + 1;
 
@@ -533,7 +647,7 @@ namespace DailyFranchise.UI
         /// <summary>장면 시작 전 오늘 기록 + 장면 안에서 index까지의 타석 결과.</summary>
         (int atBats, int hits) TodayTotals(PlayerInfo p, int index)
         {
-            var scene = index < 0 ? (0, 0) : ScenarioReadModel.BatterLineThrough(_fixture.Events, index, p.Id);
+            var scene = index < 0 ? (0, 0) : ScenarioReadModel.BatterLineThrough(_events, index, p.Id);
             return ((p.TodayAtBats ?? 0) + scene.Item1, p.TodayHits + scene.Item2);
         }
 

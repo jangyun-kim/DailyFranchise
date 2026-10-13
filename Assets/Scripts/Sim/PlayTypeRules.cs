@@ -11,7 +11,7 @@ namespace DailyFranchise.Sim
             t == PlayType.Single || t == PlayType.Double || t == PlayType.Triple || t == PlayType.HomeRun;
 
         public static bool IsOut(PlayType t) =>
-            t == PlayType.GroundOut || t == PlayType.FlyOut || t == PlayType.LineOut;
+            t == PlayType.GroundOut || t == PlayType.FlyOut || t == PlayType.LineOut || t == PlayType.SacrificeBunt;
 
         /// <summary>안타로 타자가 진루하는 루 수 (홈런 = 4). 안타가 아니면 0.</summary>
         public static int BasesForHit(PlayType t)
@@ -27,7 +27,7 @@ namespace DailyFranchise.Sim
         }
 
         /// <summary>
-        /// 타석이 타수로 집계되는지. 볼넷은 제외, 희생플라이(3아웃 전 득점이 난 뜬공 아웃)는 제외.
+        /// 타석이 타수로 집계되는지. 볼넷, 희생플라이(3아웃 전 득점이 난 뜬공 아웃), 희생 번트는 제외.
         /// </summary>
         public static bool CountsAsAtBat(PitchEvent e)
         {
@@ -37,7 +37,7 @@ namespace DailyFranchise.Sim
                     return true;
                 case PlateAppearanceOutcome.InPlay:
                     bool sacrificeFly = e.PlayType == PlayType.FlyOut && e.RunsScored > 0 && e.OutsAfter < 3;
-                    return !sacrificeFly;
+                    return !sacrificeFly && e.PlayType != PlayType.SacrificeBunt;
                 default:
                     return false;
             }

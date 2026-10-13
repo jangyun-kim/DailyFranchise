@@ -698,6 +698,18 @@ Label {
     border-color: var(--strike);
 }
 
+.log-entry--tactic {
+    height: 30px;
+    padding: 0 8px;
+    opacity: 1;
+    border-left-width: 3px;
+    border-color: var(--gold);
+    font-size: 14px;
+    -unity-font-style: bold;
+    color: var(--gold);
+    -unity-text-align: middle-left;
+}
+
 .log-entry__situation {
     height: 20px;
     font-size: 13px;
@@ -714,6 +726,21 @@ Label {
     border-top-width: 1px;
     border-color: var(--line);
     padding-top: 10px;
+}
+
+/* 승부처: 작전 선택 창 강조 (애니메이션 없음) */
+.tactics--open {
+    border-top-color: var(--strike);
+    background-color: rgba(242, 140, 40, 0.06);
+}
+
+.tactics--open .panel-title {
+    color: var(--strike);
+}
+
+.unity-button.btn--tactic-available {
+    border-color: var(--strike);
+    -unity-font-style: bold;
 }
 
 .tactics__grid {

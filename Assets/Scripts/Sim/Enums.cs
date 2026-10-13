@@ -36,5 +36,16 @@ namespace DailyFranchise.Sim
         GroundOut,
         FlyOut,
         LineOut,
+        /// <summary>희생 번트 (스퀴즈 포함). 타자는 아웃, 주자 진루. 타수에 넣지 않는다.</summary>
+        SacrificeBunt,
+    }
+
+    /// <summary>감독이 승부처에서 고를 수 있는 작전.</summary>
+    public enum TacticKind
+    {
+        /// <summary>개입하지 않고 원래 흐름대로.</summary>
+        Default,
+        SwingAway,
+        SqueezeBunt,
     }
 }

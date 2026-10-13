@@ -134,18 +134,18 @@
             <ui:VisualElement name="right-panel" class="panel side side--right">
                 <ui:Label class="panel-title" text="실시간 중계" />
                 <ui:VisualElement name="log" class="log" />
-                <ui:VisualElement class="tactics">
-                    <ui:Label class="panel-title" text="감독 개입" />
+                <ui:VisualElement name="tactics" class="tactics">
+                    <ui:Label name="tactics-title" class="panel-title" text="감독 개입" />
                     <ui:VisualElement class="tactics__grid">
-                        <ui:Button class="btn btn--tactic btn--inactive" text="기본 진행" />
-                        <ui:Button class="btn btn--tactic btn--inactive" text="강공 지시" />
-                        <ui:Button class="btn btn--tactic btn--inactive" text="스퀴즈 번트" />
-                        <ui:Button class="btn btn--tactic btn--inactive" text="대타 검토" />
-                        <ui:Button class="btn btn--tactic btn--inactive" text="투수 교체" />
+                        <ui:Button name="tactic-default" class="btn btn--tactic" text="기본 진행" />
+                        <ui:Button name="tactic-swing" class="btn btn--tactic" text="강공 지시" />
+                        <ui:Button name="tactic-squeeze" class="btn btn--tactic" text="스퀴즈 번트" />
+                        <ui:Button name="tactic-pinch" class="btn btn--tactic btn--inactive" text="대타 검토" />
+                        <ui:Button name="tactic-pitching" class="btn btn--tactic btn--inactive" text="투수 교체" />
                     </ui:VisualElement>
                     <ui:VisualElement class="tactics__desc">
                         <ui:Label class="section-title" text="선택 설명" />
-                        <ui:Label class="info-line info-line--muted info-line--wrap" text="작전을 선택하면 실행 조건, 성공 이득, 실패 위험이 여기에 표시됩니다. 작전 실행은 다음 단계에서 연결됩니다." />
+                        <ui:Label name="tactic-desc" class="info-line info-line--muted info-line--wrap" text="—" />
                     </ui:VisualElement>
                 </ui:VisualElement>
             </ui:VisualElement>
