@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using DailyFranchise.Sim;
 using UnityEngine;
@@ -15,7 +16,12 @@ namespace DailyFranchise.UI
         const float ViewHalfWidthCm = 45f;
         const float ViewTopCm = 125f;
         const float ViewBottomCm = 25f;
-        const int MaxPreviousMarkers = 3;
+        /// <summary>타석 진행 중 함께 보여줄 이전 투구 수.</summary>
+        public const int MaxPreviousMarkers = 3;
+        /// <summary>타석 종료 시 보여줄 투구 분포 최대 개수 (결정구 포함).</summary>
+        public const int MaxPlateAppearanceMarkers = 6;
+
+        public const string FlashClass = "abs__zone--flash";
 
         readonly VisualElement _plot;
         readonly VisualElement _zone;
@@ -26,8 +32,9 @@ namespace DailyFranchise.UI
         readonly Label _matchup;
 
         IReadOnlyList<PitchEvent> _events;
-        int _index;
-        int _paStart;
+        ScreenState _state;
+        bool _showHistory = true;
+        IVisualElementScheduledItem _flashEnd;
 
         public AbsZoneView(VisualElement root)
         {
@@ -41,31 +48,67 @@ namespace DailyFranchise.UI
             _plot.RegisterCallback<GeometryChangedEvent>(_ => LayoutPlot());
         }
 
-        public void Render(IReadOnlyList<PitchEvent> events, int index)
+        public bool IsFlashing => _zone.ClassListContains(FlashClass);
+
+        /// <param name="showHistory">false면 현재 공만 표시 (x4 간략 모드).</param>
+        public void Render(IReadOnlyList<PitchEvent> events, ScreenState state,
+            Func<string, string> nameOf, bool showHistory)
         {
             _events = events;
-            _index = index;
-            _paStart = ScenarioReadModel.PlateAppearanceStart(events, index);
+            _state = state;
+            _showHistory = showHistory;
 
-            var e = events[index];
-            _count.text = $"{e.CountBefore} → {e.CountAfter}";
-
-            foreach (var cls in PitchPresentation.AllResultClasses) _result.RemoveFromClassList(cls);
-            _result.AddToClassList(PitchPresentation.ResultClass(e));
-            var swing = PitchPresentation.SwingNote(e);
-            _result.text = swing == null
-                ? PitchPresentation.ResultText(e)
-                : $"{PitchPresentation.ResultText(e)}  <size=14>{swing}</size>";
-
-            _detail.text = $"{e.PitchType} · {e.VelocityKmh:0} km/h · {PitchPresentation.ZoneNote(e)}";
-            _matchup.text = $"{index - _paStart + 1}구째 · 투수 {e.PitcherId} → 타자 {e.BatterId}";
+            SetResultClass(_result, null);
+            var e = state.Pitch;
+            if (e == null)
+            {
+                _count.text = state.Count.ToString();
+                _result.text = "투구 대기";
+                _detail.text = $"존 높이 {state.Zone.BottomCm:0.0}–{state.Zone.TopCm:0.0} cm";
+                _matchup.text = $"투수 {nameOf(state.PitcherId)} → 타자 {nameOf(state.BatterId)}";
+            }
+            else
+            {
+                _count.text = $"{e.CountBefore} → {e.CountAfter}";
+                SetResultClass(_result, PitchPresentation.ResultClass(e));
+                var swing = PitchPresentation.SwingNote(e);
+                _result.text = swing == null
+                    ? PitchPresentation.ResultText(e)
+                    : $"{PitchPresentation.ResultText(e)}  <size=14>{swing}</size>";
+                _detail.text = $"{e.PitchType} · {e.VelocityKmh:0} km/h · {PitchPresentation.ZoneNote(e)}";
+                _matchup.text = $"{state.PitchNumberInPlateAppearance}구째 · 투수 {nameOf(e.PitcherId)} → 타자 {nameOf(e.BatterId)}";
+            }
 
             LayoutPlot();
         }
 
+        /// <summary>존 테두리를 결과 색으로 잠깐 점등. seconds가 0 이하면 생략.</summary>
+        public void Flash(PitchEvent e, float seconds)
+        {
+            _flashEnd?.Pause();
+            ClearFlash();
+            if (e == null || seconds <= 0) return;
+
+            _zone.AddToClassList(FlashClass);
+            SetResultClass(_zone, PitchPresentation.ResultClass(e));
+            _flashEnd = _zone.schedule.Execute(ClearFlash).StartingIn((long)(seconds * 1000));
+        }
+
+        void ClearFlash()
+        {
+            _zone.RemoveFromClassList(FlashClass);
+            SetResultClass(_zone, null);
+        }
+
+        static void SetResultClass(VisualElement el, string cls)
+        {
+            foreach (var c in PitchPresentation.AllResultClasses) el.RemoveFromClassList(c);
+            if (cls != null) el.AddToClassList(cls);
+        }
+
         void LayoutPlot()
         {
-            if (_events == null) return;
+            if (_state == null) return;
             float w = _plot.contentRect.width;
             float h = _plot.contentRect.height;
             if (float.IsNaN(w) || float.IsNaN(h) || w <= 0 || h <= 0) return;
@@ -77,21 +120,27 @@ namespace DailyFranchise.UI
             float ToPxX(double cm) => centerX + (float)cm * scale;
             float ToPxY(double cm) => centerY - ((float)cm - midCm) * scale;
 
-            var e = _events[_index];
-            var zone = e.Zone;
+            var zone = _state.Zone;
             _zone.style.left = ToPxX(-zone.HalfWidthCm);
             _zone.style.top = ToPxY(zone.TopCm);
             _zone.style.width = (float)(2 * zone.HalfWidthCm) * scale;
             _zone.style.height = (float)(zone.TopCm - zone.BottomCm) * scale;
 
             _markers.Clear();
-            int first = Mathf.Max(_paStart, _index - MaxPreviousMarkers);
-            for (int i = first; i <= _index; i++)
+            if (_state.Pitch == null) return;
+
+            int index = _state.Index;
+            int paStart = _state.PlateAppearanceStart;
+            int maxPrevious = !_showHistory ? 0
+                : _state.PlateAppearanceEnded ? MaxPlateAppearanceMarkers - 1
+                : MaxPreviousMarkers;
+            int first = Mathf.Max(paStart, index - maxPrevious);
+            for (int i = first; i <= index; i++)
             {
                 var p = _events[i];
                 float x = Mathf.Clamp(ToPxX(p.LocationX), 0, w);
                 float y = Mathf.Clamp(ToPxY(p.LocationY), 0, h);
-                _markers.Add(CreateMarker(p, i - _paStart + 1, i == _index, x, y));
+                _markers.Add(CreateMarker(p, i - paStart + 1, i == index, x, y));
             }
         }
 

@@ -11,7 +11,6 @@
     --gold: #F2C230;
     --white: #F5F7FA;
     --occupied: #F28C28;
-    --debug: #FF4FD8;
 
     width: 1920px;
     height: 1080px;
@@ -90,6 +89,13 @@ Label {
 
 .unity-button.btn:disabled {
     opacity: 0.45;
+}
+
+/* 선택된 배속·자동 재생 중 표시 */
+.unity-button.btn--active {
+    border-color: var(--strike);
+    color: var(--strike);
+    -unity-font-style: bold;
 }
 
 .unity-button.btn--chip {
@@ -280,10 +286,27 @@ Label {
 }
 
 .roster-state {
-    width: 50px;
+    width: 64px;
     font-size: 14px;
     color: var(--muted);
     -unity-text-align: middle-right;
+}
+
+/* 현재 타석에 선 선수 */
+.roster-row--current {
+    background-color: var(--panel-2);
+    border-left-width: 3px;
+    border-color: var(--strike);
+}
+
+.roster-row--current .roster-name,
+.roster-row--current .roster-state {
+    color: var(--text);
+    -unity-font-style: bold;
+}
+
+.roster-row--onbase .roster-state {
+    color: var(--occupied);
 }
 
 /* ───────── 중앙 무대 1110px ───────── */
@@ -504,7 +527,18 @@ Label {
     position: absolute;
     border-width: 2px;
     border-color: #6B7A8A;
+    transition-property: border-color, background-color;
+    transition-duration: 0.08s;
 }
+
+/* 판정 점등: 테두리 두께는 그대로 두고 색만 바꿔 레이아웃이 흔들리지 않게 한다. */
+.abs__zone--flash { background-color: rgba(255, 255, 255, 0.06); }
+.abs__zone--flash.res--strike    { border-color: var(--strike); }
+.abs__zone--flash.res--ball      { border-color: var(--ball); }
+.abs__zone--flash.res--foul      { border-color: var(--white); }
+.abs__zone--flash.res--inplay    { border-color: var(--white); }
+.abs__zone--flash.res--strikeout { border-color: var(--gold); }
+.abs__zone--flash.res--walk      { border-color: var(--ball); }
 
 .abs__grid {
     position: absolute;
@@ -687,39 +721,17 @@ Label {
     align-items: center;
 }
 
-/* 디버그 전용: 정식 UI와 구분되도록 마젠타 계열로 표시 */
-.debug-strip {
-    flex-direction: row;
-    align-items: center;
-    padding: 4px 8px;
-    margin-right: 16px;
-    border-width: 2px;
-    border-color: var(--debug);
-    background-color: #2A0F27;
-}
-
-.debug-strip__tag {
-    font-size: 12px;
+.featured__name {
+    height: 26px;
+    font-size: 18px;
     -unity-font-style: bold;
-    color: var(--debug);
+    -unity-text-align: middle-left;
+}
+
+.playback-position {
+    width: 120px;
     margin-right: 8px;
-}
-
-.debug-strip__index {
-    width: 70px;
-    font-size: 15px;
-    color: var(--debug);
-    -unity-text-align: middle-center;
-}
-
-.unity-button.debug-strip__btn {
-    height: 28px;
-    margin: 0;
-    padding: 0 8px;
-    border-width: 1px;
-    border-radius: 0;
-    border-color: var(--debug);
-    background-color: #3A1636;
-    color: var(--debug);
-    font-size: 13px;
+    font-size: 14px;
+    color: var(--muted);
+    -unity-text-align: middle-right;
 }

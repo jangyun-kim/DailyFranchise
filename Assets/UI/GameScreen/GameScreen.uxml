@@ -21,10 +21,10 @@
                 <ui:Label name="status-inning" class="status-inning" text="—" />
                 <ui:Label name="status-count" class="status-count" text="—" />
                 <ui:VisualElement class="speed-row">
-                    <ui:Button class="btn btn--chip btn--inactive" text="x1" />
-                    <ui:Button class="btn btn--chip btn--inactive" text="x2" />
-                    <ui:Button class="btn btn--chip btn--inactive" text="x4" />
-                    <ui:Button class="btn btn--chip btn--inactive" text="일시정지" />
+                    <ui:Button name="speed-1" class="btn btn--chip" text="x1" />
+                    <ui:Button name="speed-2" class="btn btn--chip" text="x2" />
+                    <ui:Button name="speed-4" class="btn btn--chip" text="x4" />
+                    <ui:Button name="speed-pause" class="btn btn--chip btn--pause" text="일시정지" />
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
@@ -33,29 +33,14 @@
 
             <!-- 좌측 330px: 내 선수단 -->
             <ui:VisualElement name="left-panel" class="panel side side--left">
-                <ui:Label class="panel-title" text="내 선수단" />
+                <ui:Label name="roster-title" class="panel-title" text="내 선수단" />
                 <ui:Label class="section-title" text="라인업" />
-                <ui:VisualElement class="roster-row"><ui:Label class="roster-order" text="1" /><ui:Label class="roster-pos" text="—" /><ui:Label class="roster-name" text="선수명 미연결" /><ui:Label class="roster-state" text="—" /></ui:VisualElement>
-                <ui:VisualElement class="roster-row"><ui:Label class="roster-order" text="2" /><ui:Label class="roster-pos" text="—" /><ui:Label class="roster-name" text="선수명 미연결" /><ui:Label class="roster-state" text="—" /></ui:VisualElement>
-                <ui:VisualElement class="roster-row"><ui:Label class="roster-order" text="3" /><ui:Label class="roster-pos" text="—" /><ui:Label class="roster-name" text="선수명 미연결" /><ui:Label class="roster-state" text="—" /></ui:VisualElement>
-                <ui:VisualElement class="roster-row"><ui:Label class="roster-order" text="4" /><ui:Label class="roster-pos" text="—" /><ui:Label class="roster-name" text="선수명 미연결" /><ui:Label class="roster-state" text="—" /></ui:VisualElement>
-                <ui:VisualElement class="roster-row"><ui:Label class="roster-order" text="5" /><ui:Label class="roster-pos" text="—" /><ui:Label class="roster-name" text="선수명 미연결" /><ui:Label class="roster-state" text="—" /></ui:VisualElement>
-                <ui:VisualElement class="roster-row"><ui:Label class="roster-order" text="6" /><ui:Label class="roster-pos" text="—" /><ui:Label class="roster-name" text="선수명 미연결" /><ui:Label class="roster-state" text="—" /></ui:VisualElement>
-                <ui:VisualElement class="roster-row"><ui:Label class="roster-order" text="7" /><ui:Label class="roster-pos" text="—" /><ui:Label class="roster-name" text="선수명 미연결" /><ui:Label class="roster-state" text="—" /></ui:VisualElement>
-                <ui:VisualElement class="roster-row"><ui:Label class="roster-order" text="8" /><ui:Label class="roster-pos" text="—" /><ui:Label class="roster-name" text="선수명 미연결" /><ui:Label class="roster-state" text="—" /></ui:VisualElement>
-                <ui:VisualElement class="roster-row"><ui:Label class="roster-order" text="9" /><ui:Label class="roster-pos" text="—" /><ui:Label class="roster-name" text="선수명 미연결" /><ui:Label class="roster-state" text="—" /></ui:VisualElement>
-
+                <ui:VisualElement name="lineup" />
                 <ui:Label class="section-title" text="벤치" />
-                <ui:VisualElement class="roster-row"><ui:Label class="roster-order" text="" /><ui:Label class="roster-pos" text="대타" /><ui:Label class="roster-name" text="선수명 미연결" /><ui:Label class="roster-state" text="—" /></ui:VisualElement>
-                <ui:VisualElement class="roster-row"><ui:Label class="roster-order" text="" /><ui:Label class="roster-pos" text="대타" /><ui:Label class="roster-name" text="선수명 미연결" /><ui:Label class="roster-state" text="—" /></ui:VisualElement>
-                <ui:VisualElement class="roster-row"><ui:Label class="roster-order" text="" /><ui:Label class="roster-pos" text="대주자" /><ui:Label class="roster-name" text="선수명 미연결" /><ui:Label class="roster-state" text="—" /></ui:VisualElement>
-
+                <ui:VisualElement name="bench" />
                 <ui:Label class="section-title" text="불펜" />
-                <ui:VisualElement class="roster-row"><ui:Label class="roster-order" text="" /><ui:Label class="roster-pos" text="마무리" /><ui:Label class="roster-name" text="선수명 미연결" /><ui:Label class="roster-state" text="—" /></ui:VisualElement>
-                <ui:VisualElement class="roster-row"><ui:Label class="roster-order" text="" /><ui:Label class="roster-pos" text="좌완" /><ui:Label class="roster-name" text="선수명 미연결" /><ui:Label class="roster-state" text="—" /></ui:VisualElement>
-                <ui:VisualElement class="roster-row"><ui:Label class="roster-order" text="" /><ui:Label class="roster-pos" text="롱릴리프" /><ui:Label class="roster-name" text="선수명 미연결" /><ui:Label class="roster-state" text="—" /></ui:VisualElement>
-
-                <ui:Label class="footnote" text="선수단 데이터는 아직 연결되지 않았습니다." />
+                <ui:VisualElement name="bullpen" />
+                <ui:Label name="roster-source" class="footnote" text="" />
             </ui:VisualElement>
 
             <!-- 중앙 1110px: 경기 무대 -->
@@ -104,20 +89,20 @@
                             <ui:Label class="player-card__role" text="투수" />
                             <ui:Label name="pitcher-name" class="player-card__name" text="—" />
                             <ui:Label name="pitcher-team" class="player-card__meta" text="—" />
-                            <ui:Label class="player-card__season" text="시즌 기록 · 데이터 미연결" />
+                            <ui:Label name="pitcher-season" class="player-card__season" text="—" />
                             <ui:Label name="pitcher-line1" class="info-line" text="—" />
                             <ui:Label name="pitcher-line2" class="info-line" text="—" />
-                            <ui:Label class="info-line info-line--muted" text="체력 · 데이터 미연결" />
+                            <ui:Label name="pitcher-fitness" class="info-line info-line--muted" text="—" />
                         </ui:VisualElement>
                         <ui:Label class="vs" text="VS" />
                         <ui:VisualElement class="player-card">
                             <ui:Label class="player-card__role" text="타자" />
                             <ui:Label name="batter-name" class="player-card__name" text="—" />
                             <ui:Label name="batter-team" class="player-card__meta" text="—" />
-                            <ui:Label class="player-card__season" text="시즌 기록 · 데이터 미연결" />
+                            <ui:Label name="batter-season" class="player-card__season" text="—" />
                             <ui:Label name="batter-line1" class="info-line" text="—" />
                             <ui:Label name="batter-line2" class="info-line" text="—" />
-                            <ui:Label class="info-line info-line--muted" text="컨디션 · 데이터 미연결" />
+                            <ui:Label name="batter-fitness" class="info-line info-line--muted" text="—" />
                         </ui:VisualElement>
                     </ui:VisualElement>
 
@@ -159,7 +144,7 @@
                     </ui:VisualElement>
                     <ui:VisualElement class="tactics__desc">
                         <ui:Label class="section-title" text="선택 설명" />
-                        <ui:Label class="info-line info-line--muted info-line--wrap" text="작전을 선택하면 실행 조건, 성공 이득, 실패 위험이 여기에 표시됩니다. 감독 개입은 아직 연결되지 않았습니다." />
+                        <ui:Label class="info-line info-line--muted info-line--wrap" text="작전을 선택하면 실행 조건, 성공 이득, 실패 위험이 여기에 표시됩니다. 작전 실행은 다음 단계에서 연결됩니다." />
                     </ui:VisualElement>
                 </ui:VisualElement>
             </ui:VisualElement>
@@ -169,19 +154,17 @@
         <ui:VisualElement name="footer" class="footer">
             <ui:VisualElement class="footer__featured">
                 <ui:Label class="section-title" text="오늘의 주목 선수" />
-                <ui:Label class="info-line info-line--muted" text="데이터 미연결" />
-            </ui:VisualElement>
-            <ui:VisualElement name="debug-strip" class="debug-strip">
-                <ui:Label class="debug-strip__tag" text="DEBUG" />
-                <ui:Button name="debug-prev" class="debug-strip__btn" text="◀ 이전" />
-                <ui:Label name="debug-index" class="debug-strip__index" text="0 / 0" />
-                <ui:Button name="debug-next" class="debug-strip__btn" text="다음 ▶" />
+                <ui:Label name="featured-name" class="featured__name" text="—" />
+                <ui:Label name="featured-line" class="info-line info-line--muted" text="—" />
             </ui:VisualElement>
             <ui:VisualElement class="footer__controls">
-                <ui:Button class="btn btn--control btn--inactive" text="다음 타석" />
-                <ui:Button class="btn btn--control btn--inactive" text="이닝 종료" />
-                <ui:Button class="btn btn--control btn--inactive" text="경기 종료" />
-                <ui:Button class="btn btn--control btn--inactive" text="자동" />
+                <ui:Label name="playback-position" class="playback-position" text="—" />
+                <ui:Button name="ctl-restart" class="btn btn--control" text="처음으로" />
+                <ui:Button name="ctl-next-pitch" class="btn btn--control" text="다음 투구" />
+                <ui:Button name="ctl-next-pa" class="btn btn--control" text="다음 타석" />
+                <ui:Button name="ctl-inning-end" class="btn btn--control" text="이닝 종료" />
+                <ui:Button name="ctl-game-end" class="btn btn--control" text="경기 종료" />
+                <ui:Button name="ctl-auto" class="btn btn--control btn--auto" text="자동" />
             </ui:VisualElement>
         </ui:VisualElement>
     </ui:VisualElement>
