@@ -1,0 +1,16 @@
+{
+    "name": "DailyFranchise.UI",
+    "rootNamespace": "DailyFranchise.UI",
+    "references": [
+        "DailyFranchise.Sim"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
