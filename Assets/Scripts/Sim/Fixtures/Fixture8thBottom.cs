@@ -4,6 +4,8 @@ namespace DailyFranchise.Sim.Fixtures
 {
     public sealed class ScenarioFixture
     {
+        /// <summary>ScenarioCatalog의 시나리오 ID.</summary>
+        public string Id;
         public string Title;
         public int AwayScoreBefore;
         public int HomeScoreBefore;
@@ -89,6 +91,7 @@ namespace DailyFranchise.Sim.Fixtures
 
             return new ScenarioFixture
             {
+                Id = ScenarioCatalog.EighthBottom,
                 Title = "8회말 · 1사 1·3루 · 한 점 차",
                 AwayScoreBefore = 3,
                 HomeScoreBefore = 2,

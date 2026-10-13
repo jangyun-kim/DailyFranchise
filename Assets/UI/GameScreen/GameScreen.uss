@@ -11,6 +11,7 @@
     --gold: #F2C230;
     --white: #F5F7FA;
     --occupied: #F28C28;
+    --debug: #FF4FD8;
 
     width: 1920px;
     height: 1080px;
@@ -764,4 +765,44 @@ Label {
     font-size: 14px;
     color: var(--muted);
     -unity-text-align: middle-right;
+}
+
+/* 디버그 전용: 정식 UI와 구분되도록 마젠타 계열로 표시 */
+.debug-strip {
+    flex-direction: row;
+    align-items: center;
+    padding: 4px 8px;
+    margin-right: 16px;
+    border-width: 2px;
+    border-color: var(--debug);
+    background-color: #2A0F27;
+}
+
+.debug-strip__tag {
+    font-size: 12px;
+    -unity-font-style: bold;
+    color: var(--debug);
+    margin-right: 4px;
+}
+
+.debug-strip__tabs {
+    flex-direction: row;
+}
+
+.unity-button.debug-strip__btn {
+    height: 28px;
+    margin: 0 0 0 4px;
+    padding: 0 8px;
+    border-width: 1px;
+    border-radius: 0;
+    border-color: var(--debug);
+    background-color: #3A1636;
+    color: var(--debug);
+    font-size: 13px;
+}
+
+.unity-button.debug-strip__btn--active {
+    background-color: var(--debug);
+    color: #2A0F27;
+    -unity-font-style: bold;
 }

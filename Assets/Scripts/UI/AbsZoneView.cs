@@ -94,6 +94,13 @@ namespace DailyFranchise.UI
             _flashEnd = _zone.schedule.Execute(ClearFlash).StartingIn((long)(seconds * 1000));
         }
 
+        /// <summary>예약된 점등 해제를 취소하고 즉시 기본 테두리로 돌린다.</summary>
+        public void CancelFlash()
+        {
+            _flashEnd?.Pause();
+            ClearFlash();
+        }
+
         void ClearFlash()
         {
             _zone.RemoveFromClassList(FlashClass);

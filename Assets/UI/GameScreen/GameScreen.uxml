@@ -158,6 +158,11 @@
                 <ui:Label name="featured-name" class="featured__name" text="—" />
                 <ui:Label name="featured-line" class="info-line info-line--muted" text="—" />
             </ui:VisualElement>
+            <!-- 디버그 전용: 시나리오 전환 -->
+            <ui:VisualElement name="debug-strip" class="debug-strip">
+                <ui:Label class="debug-strip__tag" text="DEBUG 시나리오" />
+                <ui:VisualElement name="scenario-tabs" class="debug-strip__tabs" />
+            </ui:VisualElement>
             <ui:VisualElement class="footer__controls">
                 <ui:Label name="playback-position" class="playback-position" text="—" />
                 <ui:Button name="ctl-restart" class="btn btn--control" text="처음으로" />

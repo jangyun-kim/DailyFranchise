@@ -1,4 +1,6 @@
 using System.Collections;
+using System.Linq;
+using DailyFranchise.Sim.Fixtures;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -167,6 +169,11 @@ namespace DailyFranchise.UI.Tests
 
             _controller.Playback.SeekTo(4);
             yield return null;
+            // Phase 5: 기록은 필드 연출(주자 도착)이 끝난 뒤 반영된다.
+            Assert.That(_controller.Field.IsAnimating, Is.True);
+            Assert.That(root.Q<Label>("ls-home-h").text, Is.EqualTo("5"), "연출 중에는 아직 반영 전");
+            Assert.That(LineupNote(root, "home_b3"), Is.EqualTo("1-3"));
+            yield return WaitForField();
             Assert.That(root.Q<Label>("ls-home-h").text, Is.EqualTo("6"));
             Assert.That(root.Q<Label>("ls-away-h").text, Is.EqualTo("7"), "수비팀 H는 그대로");
             Assert.That(LineupNote(root, "home_b3"), Is.EqualTo("2-4"));
@@ -177,6 +184,183 @@ namespace DailyFranchise.UI.Tests
             _controller.Playback.SeekTo(7);
             yield return null;
             Assert.That(LineupNote(root, "home_b4"), Is.EqualTo("0-4"));
+        }
+
+        IEnumerator WaitForField()
+        {
+            float timeout = Time.realtimeSinceStartup + 5f;
+            while (_controller.Field.IsAnimating && Time.realtimeSinceStartup < timeout) yield return null;
+            Assert.That(_controller.Field.IsAnimating, Is.False, "필드 연출이 끝나지 않음");
+            yield return null;
+        }
+
+        static string Text(VisualElement root, string name) => root.Q<Label>(name).text;
+
+        [UnityTest]
+        public IEnumerator 득점과_H는_주자가_홈을_밟는_순간에_반영된다()
+        {
+            var root = _doc.rootVisualElement;
+            string scoreAtCompletion = null, hitsAtCompletion = null;
+            int completions = 0;
+            // 컨트롤러가 먼저 구독했으므로, 이 핸들러가 불릴 때는 컨트롤러 반영이 끝난 상태다.
+            _controller.Field.AnimationCompleted += () =>
+            {
+                completions++;
+                scoreAtCompletion = Text(root, "home-score");
+                hitsAtCompletion = Text(root, "ls-home-h");
+            };
+
+            _controller.Playback.SeekTo(4);
+            string lastScoreWhileRunning = null;
+            float timeout = Time.realtimeSinceStartup + 5f;
+            while (_controller.Field.IsAnimating && Time.realtimeSinceStartup < timeout)
+            {
+                lastScoreWhileRunning = Text(root, "home-score");
+                yield return null;
+            }
+
+            Assert.That(lastScoreWhileRunning, Is.EqualTo("2"), "주자가 홈에 닿기 직전 프레임까지는 반영 전");
+            Assert.That(completions, Is.EqualTo(1));
+            Assert.That(scoreAtCompletion, Is.EqualTo("3"), "연출 완료 콜백 시점에 득점 반영");
+            Assert.That(hitsAtCompletion, Is.EqualTo("6"), "연출 완료 콜백 시점에 H 반영");
+            Assert.That(Text(root, "play-runs"), Is.EqualTo("득점 +1"));
+        }
+
+        static readonly string[] ScenarioIds = ScenarioCatalog.All.Select(e => e.Id).ToArray();
+
+        [UnityTest]
+        public IEnumerator 모든_시나리오를_끝까지_재생해도_레이아웃과_필드_상태가_맞다(
+            [ValueSource(nameof(ScenarioIds))] string scenarioId)
+        {
+            _controller.LoadScenario(scenarioId);
+            _controller.Playback.Pause();
+            yield return null;
+
+            var root = _doc.rootVisualElement;
+            var playback = _controller.Playback;
+            var f = ScenarioCatalog.Find(scenarioId).Create();
+            for (int i = 0; i < playback.Count; i++)
+            {
+                playback.SeekTo(i);
+                yield return null;
+                var mid = LayoutChecker.Check(Screen);
+                Assert.That(mid, Is.Empty, $"[{scenarioId} {i}구 직후]\n" + string.Join("\n", mid));
+                yield return WaitForField();
+
+                var issues = LayoutChecker.Check(Screen);
+                Assert.That(issues, Is.Empty, $"[{scenarioId} {i}구]\n" + string.Join("\n", issues));
+                Assert.That(_controller.Sync.IsPending, Is.False);
+
+                var expect = ScreenState.Build(f.Events, f.AwayScoreBefore, f.HomeScoreBefore, i);
+                Assert.That(Text(root, "away-score"), Is.EqualTo(expect.AwayScore.ToString()), $"{scenarioId} {i}구 원정 점수");
+                Assert.That(Text(root, "home-score"), Is.EqualTo(expect.HomeScore.ToString()), $"{scenarioId} {i}구 홈 점수");
+
+                var tokens = _controller.Field.TokenCenters();
+                var r = expect.Runners;
+                var expectedIds = new[] { r.First, r.Second, r.Third }.Where(x => x != null).ToArray();
+                Assert.That(tokens.Keys, Is.EquivalentTo(expectedIds), $"{scenarioId} {i}구 주자 토큰");
+                if (r.First != null) Assert.That(tokens[r.First], Is.EqualTo(FieldGeometry.First));
+                if (r.Second != null) Assert.That(tokens[r.Second], Is.EqualTo(FieldGeometry.Second));
+                if (r.Third != null) Assert.That(tokens[r.Third], Is.EqualTo(FieldGeometry.Third));
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator 이닝_교대_시나리오는_3아웃_반영_후_다음_반_이닝으로_넘어간다()
+        {
+            var root = _doc.rootVisualElement;
+            _controller.LoadScenario(ScenarioCatalog.InningEnd);
+            _controller.Playback.Pause();
+            _controller.Playback.SeekTo(2);
+            yield return null;
+            Assert.That(Text(root, "status-inning"), Does.Contain("2사"), "뜬공 연출 중에는 아직 2사");
+            yield return WaitForField();
+            Assert.That(Text(root, "status-inning"), Is.EqualTo("8회말 · 3아웃 · 이닝 종료"));
+            Assert.That(Text(root, "status-count"), Is.EqualTo("공수교대 · 다음 9회초 서울 공격"));
+            Assert.That(Text(root, "headline-main"), Is.EqualTo("8회말 종료 · 공수교대"));
+
+            _controller.Playback.StepPitch();
+            yield return null;
+            Assert.That(Text(root, "status-inning"), Is.EqualTo("9회초 · 무사 · 주자 없음"));
+            Assert.That(Text(root, "pitcher-name"), Is.EqualTo("진도겸"));
+            Assert.That(Text(root, "batter-name"), Is.EqualTo("김라온"));
+            Assert.That(_controller.Field.TokenCount, Is.EqualTo(0));
+
+            // 라인스코어 행: [0]=헤더 [1]=원정 [2]=홈. 셀: [0]=팀명, [i]=i회
+            var rows = root.Q("linescore").Children().ToList();
+            var homeEighth = (Label)rows[2].Children().ElementAt(8);
+            var awayNinth = (Label)rows[1].Children().ElementAt(9);
+            Assert.That(homeEighth.text, Is.EqualTo("0"), "장면 안에서 끝난 8회말 확정");
+            Assert.That(awayNinth.ClassListContains("ls-cell--current"), Is.True, "9회초가 현재 이닝");
+        }
+
+        [UnityTest]
+        public IEnumerator 시나리오_전환_시_이전_연출과_UI_찌꺼기가_남지_않는다()
+        {
+            var root = _doc.rootVisualElement;
+            _controller.Playback.SeekTo(4); // 적시타 연출·점등 진행 중
+            yield return null;
+            Assert.That(_controller.Field.IsAnimating, Is.True);
+            Assert.That(_controller.AbsZone.IsFlashing, Is.True);
+
+            _controller.LoadScenario(ScenarioCatalog.HomeRun);
+            _controller.Playback.Pause();
+            yield return null;
+
+            Assert.That(_controller.ScenarioId, Is.EqualTo(ScenarioCatalog.HomeRun));
+            Assert.That(_controller.Playback.Index, Is.EqualTo(-1));
+            Assert.That(_controller.Field.IsAnimating, Is.False);
+            Assert.That(_controller.Field.BattedBallVisible, Is.False);
+            Assert.That(_controller.Field.TokenCenters().Keys, Is.EquivalentTo(new[] { "home_b4" }), "새 장면의 1루 주자만");
+            Assert.That(_controller.AbsZone.IsFlashing, Is.False);
+            Assert.That(root.Q("abs-markers").childCount, Is.EqualTo(0));
+            Assert.That(root.Q("log").childCount, Is.EqualTo(1), "대기 문구만");
+            Assert.That(_controller.Sync.IsPending, Is.False);
+            Assert.That(Text(root, "home-score"), Is.EqualTo("2"));
+            Assert.That(root.Q<Button>("scenario-home-run").ClassListContains("debug-strip__btn--active"), Is.True);
+            Assert.That(root.Q<Button>("scenario-8th-bottom").ClassListContains("debug-strip__btn--active"), Is.False);
+
+            // 여러 번 전환해도 요소 수가 늘지 않는다.
+            int baseline = CountElements(root);
+            for (int round = 0; round < 3; round++)
+            {
+                foreach (var id in ScenarioIds)
+                {
+                    _controller.LoadScenario(id);
+                    _controller.Playback.Pause();
+                    _controller.Playback.SkipToEnd();
+                    yield return null;
+                }
+            }
+            _controller.LoadScenario(ScenarioCatalog.HomeRun);
+            _controller.Playback.Pause();
+            yield return null;
+            Assert.That(CountElements(root), Is.EqualTo(baseline));
+            Assert.That(root.Query("field-fx").ToList().Count, Is.EqualTo(1));
+            Assert.That(root.Q("lineup").childCount, Is.EqualTo(9));
+        }
+
+        [UnityTest]
+        public IEnumerator 디버그_탭으로_시나리오가_바뀐다()
+        {
+            var root = _doc.rootVisualElement;
+            var tab = root.Q<Button>("scenario-double-play");
+            Assert.That(tab, Is.Not.Null);
+            using (var submit = NavigationSubmitEvent.GetPooled())
+            {
+                submit.target = tab;
+                tab.SendEvent(submit);
+            }
+            yield return null;
+            Assert.That(_controller.ScenarioId, Is.EqualTo(ScenarioCatalog.DoublePlay));
+            Assert.That(Text(root, "batter-name"), Is.EqualTo("탁성호"));
+        }
+
+        static int CountElements(VisualElement root)
+        {
+            int n = 0;
+            root.Query<VisualElement>().ForEach(_ => n++);
+            return n;
         }
 
         static string LineupNote(VisualElement root, string playerId)

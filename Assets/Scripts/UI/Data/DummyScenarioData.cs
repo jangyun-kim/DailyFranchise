@@ -4,18 +4,41 @@ using DailyFranchise.Sim.Fixtures;
 namespace DailyFranchise.UI.Data
 {
     /// <summary>
-    /// Fixture8thBottom 장면용 더미 표시 데이터. 팀·선수 이름과 기록은 모두 가상이다.
-    /// 이닝별 득점 합은 Fixture의 시작 점수(원정 3 : 홈 2)와 일치해야 한다 (테스트로 검증).
+    /// ScenarioCatalog 장면용 더미 표시 데이터. 팀·선수 이름과 기록은 모두 가상이다.
+    /// 선수 정보는 모든 장면이 공유하고, 스코어보드 기초값만 장면별로 다르다.
+    /// 장면별 이닝 득점 합은 해당 Fixture의 시작 점수와 일치해야 한다 (테스트로 검증).
     /// </summary>
     public sealed class DummyScenarioData : IRosterSource, IScoreboardSource
     {
         static readonly TeamInfo Away = new TeamInfo { Name = "서울 블루윙스", ShortName = "서울" };
         static readonly TeamInfo Home = new TeamInfo { Name = "부산 웨이브스", ShortName = "부산" };
 
-        readonly Dictionary<string, PlayerInfo> _players = new Dictionary<string, PlayerInfo>();
+        static readonly Dictionary<string, (TeamBoxSeed away, TeamBoxSeed home)> BoxSeeds =
+            new Dictionary<string, (TeamBoxSeed, TeamBoxSeed)>
+            {
+                [ScenarioCatalog.EighthBottom] = (
+                    new TeamBoxSeed { RunsByInning = new[] { 0, 0, 1, 0, 0, 2, 0, 0 }, Hits = 7, Errors = 1, Walks = 2 },
+                    new TeamBoxSeed { RunsByInning = new[] { 0, 0, 0, 1, 0, 1, 0, 0 }, Hits = 5, Errors = 0, Walks = 3 }),
+                [ScenarioCatalog.HomeRun] = (
+                    new TeamBoxSeed { RunsByInning = new[] { 0, 1, 0, 2, 0, 1, 0 }, Hits = 8, Errors = 0, Walks = 3 },
+                    new TeamBoxSeed { RunsByInning = new[] { 0, 0, 1, 0, 0, 1, 0 }, Hits = 6, Errors = 1, Walks = 2 }),
+                [ScenarioCatalog.DoublePlay] = (
+                    new TeamBoxSeed { RunsByInning = new[] { 0, 0, 1, 0, 0, 0 }, Hits = 5, Errors = 1, Walks = 2 },
+                    new TeamBoxSeed { RunsByInning = new[] { 1, 0, 0, 2, 0 }, Hits = 7, Errors = 0, Walks = 1 }),
+                [ScenarioCatalog.InningEnd] = (
+                    new TeamBoxSeed { RunsByInning = new[] { 1, 0, 0, 2, 0, 1, 1, 0 }, Hits = 9, Errors = 0, Walks = 2 },
+                    new TeamBoxSeed { RunsByInning = new[] { 0, 2, 0, 0, 1, 0, 1, 0 }, Hits = 8, Errors = 1, Walks = 4 }),
+            };
 
-        public DummyScenarioData()
+        readonly Dictionary<string, PlayerInfo> _players = new Dictionary<string, PlayerInfo>();
+        readonly string _scenarioId;
+
+        public DummyScenarioData(string scenarioId = ScenarioCatalog.EighthBottom)
         {
+            if (!BoxSeeds.ContainsKey(scenarioId))
+                throw new System.ArgumentException($"더미 스코어보드가 없는 시나리오: {scenarioId}", nameof(scenarioId));
+            _scenarioId = scenarioId;
+
             AddPitcher(Fixture8thBottom.Pitcher, "강민혁", TeamSide.Away, "선발", "좌투",
                 "시즌 11승 6패 · 평균자책 3.18", "오늘 7.1이닝 · 2실점", 87, 78);
 
@@ -33,9 +56,15 @@ namespace DailyFranchise.UI.Data
             AddBatter("home_ph2", "류시온", "대타", "우타", "우타 · 정교형 · 대타 타율 .288", null, 0, null, 88);
             AddBatter("home_pr1", "권태하", "대주자", "우타", "주력 상 · 도루 성공률 86%", null, 0, null, 95);
 
-            AddPitcher("home_rp1", "진도겸", TeamSide.Home, "마무리", "우투", "시즌 28세이브 · 평균자책 2.41", "준비 완료", 0, 100);
+            AddPitcher("home_rp1", "진도겸", TeamSide.Home, "마무리", "우투", "시즌 28세이브 · 평균자책 2.41", "오늘 구원 등판", 0, 100);
             AddPitcher("home_rp2", "송유찬", TeamSide.Home, "좌완", "좌투", "시즌 18홀드 · 평균자책 3.05", "몸 푸는 중", 0, 84);
             AddPitcher("home_rp3", "하지완", TeamSide.Home, "롱릴리프", "우투", "시즌 4승 · 평균자책 4.12", "대기", 0, 100);
+            AddPitcher("home_sp", "오준혁", TeamSide.Home, "선발", "우투", "시즌 9승 7패 · 평균자책 3.62", "오늘 5이닝 · 1실점", 78, 81);
+
+            AddPitcher("away_rp1", "백건우", TeamSide.Away, "셋업", "우투", "시즌 22홀드 · 평균자책 2.97", "오늘 구원 등판", 0, 96);
+            AddBatter("away_b1", "김라온", "CF", "우투좌타", "타율 .305 · 27도루", 4, 2, null, 85, TeamSide.Away);
+            AddBatter("away_b4", "배무진", "1B", "우투우타", "타율 .291 · 21홈런", 2, 1, "1볼넷", 77, TeamSide.Away);
+            AddBatter("away_b5", "탁성호", "LF", "좌투좌타", "타율 .268 · 15홈런", 2, 0, null, 73, TeamSide.Away);
         }
 
         public TeamSide MyTeam => TeamSide.Home;
@@ -94,9 +123,8 @@ namespace DailyFranchise.UI.Data
 
         public TeamBoxSeed GetBoxSeed(TeamSide side)
         {
-            return side == TeamSide.Away
-                ? new TeamBoxSeed { RunsByInning = new[] { 0, 0, 1, 0, 0, 2, 0, 0 }, Hits = 7, Errors = 1, Walks = 2 }
-                : new TeamBoxSeed { RunsByInning = new[] { 0, 0, 0, 1, 0, 1, 0, 0 }, Hits = 5, Errors = 0, Walks = 3 };
+            var seeds = BoxSeeds[_scenarioId];
+            return side == TeamSide.Away ? seeds.away : seeds.home;
         }
 
         RosterEntry Slot(int order, string id) =>
@@ -113,11 +141,11 @@ namespace DailyFranchise.UI.Data
         }
 
         void AddBatter(string id, string name, string pos, string hand, string season,
-            int? atBats, int hits, string extra, int fitness)
+            int? atBats, int hits, string extra, int fitness, TeamSide side = TeamSide.Home)
         {
             _players[id] = new PlayerInfo
             {
-                Id = id, Name = name, Side = TeamSide.Home, Position = pos, Handedness = hand,
+                Id = id, Name = name, Side = side, Position = pos, Handedness = hand,
                 SeasonLine = season, TodayAtBats = atBats, TodayHits = hits, TodayExtra = extra, Fitness = fitness,
             };
         }

@@ -64,7 +64,15 @@ namespace DailyFranchise.UI
             stage.Add(fx);
         }
 
+        /// <summary>
+        /// 인플레이 연출(타구선 + 주자 이동)이 끝까지 재생된 순간. 주자가 목적 루(홈 포함)에 닿는 시점과 같다.
+        /// 다른 Show/Reset으로 중단된 연출에서는 발생하지 않는다.
+        /// </summary>
+        public event System.Action AnimationCompleted;
+
         public bool IsAnimating => _anim != null;
+        /// <summary>현재 무대에 있는 주자·타자 토큰 수 (찌꺼기 검사용).</summary>
+        public int TokenCount => _tokens.childCount;
         public bool BattedBallVisible => _lineVisible;
         public float LineProgress => _lineProgress;
         public Vector2 BattedBallEnd => _ballEnd;
@@ -78,8 +86,18 @@ namespace DailyFranchise.UI
             return d;
         }
 
+        /// <summary>진행 중인 연출과 토큰·타구선·루 점유 표시를 모두 지운다. 시나리오 전환 시 사용.</summary>
+        public void Reset()
+        {
+            _anim = null;
+            _lineVisible = false;
+            _lineProgress = 0f;
+            PlaceStatic(BaseState.Empty);
+        }
+
         /// <param name="animate">인플레이일 때 타구선·주자 이동을 재생할지. false면 최종 상태를 바로 그린다.</param>
-        public void Show(ScreenState s, bool animate)
+        /// <returns>연출을 시작했으면 true. 이때 끝나면 AnimationCompleted가 발생한다.</returns>
+        public bool Show(ScreenState s, bool animate)
         {
             _anim = null;
             var e = s.Pitch;
@@ -95,7 +113,7 @@ namespace DailyFranchise.UI
             {
                 _lineProgress = inPlay ? 1f : 0f;
                 PlaceStatic(s.Runners);
-                return;
+                return false;
             }
 
             _lineProgress = 0f;
@@ -103,6 +121,7 @@ namespace DailyFranchise.UI
             SetBases(e.RunnersBefore);
             _anim = new Animation { Moves = BuildMoves(e), Final = e.RunnersAfter };
             Apply(0f);
+            return true;
         }
 
         /// <param name="scaledSeconds">배속을 곱한 경과 시간.</param>
@@ -116,6 +135,7 @@ namespace DailyFranchise.UI
                 _anim = null;
                 _lineProgress = 1f;
                 PlaceStatic(final);
+                AnimationCompleted?.Invoke();
                 return;
             }
             Apply(_anim.Elapsed);
@@ -131,7 +151,8 @@ namespace DailyFranchise.UI
 
         /// <summary>
         /// 주자·타자 이동 경로. 안타면 루상에서 사라진 주자는 홈인.
-        /// 아웃 타구면 사라진 주자 중 앞선 주자부터 득점 수만큼 홈인, 나머지는 아웃으로 보고 제자리에서 사라진다.
+        /// 아웃 타구면 사라진 주자 중 앞선 주자부터 득점 수만큼 홈인, 나머지는 아웃으로 보고
+        /// 다음 루 방향으로 뛰다가(포스 아웃) 연출이 끝날 때 사라진다.
         /// </summary>
         List<RunnerMove> BuildMoves(PitchEvent e)
         {
@@ -146,7 +167,7 @@ namespace DailyFranchise.UI
                 int to;
                 if (after.TryGetValue(r.Key, out int b)) to = b;
                 else if (hit || runsBudget > 0) { to = 4; runsBudget--; }
-                else to = r.Value;
+                else to = r.Value < 3 ? r.Value + 1 : r.Value;
                 moves.Add(new RunnerMove { Token = AddToken(r.Key, false), Path = FieldGeometry.RunPath(r.Value, to) });
             }
 

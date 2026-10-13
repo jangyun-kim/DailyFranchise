@@ -64,7 +64,7 @@ namespace DailyFranchise.UI
         public static string HalfText(PitchEvent e) =>
             $"{e.Inning}회{(e.HalfInning == HalfInning.Top ? "초" : "말")}";
 
-        public static string OutsText(int outs) => outs == 0 ? "무사" : $"{outs}사";
+        public static string OutsText(int outs) => outs == 0 ? "무사" : outs >= 3 ? "3아웃" : $"{outs}사";
 
         public static string PlayTypeText(PlayType t)
         {

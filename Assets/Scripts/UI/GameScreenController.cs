@@ -8,8 +8,9 @@ using UnityEngine.UIElements;
 namespace DailyFranchise.UI
 {
     /// <summary>
-    /// 1920×1080 경기 화면. Fixture8thBottom을 읽기 전용으로 재생하며,
+    /// 1920×1080 경기 화면. ScenarioCatalog의 고정 장면을 읽기 전용으로 재생하며,
     /// 이름·기록은 IRosterSource / IScoreboardSource에서 가져온다.
+    /// 점수·H·아웃·주자·타자 기록은 필드 연출이 끝나는 순간에 반영한다 (StatsSync).
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class GameScreenController : MonoBehaviour
@@ -24,6 +25,8 @@ namespace DailyFranchise.UI
         IRosterSource _roster;
         IScoreboardSource _scoreboard;
         PitchPlayback _playback;
+        readonly StatsSync _sync = new StatsSync();
+        string _scenarioId = ScenarioCatalog.EighthBottom;
 
         VisualElement _root;
         AbsZoneView _abs;
@@ -37,29 +40,54 @@ namespace DailyFranchise.UI
         VisualElement _lineup, _bench, _bullpen;
         VisualElement _log;
         Label _featuredName, _featuredLine, _position;
+        VisualElement _scenarioTabs;
         Button _speed1, _speed2, _speed4, _pauseChip;
         Button _restart, _nextPitch, _nextPa, _inningEnd, _gameEnd, _auto;
 
         public PitchPlayback Playback => _playback;
         public AbsZoneView AbsZone => _abs;
         public FieldView Field => _field;
+        public StatsSync Sync => _sync;
+        public string ScenarioId => _scenarioId;
 
         /// <summary>배속별 판정 점등 시간 (초). x4는 생략.</summary>
         public static float FlashSecondsFor(int speed) => speed == 1 ? 0.40f : speed == 2 ? 0.25f : 0f;
 
         void OnEnable()
         {
-            _fixture = Fixture8thBottom.Create();
-            var data = new DummyScenarioData();
+            Bind(GetComponent<UIDocument>().rootVisualElement);
+            LoadScenario(_scenarioId);
+        }
+
+        void OnDisable() => DetachPlayback();
+
+        /// <summary>
+        /// 시나리오를 교체한다. 이전 재생기 구독, 필드 연출·토큰, ABS 점등·마커, 로그, 기록 동기화를 모두 초기화한다.
+        /// 배속 설정은 유지한다.
+        /// </summary>
+        public void LoadScenario(string scenarioId)
+        {
+            var entry = ScenarioCatalog.Find(scenarioId);
+            int speed = _playback?.Speed ?? 1;
+            DetachPlayback();
+
+            _scenarioId = entry.Id;
+            _fixture = entry.Create();
+            var data = new DummyScenarioData(entry.Id);
             _roster = data;
             _scoreboard = data;
 
             _playback = new PitchPlayback(_fixture.Events);
+            _playback.SetSpeed(speed);
             _playback.IndexChanged += OnIndexChanged;
             _playback.StateChanged += OnPlaybackStateChanged;
 
-            Bind(GetComponent<UIDocument>().rootVisualElement);
+            _sync.Reset();
+            _field.Reset();
+            _abs.CancelFlash();
+
             RenderRoster();
+            RenderScenarioTabs();
             Render();
             RenderControls();
             _field.Show(CurrentState(), animate: false);
@@ -67,11 +95,12 @@ namespace DailyFranchise.UI
             if (autoPlayOnStart) _playback.Play();
         }
 
-        void OnDisable()
+        void DetachPlayback()
         {
             if (_playback == null) return;
             _playback.IndexChanged -= OnIndexChanged;
             _playback.StateChanged -= OnPlaybackStateChanged;
+            _playback.Pause();
         }
 
         void Update()
@@ -81,15 +110,26 @@ namespace DailyFranchise.UI
             _field.Tick(Time.deltaTime * _playback.Speed);
         }
 
-        ScreenState CurrentState() =>
-            ScreenState.Build(_fixture.Events, _fixture.AwayScoreBefore, _fixture.HomeScoreBefore, _playback.Index);
+        ScreenState CurrentState() => StateAt(_playback.Index);
+
+        /// <summary>기록 표시용 상태: 필드 연출이 끝나기 전에는 직전 투구까지.</summary>
+        ScreenState StatsState() => StateAt(_sync.StatsIndex);
+
+        ScreenState StateAt(int index) =>
+            ScreenState.Build(_fixture.Events, _fixture.AwayScoreBefore, _fixture.HomeScoreBefore, index);
 
         void OnIndexChanged(int index)
         {
+            bool animating = _field.Show(CurrentState(), animate: true);
+            _sync.OnIndexChanged(index, animating);
             Render();
             RenderControls();
-            _field.Show(CurrentState(), animate: true);
             _abs.Flash(index >= 0 ? _fixture.Events[index] : null, FlashSecondsFor(_playback.Speed));
+        }
+
+        void OnFieldAnimationCompleted()
+        {
+            if (_sync.OnAnimationCompleted()) Render();
         }
 
         void OnPlaybackStateChanged()
@@ -103,6 +143,7 @@ namespace DailyFranchise.UI
             _root = root;
             _abs = new AbsZoneView(root);
             _field = new FieldView(root);
+            _field.AnimationCompleted += OnFieldAnimationCompleted;
 
             _awayName = root.Q<Label>("away-name");
             _homeName = root.Q<Label>("home-name");
@@ -145,6 +186,7 @@ namespace DailyFranchise.UI
             _featuredName = root.Q<Label>("featured-name");
             _featuredLine = root.Q<Label>("featured-line");
             _position = root.Q<Label>("playback-position");
+            _scenarioTabs = root.Q("scenario-tabs");
 
             // 작전 버튼은 아직 연결 전이므로 비활성.
             root.Query<Button>(className: "btn--inactive").ForEach(b => b.SetEnabled(false));
@@ -156,7 +198,8 @@ namespace DailyFranchise.UI
             _speed1.clicked += () => _playback.SetSpeed(1);
             _speed2.clicked += () => _playback.SetSpeed(2);
             _speed4.clicked += () => _playback.SetSpeed(4);
-            _pauseChip.clicked += _playback.TogglePlay;
+            // 재생기는 시나리오마다 새로 만들므로 메서드 그룹이 아니라 람다로 현재 인스턴스를 참조한다.
+            _pauseChip.clicked += () => _playback.TogglePlay();
 
             _restart = root.Q<Button>("ctl-restart");
             _nextPitch = root.Q<Button>("ctl-next-pitch");
@@ -164,12 +207,28 @@ namespace DailyFranchise.UI
             _inningEnd = root.Q<Button>("ctl-inning-end");
             _gameEnd = root.Q<Button>("ctl-game-end");
             _auto = root.Q<Button>("ctl-auto");
-            _restart.clicked += _playback.Restart;
-            _nextPitch.clicked += _playback.StepPitch;
-            _nextPa.clicked += _playback.SkipToPlateAppearanceEnd;
-            _inningEnd.clicked += _playback.SkipToHalfInningEnd;
-            _gameEnd.clicked += _playback.SkipToEnd;
-            _auto.clicked += _playback.TogglePlay;
+            _restart.clicked += () => _playback.Restart();
+            _nextPitch.clicked += () => _playback.StepPitch();
+            _nextPa.clicked += () => _playback.SkipToPlateAppearanceEnd();
+            _inningEnd.clicked += () => _playback.SkipToHalfInningEnd();
+            _gameEnd.clicked += () => _playback.SkipToEnd();
+            _auto.clicked += () => _playback.TogglePlay();
+
+            // 디버그 전용 시나리오 탭
+            _scenarioTabs.Clear();
+            foreach (var entry in ScenarioCatalog.All)
+            {
+                string id = entry.Id;
+                var tab = new Button(() => LoadScenario(id)) { text = entry.Label, name = "scenario-" + id, userData = id };
+                tab.AddToClassList("debug-strip__btn");
+                _scenarioTabs.Add(tab);
+            }
+        }
+
+        void RenderScenarioTabs()
+        {
+            foreach (var tab in _scenarioTabs.Children())
+                tab.EnableInClassList("debug-strip__btn--active", (string)tab.userData == _scenarioId);
         }
 
         string NameOf(string playerId) => _roster.GetPlayer(playerId).Name;
@@ -240,38 +299,48 @@ namespace DailyFranchise.UI
         void Render()
         {
             var events = _fixture.Events;
+            // s: 지금 보여주는 투구 (ABS·중계·결과 문구는 즉시)
+            // st: 기록 반영 기준 (점수·H·아웃·주자·타자 기록은 필드 연출이 끝난 뒤)
             var s = CurrentState();
+            var st = StatsState();
+            bool committed = st.Index == s.Index;
             var e = s.Pitch;
             var away = _roster.GetTeam(TeamSide.Away);
             var home = _roster.GetTeam(TeamSide.Home);
             var battingTeam = s.HomeBatting ? home : away;
             string half = $"{s.Inning}회{(s.HomeBatting ? "말" : "초")}";
+            bool inningOver = st.Outs >= 3;
 
-            // 헤더 (현재 = 투구 후 상태)
-            _awayScore.text = s.AwayScore.ToString();
-            _homeScore.text = s.HomeScore.ToString();
-            _statusInning.text = $"{half} · {PitchPresentation.OutsText(s.Outs)} · {s.Runners}";
-            _statusCount.text = s.PlateAppearanceEnded
-                ? $"타석 종료 · {PitchPresentation.ResultText(e)}  ·  O {s.Outs}"
-                : $"B {s.Count.Balls}  ·  S {s.Count.Strikes}  ·  O {s.Outs}";
-            RenderLineScore(s);
+            // 헤더
+            _awayScore.text = st.AwayScore.ToString();
+            _homeScore.text = st.HomeScore.ToString();
+            _statusInning.text = inningOver
+                ? $"{half} · 3아웃 · 이닝 종료"
+                : $"{half} · {PitchPresentation.OutsText(st.Outs)} · {st.Runners}";
+            _statusCount.text = inningOver ? $"공수교대 · 다음 {NextHalfText(s)}"
+                : s.PlateAppearanceEnded ? $"타석 종료 · {PitchPresentation.ResultText(e)}  ·  O {st.Outs}"
+                : $"B {s.Count.Balls}  ·  S {s.Count.Strikes}  ·  O {st.Outs}";
+            RenderLineScore(s, st);
 
-            // 중앙 헤드라인 (투구 직전 상황)
-            _headlineMain.text = $"{half} · {battingTeam.ShortName} 공격 · " +
-                                 $"{PitchPresentation.OutsText(s.OutsBefore)} {s.RunnersBefore}";
-            _headlineSub.text = $"{away.ShortName} {s.AwayScore} : {home.ShortName} {s.HomeScore} · " +
-                                ScoreSituation(away.ShortName, s.AwayScore, home.ShortName, s.HomeScore);
+            // 중앙 헤드라인 (투구 직전 상황 / 이닝 종료 시 공수교대)
+            _headlineMain.text = inningOver
+                ? $"{half} 종료 · 공수교대"
+                : $"{half} · {battingTeam.ShortName} 공격 · {PitchPresentation.OutsText(s.OutsBefore)} {s.RunnersBefore}";
+            _headlineSub.text = $"{away.ShortName} {st.AwayScore} : {home.ShortName} {st.HomeScore} · " +
+                                ScoreSituation(away.ShortName, st.AwayScore, home.ShortName, st.HomeScore);
 
-            // 필드 (현재 주자). 루 점유·주자 토큰·타구선은 FieldView가 그린다.
-            _runner3.text = $"3루  {RunnerName(s.Runners.Third)}";
-            _runner2.text = $"2루  {RunnerName(s.Runners.Second)}";
-            _runner1.text = $"1루  {RunnerName(s.Runners.First)}";
+            // 필드. 루 점유·주자 토큰·타구선은 FieldView가 그린다.
+            _runner3.text = $"3루  {RunnerName(st.Runners.Third)}";
+            _runner2.text = $"2루  {RunnerName(st.Runners.Second)}";
+            _runner1.text = $"1루  {RunnerName(st.Runners.First)}";
             _playResult.text = e == null ? "투구 대기" : e.PlayResult ?? PitchPresentation.ResultText(e);
             SetOptional(_playType, e != null && e.PlayType != PlayType.None && e.SprayAngleDeg.HasValue
-                ? $"{PitchPresentation.PlayTypeText(e.PlayType)} · {PitchPresentation.DirectionText(e.SprayAngleDeg.Value)}"
+                ? $"{PlayTypeLabel(e)} · {PitchPresentation.DirectionText(e.SprayAngleDeg.Value)}"
                 : null);
-            SetOptional(_playRuns, e != null && e.RunsScored > 0 ? $"득점 +{e.RunsScored}" : null);
-            SetOptional(_playOuts, e != null && e.OutsAfter != e.OutsBefore ? $"아웃 {e.OutsBefore} → {e.OutsAfter}" : null);
+            SetOptional(_playRuns, committed && e != null && e.RunsScored > 0 ? $"득점 +{e.RunsScored}" : null);
+            SetOptional(_playOuts, committed && e != null && e.OutsAfter != e.OutsBefore
+                ? $"아웃 {e.OutsBefore} → {e.OutsAfter}{(e.OutsAfter >= 3 ? " · 이닝 종료" : "")}"
+                : null);
 
             // 투수·타자
             var pitcher = _roster.GetPlayer(s.PitcherId);
@@ -285,7 +354,7 @@ namespace DailyFranchise.UI
             _batterName.text = batter.Name;
             _batterTeam.text = $"{_roster.GetTeam(batter.Side).ShortName} · {batter.Handedness} · {batter.Position}";
             _batterSeason.text = batter.SeasonLine;
-            string batterToday = TodayBatting(batter, s.Index);
+            string batterToday = TodayBatting(batter, st.Index);
             _batterLine1.text = s.PitchNumberInPlateAppearance == 0
                 ? $"{batterToday} · 타석 대기"
                 : $"{batterToday} · 이번 타석 {s.PitchNumberInPlateAppearance}구째";
@@ -299,16 +368,16 @@ namespace DailyFranchise.UI
                 var player = _roster.GetPlayer(id);
                 if (player.TodayAtBats.HasValue)
                 {
-                    var (ab, h) = TodayTotals(player, s.Index);
+                    var (ab, h) = TodayTotals(player, st.Index);
                     row.Q<Label>(className: "roster-state").text = $"{h}-{ab}";
                 }
                 row.EnableInClassList("roster-row--current", id == s.BatterId);
                 row.EnableInClassList("roster-row--onbase",
-                    id != null && (id == s.Runners.First || id == s.Runners.Second || id == s.Runners.Third));
+                    id != null && (id == st.Runners.First || id == st.Runners.Second || id == st.Runners.Third));
             }
 
             var featured = _roster.GetPlayer(_roster.FeaturedPlayerId);
-            _featuredLine.text = $"{featured.SeasonLine} / {TodayBatting(featured, s.Index)}";
+            _featuredLine.text = $"{featured.SeasonLine} / {TodayBatting(featured, st.Index)}";
 
             bool showHistory = !(_playback.IsPlaying && _playback.Speed >= 4);
             _abs.Render(events, s, NameOf, showHistory);
@@ -317,7 +386,19 @@ namespace DailyFranchise.UI
 
         string RunnerName(string id) => id == null ? "—" : NameOf(id);
 
-        void RenderLineScore(ScreenState s)
+        string NextHalfText(ScreenState s) => s.HomeBatting
+            ? $"{s.Inning + 1}회초 {_roster.GetTeam(TeamSide.Away).ShortName} 공격"
+            : $"{s.Inning}회말 {_roster.GetTeam(TeamSide.Home).ShortName} 공격";
+
+        /// <summary>타구 종류 표기. 아웃이 2개 늘어난 땅볼은 병살로 표시한다.</summary>
+        static string PlayTypeLabel(PitchEvent e) =>
+            e.PlayType == PlayType.GroundOut && e.OutsAfter - e.OutsBefore >= 2
+                ? "땅볼 병살"
+                : PitchPresentation.PlayTypeText(e.PlayType);
+
+        /// <param name="s">현재 투구 (어느 반 이닝을 강조할지).</param>
+        /// <param name="st">기록 반영 기준 (득점·H·B를 어디까지 셀지).</param>
+        void RenderLineScore(ScreenState s, ScreenState st)
         {
             _lineScore.Clear();
             int innings = Mathf.Max(MinInnings, s.Inning);
@@ -330,8 +411,8 @@ namespace DailyFranchise.UI
             foreach (var h in new[] { "R", "H", "E", "B" }) head.Add(Cell(h, "ls-cell--head"));
             _lineScore.Add(head);
 
-            _lineScore.Add(TeamRow(TeamSide.Away, HalfInning.Top, s.AwayScore));
-            _lineScore.Add(TeamRow(TeamSide.Home, HalfInning.Bottom, s.HomeScore));
+            _lineScore.Add(TeamRow(TeamSide.Away, HalfInning.Top, st.AwayScore));
+            _lineScore.Add(TeamRow(TeamSide.Home, HalfInning.Bottom, st.HomeScore));
 
             VisualElement TeamRow(TeamSide side, HalfInning half, int total)
             {
@@ -341,24 +422,19 @@ namespace DailyFranchise.UI
                 for (int i = 1; i <= innings; i++)
                 {
                     int cmp = CompareHalf(i, half, s.Inning, s.Half);
-                    int seedRuns = i <= seed.RunsByInning.Length ? seed.RunsByInning[i - 1] : 0;
+                    bool seeded = i <= seed.RunsByInning.Length;
+                    int runs = (seeded ? seed.RunsByInning[i - 1] : 0) +
+                               (st.Index < 0 ? 0 : ScenarioReadModel.RunsInHalfThrough(events, st.Index, i, half));
                     if (cmp == 0)
-                    {
-                        int runs = seedRuns + (s.Index < 0 ? 0 : ScenarioReadModel.RunsInHalfThrough(events, s.Index, i, half));
                         row.Add(Cell(runs.ToString(), "ls-cell--current"));
-                    }
-                    else if (cmp < 0)
-                    {
-                        row.Add(Cell(i <= seed.RunsByInning.Length ? seedRuns.ToString() : Unknown, null));
-                    }
+                    else if (cmp < 0) // 장면 안에서 끝난 반 이닝의 득점도 포함
+                        row.Add(Cell(seeded || HalfInScene(i, half) ? runs.ToString() : Unknown, null));
                     else
-                    {
                         row.Add(Cell("", null));
-                    }
                 }
                 row.Add(Gap());
                 row.Add(Cell(total.ToString(), "ls-cell--total"));
-                int hits = seed.Hits + (s.Index < 0 ? 0 : ScenarioReadModel.HitsThrough(events, s.Index, half));
+                int hits = seed.Hits + (st.Index < 0 ? 0 : ScenarioReadModel.HitsThrough(events, st.Index, half));
                 row.Add(Named(Cell(hits.ToString(), null), side, "h"));
                 row.Add(Named(Cell(seed.Errors.ToString(), null), side, "e"));
                 row.Add(Named(Cell((seed.Walks + WalksInScene(half)).ToString(), null), side, "b"));
@@ -371,10 +447,17 @@ namespace DailyFranchise.UI
                 return l;
             }
 
+            bool HalfInScene(int inning, HalfInning half)
+            {
+                foreach (var ev in events)
+                    if (ev.Inning == inning && ev.HalfInning == half) return true;
+                return false;
+            }
+
             int WalksInScene(HalfInning half)
             {
                 int n = 0;
-                for (int i = 0; i <= s.Index; i++)
+                for (int i = 0; i <= st.Index; i++)
                     if (events[i].HalfInning == half && events[i].Outcome == PlateAppearanceOutcome.Walk) n++;
                 return n;
             }
