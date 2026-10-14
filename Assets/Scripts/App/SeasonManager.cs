@@ -1,3 +1,5 @@
+using System;
+using DailyFranchise.App.Data;
 using DailyFranchise.Sim;
 using DailyFranchise.Sim.Fixtures;
 using DailyFranchise.UI;
@@ -14,6 +16,8 @@ namespace DailyFranchise.App
     /// - 경기 화면: 일정표의 대진으로 시즌 경기 장면(작전 승부처)을 불러오고, GameScreenController.ExitRequested(최종 점수)를
     ///   구독해 결과를 시즌 성적·순위에 반영·저장한 뒤 로비로 복귀
     /// - 저장: 처음 만들어질 때(로비 최초 진입) 저장 파일이 있으면 이어서, 없으면 새 시즌. 매 경기 결과 반영 직후 저장.
+    /// - 선수 DB: 처음 만들어질 때 <see cref="MasterDatabase"/>를 읽는다 (기본 비동기). 다 읽기 전에는 경기를 시작하지 않는다.
+    ///   경기 시작 시 일정의 두 구단 선수단을 대진에 실어 경기 화면에 넘긴다.
     /// </summary>
     public sealed class SeasonManager : MonoBehaviour
     {
@@ -42,6 +46,18 @@ namespace DailyFranchise.App
         /// </summary>
         public static string SavePathOverride { get; set; }
 
+        /// <summary>
+        /// true면 선수 DB를 Awake에서 동기로 읽는다 (테스트용). false(기본)면 코루틴으로 비동기로 읽는다.
+        /// SeasonManager가 만들어지기 전에 정해야 한다.
+        /// </summary>
+        public static bool LoadDatabaseSynchronously { get; set; }
+
+        /// <summary>선수·구단 마스터 데이터. 아직 읽는 중이면 null.</summary>
+        public MasterDatabase Database { get; private set; }
+        public bool IsDatabaseReady => Database != null;
+        /// <summary>선수 DB를 다 읽었을 때 (비동기 로딩 완료 시점). 동기 로딩이면 Awake 안에서 이미 끝나 있다.</summary>
+        public event Action DatabaseReady;
+
         public SaveManager Saves { get; private set; }
         /// <summary>시작할 때 시즌을 어떻게 얻었는지 (불러옴 / 새 시즌 / 손상 복구).</summary>
         public SeasonLoadStatus LoadStatus { get; private set; }
@@ -68,6 +84,8 @@ namespace DailyFranchise.App
             Saves = new SaveManager(SavePathOverride ?? SaveManager.DefaultPath);
             Season = Saves.LoadOrCreate(SeasonState.CreateDummy, out var status);
             LoadStatus = status;
+            if (LoadDatabaseSynchronously) SetDatabase(MasterDatabase.LoadFromResources());
+            else StartCoroutine(MasterDatabase.LoadFromResourcesAsync(SetDatabase));
             SceneManager.sceneLoaded += OnSceneLoaded;
             SceneManager.sceneUnloaded += OnSceneUnloaded;
         }
@@ -81,10 +99,16 @@ namespace DailyFranchise.App
             Instance = null;
         }
 
-        /// <returns>경기 화면으로 넘어가면 true. 이미 전환 중이거나 남은 경기가 없으면 false.</returns>
+        void SetDatabase(MasterDatabase database)
+        {
+            Database = database;
+            DatabaseReady?.Invoke();
+        }
+
+        /// <returns>경기 화면으로 넘어가면 true. 이미 전환 중이거나, 선수 DB를 읽는 중이거나, 남은 경기가 없으면 false.</returns>
         public bool StartNextGame()
         {
-            if (_loading || Season.InProgress != null || Season.NextGame == null) return false;
+            if (_loading || !IsDatabaseReady || Season.InProgress != null || Season.NextGame == null) return false;
             Season.StartNextGame();
             Load(GameScene);
             return true;
@@ -98,13 +122,30 @@ namespace DailyFranchise.App
             _game = FindAnyObjectByType<GameScreenController>();
             if (_game == null) return;
             _game.ExitRequested += OnGameExitRequested;
-            if (Season.InProgress != null) _game.LoadScenario(SeasonGameScenario, MatchupOf(Season.InProgress));
+            if (Season.InProgress == null) return;
+            if (Database != null && !Database.IsEmpty)
+                _game.RosterSourceLabel = $"{MasterDatabase.RosterFileName} ({Database.Season})";
+            _game.LoadScenario(SeasonGameScenario, MatchupOf(Season.InProgress));
         }
 
-        /// <summary>일정표 경기의 대진. 원정·홈과 팀명은 일정 그대로, 내 구단 쪽을 함께 넘긴다.</summary>
-        public Matchup MatchupOf(ScheduledGame game) =>
-            Matchup.FromNames(game.AwayTeam, game.HomeTeam,
-                game.HomeTeam == Season.MyTeam ? TeamSide.Home : TeamSide.Away);
+        /// <summary>
+        /// 일정표 경기의 대진. 원정·홈과 팀명은 일정 그대로, 내 구단 쪽을 함께 넘긴다.
+        /// 선수 DB에 구단 정보·선수단이 있으면 약칭과 선수단(<see cref="TeamRoster"/>)도 싣는다.
+        /// </summary>
+        public Matchup MatchupOf(ScheduledGame game)
+        {
+            var mySide = game.HomeTeam == Season.MyTeam ? TeamSide.Home : TeamSide.Away;
+            return new Matchup(TeamInfoOf(game.AwayTeam), TeamInfoOf(game.HomeTeam), mySide,
+                Database?.GetRoster(game.AwayTeam), Database?.GetRoster(game.HomeTeam));
+        }
+
+        TeamInfo TeamInfoOf(string team)
+        {
+            var data = Database?.FindTeam(team);
+            return data != null
+                ? new TeamInfo { Name = data.Name, ShortName = data.ShortName }
+                : Matchup.TeamFromName(team);
+        }
 
         void OnSceneUnloaded(Scene scene)
         {

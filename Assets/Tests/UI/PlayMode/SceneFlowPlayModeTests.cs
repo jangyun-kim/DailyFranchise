@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using DailyFranchise.App;
+using DailyFranchise.App.Data;
 using DailyFranchise.Sim;
 using DailyFranchise.Sim.Fixtures;
 using NUnit.Framework;
@@ -24,6 +25,7 @@ namespace DailyFranchise.UI.Tests
         {
             DestroyManager();
             SeasonManager.SavePathOverride = TestSavePath;
+            SeasonManager.LoadDatabaseSynchronously = true; // 로비 진입 즉시 시작 버튼이 열리도록
             DeleteSave();
             SceneManager.LoadScene(SeasonManager.LobbyScene);
             yield return WaitForScene(SeasonManager.LobbyScene);
@@ -37,6 +39,7 @@ namespace DailyFranchise.UI.Tests
             DestroyManager();
             DeleteSave();
             SeasonManager.SavePathOverride = null;
+            SeasonManager.LoadDatabaseSynchronously = false;
             yield return null;
         }
 
@@ -304,6 +307,64 @@ namespace DailyFranchise.UI.Tests
             Assert.That(SeasonManager.Instance.LoadStatus, Is.EqualTo(SeasonLoadStatus.RecoveredFromCorrupt));
             Assert.That(LobbyRoot().Q<Label>("next-game").text, Does.StartWith("경기 1 · "));
             Assert.That(SaveManager.FromJson(File.ReadAllText(TestSavePath)).GamesPlayed, Is.EqualTo(0), "새 시즌으로 덮어씀");
+        }
+
+        [UnityTest]
+        public IEnumerator 선수_DB는_기본적으로_비동기로_읽고_다_읽기_전에는_경기를_시작하지_않는다()
+        {
+            DestroyManager();
+            yield return null;
+            SeasonManager.LoadDatabaseSynchronously = false;
+            var manager = SeasonManager.EnsureExists();
+            Assert.That(manager.IsDatabaseReady, Is.False, "Awake 직후에는 아직 읽는 중");
+            Assert.That(manager.StartNextGame(), Is.False, "DB 준비 전 경기 시작 거부");
+
+            int readyEvents = 0;
+            manager.DatabaseReady += () => readyEvents++;
+            float timeout = Time.realtimeSinceStartup + 10f;
+            while (!manager.IsDatabaseReady && Time.realtimeSinceStartup < timeout) yield return null;
+            Assert.That(manager.IsDatabaseReady, Is.True, "비동기 로딩 완료");
+            Assert.That(readyEvents, Is.EqualTo(1));
+            Assert.That(manager.Database.IsEmpty, Is.False);
+            Assert.That(manager.Database.GetRoster(manager.Season.MyTeam), Is.Not.Null);
+
+            // 이미 만들어진 매니저로 로비를 다시 그리면 DB 선수단과 열린 시작 버튼이 보인다.
+            SceneManager.LoadScene(SeasonManager.LobbyScene);
+            yield return null;
+            yield return null;
+            yield return null;
+            var root = LobbyRoot();
+            Assert.That(root.Q<Button>("start-game").enabledSelf, Is.True);
+            Assert.That(root.Q("roster").Query<Label>(className: "col-name").ToList().Select(l => l.text),
+                Is.EqualTo(manager.Database.GetRoster(manager.Season.MyTeam).Lineup.Select(p => p.Name)));
+            Assert.That(root.Q<Label>("roster-source").text, Does.Contain(MasterDatabase.RosterFileName));
+        }
+
+        [UnityTest]
+        public IEnumerator 경기_화면의_좌측_선수단과_타석_카드가_DB_선수_이름으로_표시된다()
+        {
+            var db = SeasonManager.Instance.Database;
+            var mine = db.GetRoster("부산 웨이브스");
+            Submit(LobbyRoot().Q<Button>("start-game"));
+            yield return WaitForScene(SeasonManager.GameScene);
+            var game = Object.FindAnyObjectByType<GameScreenController>();
+            game.Playback.Pause();
+            yield return null;
+            var root = game.GetComponent<UIDocument>().rootVisualElement;
+
+            Assert.That(root.Q("lineup").Query<Label>(className: "roster-name").ToList().Select(l => l.text),
+                Is.EqualTo(mine.Lineup.Select(p => p.Name)), "좌측 라인업 = DB 타순");
+            Assert.That(root.Q("lineup").Query<Label>(className: "roster-pos").ToList().Select(l => l.text),
+                Is.EqualTo(mine.Lineup.Select(p => p.Position)));
+            Assert.That(root.Q<Label>("batter-name").text, Is.EqualTo("성지환"), "타석 카드: 최도윤 → 성지환");
+            Assert.That(root.Q<Label>("batter-team").text, Does.Contain("좌투좌타").And.Contain("RF"));
+            Assert.That(root.Q<Label>("pitcher-name").text, Is.EqualTo("염태준"), "상대 선발: 강민혁 → 염태준");
+            Assert.That(root.Q<Label>("featured-name").text, Does.StartWith("성지환"));
+            Assert.That(root.Q<Label>("roster-source").text, Is.EqualTo($"표시 데이터: {MasterDatabase.RosterFileName} (2026)"));
+
+            var texts = root.Query<Label>().ToList().Select(l => l.text).ToList();
+            foreach (var dummyName in new[] { "최도윤", "강민혁", "윤재민", "한지후" })
+                Assert.That(texts.Any(t => t.Contains(dummyName)), Is.False, $"더미 이름 '{dummyName}'이 남아 있음");
         }
 
         [UnityTest]

@@ -78,6 +78,7 @@ namespace DailyFranchise.UI.Data
 
         public TeamSide MyTeam => _matchup.MySide;
         public string FeaturedPlayerId => Fixture8thBottom.Batter1;
+        public string SourceLabel => "가상 더미 (DummyScenarioData)";
 
         /// <summary>내 구단이 원정이라 더미 데이터의 원정 ↔ 홈을 뒤집었는지. 이때 장면도 뒤집어 재생해야 한다.</summary>
         public bool Mirrored => _matchup.MySide != NativeMySide;

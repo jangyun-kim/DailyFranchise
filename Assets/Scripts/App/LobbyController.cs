@@ -1,3 +1,5 @@
+using DailyFranchise.App.Data;
+using DailyFranchise.Sim.Data;
 using DailyFranchise.UI.Data;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -7,26 +9,34 @@ namespace DailyFranchise.App
     /// <summary>
     /// 1920×1080 로비. SeasonManager의 시즌 상태를 읽어 일정·순위·라인업을 표시하고,
     /// [다음 경기 시작]으로 경기 화면 진입을 요청한다. 경기 화면을 직접 참조하지 않는다.
+    /// 선수 DB를 읽는 동안에는 시작 버튼을 잠그고, 다 읽으면 다시 그린다.
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class LobbyController : MonoBehaviour
     {
         VisualElement _root;
         Button _start;
+        SeasonManager _manager;
 
         void OnEnable()
         {
             _root = GetComponent<UIDocument>().rootVisualElement;
             _start = _root.Q<Button>("start-game");
             _start.clicked += OnStartClicked;
-            Render(SeasonManager.EnsureExists().Season);
+            _manager = SeasonManager.EnsureExists();
+            _manager.DatabaseReady += OnDatabaseReady;
+            Render();
         }
 
         void OnDisable()
         {
             if (_start != null) _start.clicked -= OnStartClicked;
+            if (_manager != null) _manager.DatabaseReady -= OnDatabaseReady;
             _start = null;
+            _manager = null;
         }
+
+        void OnDatabaseReady() => Render();
 
         void OnStartClicked()
         {
@@ -36,8 +46,9 @@ namespace DailyFranchise.App
             if (manager.StartNextGame()) _start.SetEnabled(false);
         }
 
-        void Render(SeasonState season)
+        void Render()
         {
+            var season = _manager.Season;
             Q<Label>("season-title").text = season.SeasonTitle;
             Q<Label>("my-team").text = season.MyTeam;
             var me = season.MyStanding;
@@ -45,7 +56,7 @@ namespace DailyFranchise.App
                 ? "—"
                 : $"{me.Rank}위 · {me.Wins}승 {me.Losses}패 {me.Draws}무 · 승률 {me.WinPctText} · 진행 {season.GamesPlayed} / {season.Schedule.Count}경기";
 
-            RenderRoster();
+            RenderRoster(season);
             RenderSchedule(season);
             RenderStandings(season);
 
@@ -53,13 +64,22 @@ namespace DailyFranchise.App
             Q<Label>("next-game").text = next == null
                 ? "시즌 일정이 모두 끝났습니다."
                 : $"경기 {next.Number} · {next.Date} · {next.MatchupText} · {next.Stadium}";
-            _start.text = next == null ? "시즌 종료" : "다음 경기 시작";
-            _start.SetEnabled(next != null && season.InProgress == null);
+            _start.text = next == null ? "시즌 종료" : !_manager.IsDatabaseReady ? "선수 데이터 불러오는 중…" : "다음 경기 시작";
+            _start.SetEnabled(next != null && season.InProgress == null && _manager.IsDatabaseReady);
         }
 
-        void RenderRoster()
+        void RenderRoster(SeasonState season)
         {
-            // 경기 화면과 같은 더미 선수 데이터를 쓴다 (내 구단 = 홈 부산 웨이브스).
+            var db = _manager.Database;
+            var mine = db?.GetRoster(season.MyTeam);
+            if (mine != null && mine.Lineup.Count > 0)
+            {
+                RenderDatabaseRoster(mine);
+                Q<Label>("roster-source").text = $"표시 데이터: {MasterDatabase.RosterFileName} ({db.Season})";
+                return;
+            }
+
+            // 선수 DB가 없거나 아직 읽는 중이면 경기 화면과 같은 더미 선수 데이터를 쓴다.
             var roster = new DummyScenarioData();
             var container = Q("roster");
             container.Clear();
@@ -73,6 +93,18 @@ namespace DailyFranchise.App
                     Cell(p.Handedness, "col-hand")));
             }
             Q<Label>("roster-source").text = "표시 데이터: 가상 더미";
+        }
+
+        void RenderDatabaseRoster(TeamRoster roster)
+        {
+            var container = Q("roster");
+            container.Clear();
+            foreach (var p in roster.Lineup)
+                container.Add(Row("lobby-row",
+                    Cell(p.Order.ToString(), "col-order"),
+                    Cell(p.Position, "col-pos"),
+                    Cell(p.Name, "col-name"),
+                    Cell(ScenarioRosterSource.HandednessText(p), "col-hand")));
         }
 
         void RenderSchedule(SeasonState season)

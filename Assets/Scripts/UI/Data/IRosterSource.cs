@@ -60,6 +60,8 @@ namespace DailyFranchise.UI.Data
         IReadOnlyList<RosterEntry> GetBench(TeamSide side);
         IReadOnlyList<RosterEntry> GetBullpen(TeamSide side);
         string FeaturedPlayerId { get; }
+        /// <summary>화면 하단에 표시할 데이터 출처 (예: "가상 더미", "SampleRoster.csv").</summary>
+        string SourceLabel { get; }
     }
 
     public sealed class TeamBoxSeed

@@ -60,6 +60,10 @@ namespace DailyFranchise.UI
         public string ScenarioId => _scenarioId;
         /// <summary>지금 그리는 대진 (원정·홈 = 화면의 원정·홈).</summary>
         public Matchup Matchup => _matchup;
+        /// <summary>지금 이름표를 공급하는 선수 데이터 (더미 또는 선수단 주입).</summary>
+        public IRosterSource Roster => _roster;
+        /// <summary>대진에 선수단이 실려 있을 때 화면 하단 출처 표기. 바깥(시즌 흐름)이 정한다.</summary>
+        public string RosterSourceLabel { get; set; } = "선수 데이터";
         /// <summary>현재 장면의 원정·홈 시작 점수와 이벤트 (원정 경기면 뒤집은 사본).</summary>
         public ScenarioFixture Fixture => _fixture;
         public TacticKind? ChosenTactic => _chosenTactic;
@@ -124,6 +128,7 @@ namespace DailyFranchise.UI
         /// <summary>
         /// 대진을 지정해 시나리오를 불러온다. 헤더·스코어보드·좌측 선수단의 팀명은 대진을 따르고,
         /// 내 구단이 원정이면 장면을 원정·홈을 맞바꾼 사본(<see cref="ScenarioMirror"/>)으로 재생한다.
+        /// 대진에 선수단이 실려 있으면 선수 이름표·시즌 기록은 그 선수단으로 그린다 (<see cref="ScenarioRosterSource"/>).
         /// </summary>
         /// <param name="matchup">null이면 <see cref="Matchup.Default"/>(서울 원정 vs 부산 홈).</param>
         public void LoadScenario(string scenarioId, Matchup matchup)
@@ -140,8 +145,17 @@ namespace DailyFranchise.UI
             _chosenTactic = null;
             _tacticOutcome = null;
             _previewTactic = null;
-            _roster = data;
-            _scoreboard = data;
+            if (_matchup.HasRosters)
+            {
+                var source = new ScenarioRosterSource(data, RosterSourceLabel);
+                _roster = source;
+                _scoreboard = source;
+            }
+            else
+            {
+                _roster = data;
+                _scoreboard = data;
+            }
 
             _playback = new PitchPlayback(_events);
             _playback.SetSpeed(speed);
@@ -420,7 +434,7 @@ namespace DailyFranchise.UI
             FillRoster(_lineup, _roster.GetLineup(my));
             FillRoster(_bench, _roster.GetBench(my));
             FillRoster(_bullpen, _roster.GetBullpen(my));
-            _root.Q<Label>("roster-source").text = "표시 데이터: 가상 더미 (DummyScenarioData)";
+            _root.Q<Label>("roster-source").text = $"표시 데이터: {_roster.SourceLabel}";
 
             var featured = _roster.GetPlayer(_roster.FeaturedPlayerId);
             _featuredName.text = $"{featured.Name} · {featured.Position}";
