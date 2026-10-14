@@ -6,6 +6,7 @@ namespace DailyFranchise.UI.Data
     /// <summary>
     /// ScenarioCatalog 장면용 더미 표시 데이터. 팀·선수 이름과 기록은 모두 가상이다.
     /// 선수 정보는 모든 장면이 공유하고, 스코어보드 기초값만 장면별로 다르다.
+    /// 퀵 시뮬레이션 경기(<see cref="GeneratedGame"/>)는 고정 기초값 대신 생성된 이닝별 득점·H·E·B를 쓴다.
     /// 장면별 이닝 득점 합은 해당 Fixture의 시작 점수와 일치해야 한다 (테스트로 검증).
     /// 선수·스코어보드 데이터는 내 구단을 홈으로 짜여 있다. 대진(<see cref="Matchup"/>)이 내 구단을 원정으로 주면
     /// 선수 소속·라인업·스코어보드의 원정 ↔ 홈을 뒤집고(<see cref="Mirrored"/>), 경기 화면은 장면도
@@ -37,15 +38,29 @@ namespace DailyFranchise.UI.Data
             };
 
         readonly Dictionary<string, PlayerInfo> _players = new Dictionary<string, PlayerInfo>();
-        readonly string _scenarioId;
+        readonly (TeamBoxSeed away, TeamBoxSeed home) _seeds;
         readonly Matchup _matchup;
 
         /// <param name="matchup">그릴 대진. null이면 <see cref="Matchup.Default"/>.</param>
         public DummyScenarioData(string scenarioId = ScenarioCatalog.EighthBottom, Matchup matchup = null)
+            : this(SeedsFor(scenarioId), matchup)
         {
-            if (!BoxSeeds.ContainsKey(scenarioId))
-                throw new System.ArgumentException($"더미 스코어보드가 없는 시나리오: {scenarioId}", nameof(scenarioId));
-            _scenarioId = scenarioId;
+        }
+
+        /// <summary>
+        /// 퀵 시뮬레이션으로 만든 경기(<see cref="GeneratedGame"/>)의 스코어보드. 선수 정보는 더미 그대로이고,
+        /// 상대 선발의 오늘 기록은 생성된 실점으로 바꾼다. 생성 경기도 내 구단 = 홈 기준이다.
+        /// </summary>
+        public DummyScenarioData(GeneratedGame game, Matchup matchup = null)
+            : this(SeedsFor(game), matchup)
+        {
+            _players[Fixture8thBottom.Pitcher].TodayLine =
+                $"오늘 {FixtureGenerator.SimulatedInnings}이닝 · {game.Fixture.HomeScoreBefore}실점";
+        }
+
+        DummyScenarioData((TeamBoxSeed away, TeamBoxSeed home) seeds, Matchup matchup)
+        {
+            _seeds = seeds;
             _matchup = matchup ?? Matchup.Default;
 
             AddPitcher(Fixture8thBottom.Pitcher, "강민혁", TeamSide.Away, "선발", "좌투",
@@ -136,10 +151,21 @@ namespace DailyFranchise.UI.Data
             };
         }
 
-        public TeamBoxSeed GetBoxSeed(TeamSide side)
+        public TeamBoxSeed GetBoxSeed(TeamSide side) => Native(side) == TeamSide.Away ? _seeds.away : _seeds.home;
+
+        static (TeamBoxSeed, TeamBoxSeed) SeedsFor(string scenarioId)
         {
-            var seeds = BoxSeeds[_scenarioId];
-            return Native(side) == TeamSide.Away ? seeds.away : seeds.home;
+            if (scenarioId == null || !BoxSeeds.TryGetValue(scenarioId, out var seeds))
+                throw new System.ArgumentException($"더미 스코어보드가 없는 시나리오: {scenarioId}", nameof(scenarioId));
+            return seeds;
+        }
+
+        static (TeamBoxSeed, TeamBoxSeed) SeedsFor(GeneratedGame game)
+        {
+            if (game == null) throw new System.ArgumentNullException(nameof(game));
+            return (
+                new TeamBoxSeed { RunsByInning = game.AwayRunsByInning, Hits = game.AwayHits, Errors = game.AwayErrors, Walks = game.AwayWalks },
+                new TeamBoxSeed { RunsByInning = game.HomeRunsByInning, Hits = game.HomeHits, Errors = game.HomeErrors, Walks = game.HomeWalks });
         }
 
         /// <summary>화면 기준 쪽 → 더미 데이터가 짜인 기준 쪽.</summary>

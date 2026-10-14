@@ -32,6 +32,9 @@ namespace DailyFranchise.UI.Tests
             yield return WaitForScene(SeasonManager.LobbyScene);
             // 타 구단 결과는 고정 Seed로만 만든다.
             SeasonManager.Instance.LeagueRandom = new SeededRandom(20261014);
+            // 점수를 확인하는 기존 시나리오 테스트는 고정 장면(원정 3 : 홈 2, 1사 1·3루)으로 돌린다.
+            // 퀵 시뮬레이션 경기는 아래 Phase 13 테스트가 따로 켠다.
+            SeasonManager.Instance.UseGeneratedScenario = false;
         }
 
         [UnityTearDown]
@@ -57,6 +60,7 @@ namespace DailyFranchise.UI.Tests
             SceneManager.LoadScene(SeasonManager.LobbyScene);
             yield return WaitForScene(SeasonManager.LobbyScene);
             SeasonManager.Instance.LeagueRandom = new SeededRandom(20261015);
+            SeasonManager.Instance.UseGeneratedScenario = false;
         }
 
         static void DestroyManager()
@@ -513,6 +517,90 @@ namespace DailyFranchise.UI.Tests
             yield return null;
             Assert.That(game.Playback.IsAtEnd, Is.True);
             Assert.That(SceneManager.GetActiveScene().name, Is.EqualTo(SeasonManager.GameScene), "씬은 그대로");
+        }
+
+        // ── 퀵 시뮬레이션 시즌 경기 (Phase 13) ──
+
+        static string[] InningCells(VisualElement root, int row) =>
+            root.Q("linescore").Children().ElementAt(row).Children().Skip(1).Take(9).Select(c => ((Label)c).text).ToArray();
+
+        static string Fingerprint(GeneratedGame g) =>
+            $"{string.Join(",", g.AwayRunsByInning)}|{string.Join(",", g.HomeRunsByInning)}|{g.Situation}";
+
+        [UnityTest]
+        public IEnumerator 퀵_시뮬_시즌_경기는_매번_다른_스코어보드와_승부처로_시작하고_결과가_반영된다()
+        {
+            const int seed = 20261016;
+            var manager = SeasonManager.Instance;
+            manager.UseGeneratedScenario = true;
+            manager.ScenarioRandom = new SeededRandom(seed);
+            // 같은 Seed로 따로 굴린 기대값 (경기 1: 서울 원정 vs 부산 홈, 경기 2: 부산 원정 vs 인천 홈. 생성은 내 구단 = 홈 기준)
+            var expectRandom = new SeededRandom(seed);
+            var games = new System.Collections.Generic.List<GeneratedGame>();
+
+            for (int round = 1; round <= 2; round++)
+            {
+                var scheduled = manager.Season.NextGame;
+                string opponent = scheduled.HomeTeam == manager.Season.MyTeam ? scheduled.AwayTeam : scheduled.HomeTeam;
+                var expected = FixtureGenerator.Generate(manager.Database.GetRoster(opponent), manager.MyRoster, expectRandom);
+
+                Submit(LobbyRoot().Q<Button>("start-game"));
+                yield return WaitForScene(SeasonManager.GameScene);
+                var game = Object.FindAnyObjectByType<GameScreenController>();
+                game.Playback.Pause();
+                game.Playback.Restart();
+                yield return null;
+                var root = game.GetComponent<UIDocument>().rootVisualElement;
+
+                var generated = game.Generated;
+                Assert.That(game.ScenarioId, Is.EqualTo(FixtureGenerator.ScenarioId), $"{round}경기는 퀵 시뮬 장면");
+                Assert.That(Fingerprint(generated), Is.EqualTo(Fingerprint(expected)), "같은 Seed → 같은 경기");
+                games.Add(generated);
+
+                // 스코어보드: 화면 원정·홈 = 일정 원정·홈. 내 구단이 홈이면 생성 기준 그대로, 원정이면 뒤집힘.
+                bool home = game.Matchup.MySide == Data.TeamSide.Home;
+                var awayRuns = home ? generated.AwayRunsByInning : generated.HomeRunsByInning;
+                var homeRuns = home ? generated.HomeRunsByInning : generated.AwayRunsByInning;
+                Assert.That(InningCells(root, 1).Take(7), Is.EqualTo(awayRuns.Take(7).Select(r => r.ToString())), "원정 1~7회");
+                Assert.That(InningCells(root, 2).Take(7), Is.EqualTo(homeRuns.Take(7).Select(r => r.ToString())), "홈 1~7회");
+                Assert.That(root.Q<Label>("away-score").text, Is.EqualTo(awayRuns.Sum().ToString()));
+                Assert.That(root.Q<Label>("home-score").text, Is.EqualTo(homeRuns.Sum().ToString()));
+                var s = generated.Situation;
+                Assert.That(root.Q<Label>("status-inning").text,
+                    Is.EqualTo($"{(home ? "8회말" : "9회초")} · {PitchPresentation.OutsText(s.Outs)} · {s.Runners}"));
+
+                // 기본 진행으로 끝내고 [경기 종료] → 화면 최종 점수가 그대로 시즌에 반영된다.
+                game.Playback.SkipToEnd();
+                Assert.That(game.ChooseTactic(TacticKind.Default), Is.True);
+                game.Playback.Pause();
+                game.Playback.SkipToEnd();
+                var final = game.FinalScore();
+                yield return null;
+                Submit(root.Q<Button>("ctl-game-end"));
+                yield return WaitForScene(SeasonManager.LobbyScene);
+                Assert.That(manager.LastScore, Is.EqualTo(final), $"{round}경기 결과 반영");
+            }
+
+            Assert.That(Fingerprint(games[0]), Is.Not.EqualTo(Fingerprint(games[1])), "경기마다 다른 스코어보드·상황");
+        }
+
+        [UnityTest]
+        public IEnumerator 시즌_경기는_기본으로_퀵_시뮬_장면을_쓴다()
+        {
+            DestroyManager();
+            yield return null;
+            SceneManager.LoadScene(SeasonManager.LobbyScene);
+            yield return WaitForScene(SeasonManager.LobbyScene);
+            var manager = SeasonManager.Instance;
+            Assert.That(manager.UseGeneratedScenario, Is.True, "기본값");
+            manager.LeagueRandom = new SeededRandom(1);
+
+            Submit(LobbyRoot().Q<Button>("start-game"));
+            yield return WaitForScene(SeasonManager.GameScene);
+            var game = Object.FindAnyObjectByType<GameScreenController>();
+            Assert.That(game.ScenarioId, Is.EqualTo(FixtureGenerator.ScenarioId));
+            Assert.That(game.Generated, Is.Not.Null);
+            Assert.That(game.Fixture.Branch, Is.Not.Null, "승부처 작전 분기 유지");
         }
     }
 }

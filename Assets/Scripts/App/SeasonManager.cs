@@ -14,7 +14,8 @@ namespace DailyFranchise.App
     /// 씬을 넘어 시즌 상태를 유지하고 로비 ↔ 경기 화면 전환을 중계한다.
     /// 로비와 경기 화면은 서로를 모르며, 이 객체만 두 쪽을 안다.
     /// - 로비: StartNextGame() 호출
-    /// - 경기 화면: 일정표의 대진으로 시즌 경기 장면(작전 승부처)을 불러오고, GameScreenController.ExitRequested(최종 점수)를
+    /// - 경기 화면: 일정표의 대진으로 시즌 경기 장면을 불러오고 (기본: 두 선수단 기록으로 1~7회를 퀵 시뮬레이션하고
+    ///   8회말 승부처의 아웃·주자를 무작위로 정한 장면), GameScreenController.ExitRequested(최종 점수)를
     ///   구독해 결과를 시즌 성적·순위에 반영·저장한 뒤 로비로 복귀
     /// - 저장: 처음 만들어질 때(로비 최초 진입) 저장 파일이 있으면 이어서, 없으면 새 시즌. 매 경기 결과 반영 직후 저장.
     /// - 선수 DB: 처음 만들어질 때 <see cref="MasterDatabase"/>를 읽는다 (기본 비동기). 다 읽기 전에는 경기를 시작하지 않는다.
@@ -25,8 +26,19 @@ namespace DailyFranchise.App
     {
         public const string LobbyScene = "LobbyScreen";
         public const string GameScene = "GameScreen";
-        /// <summary>시즌 경기로 재생할 장면. 고정 시나리오 단계라 모든 경기가 같은 승부처 장면이다.</summary>
+        /// <summary><see cref="UseGeneratedScenario"/>가 false일 때 시즌 경기로 재생할 고정 장면.</summary>
         public const string SeasonGameScenario = ScenarioCatalog.EighthBottomTactics;
+
+        /// <summary>
+        /// true(기본)면 시즌 경기마다 퀵 시뮬레이션으로 스코어보드와 승부처 상황을 새로 만든다
+        /// (<see cref="GameScreenController.LoadGeneratedScenario"/>). false면 고정 장면(<see cref="SeasonGameScenario"/>).
+        /// </summary>
+        public bool UseGeneratedScenario { get; set; } = true;
+
+        /// <summary>
+        /// 퀵 시뮬레이션·승부처 상황 생성 난수. 시즌 동안 이어 쓰므로 경기마다 다른 경기가 나온다. 테스트는 고정 Seed를 넣는다.
+        /// </summary>
+        public IRandomSource ScenarioRandom { get; set; } = SeededRandom.FromClock();
 
         public static SeasonManager Instance { get; private set; }
 
@@ -174,7 +186,9 @@ namespace DailyFranchise.App
             if (Season.InProgress == null) return;
             if (Database != null && !Database.IsEmpty)
                 _game.RosterSourceLabel = $"{MasterDatabase.RosterFileName} ({Database.Season})";
-            _game.LoadScenario(SeasonGameScenario, MatchupOf(Season.InProgress));
+            var matchup = MatchupOf(Season.InProgress);
+            if (UseGeneratedScenario) _game.LoadGeneratedScenario(matchup, ScenarioRandom);
+            else _game.LoadScenario(SeasonGameScenario, matchup);
         }
 
         /// <summary>

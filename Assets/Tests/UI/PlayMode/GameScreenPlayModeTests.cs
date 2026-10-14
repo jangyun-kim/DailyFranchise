@@ -665,5 +665,133 @@ namespace DailyFranchise.UI.Tests
                 Assert.That(l.text, Does.Not.Contain("미연결"), $"'{l.name}' 라벨에 미연결 문구"));
             Assert.That(_doc.rootVisualElement.Q<Label>("batter-name").text, Is.EqualTo("최도윤"));
         }
+
+        // ── 퀵 시뮬레이션 경기 (Phase 13) ──
+
+        /// <summary>라인스코어 한 행의 1~9회 칸 글자. 행: [1]=원정 [2]=홈.</summary>
+        static string[] InningCells(VisualElement root, int row) =>
+            root.Q("linescore").Children().ElementAt(row).Children().Skip(1).Take(9).Select(c => ((Label)c).text).ToArray();
+
+        [UnityTest]
+        public IEnumerator 퀵_시뮬_경기는_생성된_이닝별_득점과_승부처_상황으로_시작한다()
+        {
+            var root = _doc.rootVisualElement;
+            _controller.LoadGeneratedScenario(Data.Matchup.Default, new SeededRandom(20261014));
+            _controller.Playback.Pause();
+            _controller.Playback.Restart();
+            yield return null;
+
+            var game = _controller.Generated;
+            Assert.That(game, Is.Not.Null);
+            Assert.That(_controller.ScenarioId, Is.EqualTo(FixtureGenerator.ScenarioId));
+            Assert.That(_controller.Fixture, Is.SameAs(game.Fixture), "홈 경기는 뒤집지 않음");
+
+            // 원정: 1~8회 확정 + 9회 빈칸. 홈: 1~7회 확정 + 8회말 진행 중(0) + 9회 빈칸.
+            var away = InningCells(root, 1);
+            Assert.That(away.Take(8), Is.EqualTo(game.AwayRunsByInning.Select(r => r.ToString())));
+            Assert.That(away[8], Is.EqualTo(""));
+            var home = InningCells(root, 2);
+            Assert.That(home.Take(7), Is.EqualTo(game.HomeRunsByInning.Take(7).Select(r => r.ToString())));
+            Assert.That(home[7], Is.EqualTo("0"));
+            Assert.That(home[8], Is.EqualTo(""));
+            Assert.That(Text(root, "away-score"), Is.EqualTo(game.Fixture.AwayScoreBefore.ToString()));
+            Assert.That(Text(root, "home-score"), Is.EqualTo(game.Fixture.HomeScoreBefore.ToString()));
+            Assert.That(Text(root, "ls-away-h"), Is.EqualTo(game.AwayHits.ToString()));
+            Assert.That(Text(root, "ls-home-b"), Is.EqualTo(game.HomeWalks.ToString()));
+
+            var s = game.Situation;
+            Assert.That(Text(root, "status-inning"), Is.EqualTo($"8회말 · {PitchPresentation.OutsText(s.Outs)} · {s.Runners}"));
+            Assert.That(_controller.Field.TokenCount, Is.EqualTo(s.Runners.RunnerCount), "필드 주자 토큰");
+            Assert.That(root.Q<Button>("scenario-" + FixtureGenerator.ScenarioId).ClassListContains("debug-strip__btn--active"), Is.True);
+
+            // 같은 Seed로 다시 불러오면 같은 경기
+            _controller.LoadGeneratedScenario(Data.Matchup.Default, new SeededRandom(20261014));
+            _controller.Playback.Pause();
+            yield return null;
+            Assert.That(_controller.Generated.AwayRunsByInning, Is.EqualTo(game.AwayRunsByInning));
+            Assert.That(_controller.Generated.HomeRunsByInning, Is.EqualTo(game.HomeRunsByInning));
+            Assert.That(_controller.Generated.Situation, Is.EqualTo(s));
+        }
+
+        [UnityTest]
+        public IEnumerator 퀵_시뮬_경기는_승부처에서_멈추고_상황에_맞는_작전만_켜진다()
+        {
+            var root = _doc.rootVisualElement;
+            // 스퀴즈 가능·불가 상황이 모두 나올 때까지 Seed를 바꿔 본다.
+            bool sawSqueeze = false, sawNoSqueeze = false;
+            for (int seed = 1; seed <= 20 && !(sawSqueeze && sawNoSqueeze); seed++)
+            {
+                _controller.LoadGeneratedScenario(Data.Matchup.Default, new SeededRandom(seed));
+                _controller.Playback.Pause();
+                _controller.Playback.SkipToEnd();
+                yield return null;
+
+                var s = _controller.Generated.Situation;
+                Assert.That(_controller.Playback.AwaitingDecision, Is.True);
+                Assert.That(Text(root, "headline-main"), Does.Contain($"{PitchPresentation.OutsText(s.Outs)} {s.Runners} · 작전 선택 대기"));
+                Assert.That(root.Q<Button>("tactic-default").enabledSelf, Is.True);
+                Assert.That(root.Q<Button>("tactic-swing").enabledSelf, Is.True);
+                Assert.That(root.Q<Button>("tactic-squeeze").enabledSelf, Is.EqualTo(s.AllowsSqueeze), s.ToString());
+                if (s.AllowsSqueeze) sawSqueeze = true; else sawNoSqueeze = true;
+
+                var issues = LayoutChecker.Check(Screen);
+                Assert.That(issues, Is.Empty, $"[seed {seed} {s}]\n" + string.Join("\n", issues));
+            }
+            Assert.That(sawSqueeze && sawNoSqueeze, Is.True, "두 종류 상황이 모두 나와야 함");
+        }
+
+        [UnityTest]
+        public IEnumerator 퀵_시뮬_경기의_모든_재생_위치에서_레이아웃이_유지되고_처음으로는_같은_경기로_돌아간다()
+        {
+            var root = _doc.rootVisualElement;
+            _controller.LoadGeneratedScenario(Data.Matchup.Default, new SeededRandom(7));
+            _controller.Playback.Pause();
+            _controller.Playback.SkipToEnd();
+            yield return null;
+            var game = _controller.Generated;
+            int awayBefore = game.Fixture.AwayScoreBefore, homeBefore = game.Fixture.HomeScoreBefore;
+            int sceneRuns = game.Fixture.Branch.PathFor(game.Fixture.Events, TacticKind.Default).Sum(e => e.RunsScored);
+
+            Assert.That(_controller.ChooseTactic(TacticKind.Default), Is.True);
+            _controller.Playback.Pause();
+            var playback = _controller.Playback;
+            for (int index = -1; index < playback.Count; index++)
+            {
+                playback.SeekTo(index);
+                yield return null;
+                var issues = LayoutChecker.Check(Screen);
+                Assert.That(issues, Is.Empty, $"[위치 {index}]\n" + string.Join("\n", issues));
+            }
+            Assert.That(_controller.FinalScore(), Is.EqualTo(new GameScore(awayBefore, homeBefore + sceneRuns)));
+
+            Submit(root.Q<Button>("ctl-restart"));
+            yield return null;
+            Assert.That(_controller.Generated, Is.SameAs(game), "처음으로는 다시 굴리지 않음");
+            Assert.That(_controller.ChosenTactic, Is.Null);
+            Assert.That(_controller.Playback.Index, Is.EqualTo(-1));
+            Assert.That(Text(root, "home-score"), Is.EqualTo(homeBefore.ToString()));
+        }
+
+        [UnityTest]
+        public IEnumerator 원정_대진의_퀵_시뮬_경기는_9회초로_뒤집어_그린다()
+        {
+            var root = _doc.rootVisualElement;
+            _controller.LoadGeneratedScenario(Data.Matchup.FromNames("부산 웨이브스", "인천 하버스", Data.TeamSide.Away), new SeededRandom(3));
+            _controller.Playback.Pause();
+            _controller.Playback.Restart();
+            yield return null;
+
+            var game = _controller.Generated;
+            Assert.That(_controller.Fixture.Events[0].Inning, Is.EqualTo(9));
+            Assert.That(_controller.Fixture.Events[0].HalfInning, Is.EqualTo(HalfInning.Top));
+            Assert.That(Text(root, "away-score"), Is.EqualTo(game.Fixture.HomeScoreBefore.ToString()), "내 구단(원정) 점수");
+            Assert.That(Text(root, "home-score"), Is.EqualTo(game.Fixture.AwayScoreBefore.ToString()));
+            Assert.That(InningCells(root, 1).Take(8), Is.EqualTo(game.HomeRunsByInning.Select(r => r.ToString())));
+            Assert.That(InningCells(root, 2).Take(8), Is.EqualTo(game.AwayRunsByInning.Select(r => r.ToString())));
+            Assert.That(Text(root, "status-inning"), Does.StartWith("9회초 · "));
+
+            var issues = LayoutChecker.Check(Screen);
+            Assert.That(issues, Is.Empty, string.Join("\n", issues));
+        }
     }
 }

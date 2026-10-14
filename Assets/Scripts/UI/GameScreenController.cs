@@ -9,7 +9,7 @@ using UnityEngine.UIElements;
 namespace DailyFranchise.UI
 {
     /// <summary>
-    /// 1920×1080 경기 화면. ScenarioCatalog의 고정 장면을 읽기 전용으로 재생하며,
+    /// 1920×1080 경기 화면. ScenarioCatalog의 고정 장면 또는 퀵 시뮬레이션으로 만든 승부처 장면을 읽기 전용으로 재생하며,
     /// 이름·기록은 IRosterSource / IScoreboardSource에서 가져온다.
     /// 점수·H·아웃·주자·타자 기록은 필드 연출이 끝나는 순간에 반영한다 (StatsSync).
     /// </summary>
@@ -36,6 +36,7 @@ namespace DailyFranchise.UI
         readonly StatsSync _sync = new StatsSync();
         string _scenarioId = ScenarioCatalog.EighthBottom;
         Matchup _matchup = Matchup.Default;
+        GeneratedGame _generated;
 
         VisualElement _root;
         AbsZoneView _abs;
@@ -60,7 +61,10 @@ namespace DailyFranchise.UI
         public AbsZoneView AbsZone => _abs;
         public FieldView Field => _field;
         public StatsSync Sync => _sync;
+        /// <summary>현재 장면 ID. 퀵 시뮬레이션 경기면 <see cref="FixtureGenerator.ScenarioId"/>.</summary>
         public string ScenarioId => _scenarioId;
+        /// <summary>퀵 시뮬레이션으로 만든 현재 경기 (내 구단 = 홈 기준). 고정 장면이면 null.</summary>
+        public GeneratedGame Generated => _generated;
         /// <summary>지금 그리는 대진 (원정·홈 = 화면의 원정·홈).</summary>
         public Matchup Matchup => _matchup;
         /// <summary>지금 이름표를 공급하는 선수 데이터 (더미 또는 선수단 주입).</summary>
@@ -91,6 +95,12 @@ namespace DailyFranchise.UI
         /// 작전 성공 판정에 쓰는 난수. 기본은 실행마다 다른 Seed이고, 테스트는 고정 Seed나 고정 값을 넣는다.
         /// </summary>
         public IRandomSource TacticRandom { get; set; } = SeededRandom.FromClock();
+
+        /// <summary>
+        /// 퀵 시뮬레이션·승부처 상황 생성 난수 (<see cref="LoadGeneratedScenario"/>에 따로 넘기지 않았을 때).
+        /// 작전 판정 난수(<see cref="TacticRandom"/>)와 별개다.
+        /// </summary>
+        public IRandomSource SimRandom { get; set; } = SeededRandom.FromClock();
         public IReadOnlyList<PitchEvent> Events => _events;
 
         /// <summary>배속별 판정 점등 시간 (초). x4는 생략.</summary>
@@ -151,13 +161,41 @@ namespace DailyFranchise.UI
         public void LoadScenario(string scenarioId, Matchup matchup)
         {
             var entry = ScenarioCatalog.Find(scenarioId);
+            _generated = null;
+            Apply(entry.Id, entry.Create(), new DummyScenarioData(entry.Id, matchup));
+        }
+
+        /// <summary>
+        /// 퀵 시뮬레이션 경기를 불러온다: 대진의 두 선수단 기록으로 1~7회·8회초 득점을 계산하고(<see cref="QuickSimEngine"/>),
+        /// 8회말 승부처의 아웃 수·주자를 무작위로 정해 장면을 만든다(<see cref="FixtureGenerator"/>).
+        /// 스코어보드와 시작 점수·주자·아웃은 생성 결과를 따르고, 내 구단이 원정이면 장면을 뒤집어 재생한다.
+        /// </summary>
+        /// <param name="matchup">null이면 <see cref="Matchup.Default"/>. 선수단이 없는 쪽은 리그 평균으로 계산한다.</param>
+        /// <param name="random">생성 난수. null이면 <see cref="SimRandom"/>.</param>
+        public void LoadGeneratedScenario(Matchup matchup, IRandomSource random = null)
+        {
+            var m = matchup ?? Matchup.Default;
+            var opponent = m.RosterOf(m.MySide == TeamSide.Home ? TeamSide.Away : TeamSide.Home);
+            // 생성 장면은 내 구단 = 홈(8회말 공격) 기준이다.
+            var game = FixtureGenerator.Generate(opponent, m.RosterOf(m.MySide), random ?? SimRandom);
+            LoadGenerated(game, m);
+        }
+
+        void LoadGenerated(GeneratedGame game, Matchup matchup)
+        {
+            _generated = game;
+            Apply(FixtureGenerator.ScenarioId, game.Fixture, new DummyScenarioData(game, matchup));
+        }
+
+        /// <param name="native">내 구단 = 홈 기준 장면.</param>
+        void Apply(string scenarioId, ScenarioFixture native, DummyScenarioData data)
+        {
             int speed = _playback?.Speed ?? 1;
             DetachPlayback();
 
-            var data = new DummyScenarioData(entry.Id, matchup);
-            _scenarioId = entry.Id;
+            _scenarioId = scenarioId;
             _matchup = data.Matchup;
-            _fixture = data.Mirrored ? ScenarioMirror.Mirror(entry.Create()) : entry.Create();
+            _fixture = data.Mirrored ? ScenarioMirror.Mirror(native) : native;
             _events = _fixture.Events;
             _chosenTactic = null;
             _tacticOutcome = null;
@@ -238,7 +276,9 @@ namespace DailyFranchise.UI
         {
             if (_chosenTactic.HasValue)
             {
-                LoadScenario(_scenarioId);
+                // 퀵 시뮬레이션 경기는 다시 굴리지 않고 같은 경기로 되돌린다.
+                if (_generated != null) LoadGenerated(_generated, _matchup);
+                else LoadScenario(_scenarioId);
                 _playback.Pause();
             }
             else
@@ -376,6 +416,12 @@ namespace DailyFranchise.UI
                 tab.AddToClassList("debug-strip__btn");
                 _scenarioTabs.Add(tab);
             }
+            var generatedTab = new Button(() => LoadGeneratedScenario(_matchup))
+            {
+                text = "퀵 시뮬", name = "scenario-" + FixtureGenerator.ScenarioId, userData = FixtureGenerator.ScenarioId,
+            };
+            generatedTab.AddToClassList("debug-strip__btn");
+            _scenarioTabs.Add(generatedTab);
         }
 
         void BindTactic(string buttonName, TacticKind kind)
