@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using DailyFranchise.Sim;
+using DailyFranchise.Sim.Data;
 
 namespace DailyFranchise.App
 {
@@ -110,6 +111,12 @@ namespace DailyFranchise.App
         public int NextIndex { get; private set; }
         /// <summary>진행 중인 경기. 로비에 있으면 null.</summary>
         public ScheduledGame InProgress { get; private set; }
+
+        /// <summary>
+        /// 사용자가 바꾼 내 구단 타자 라인업. null이면 선수 DB 기본 라인업을 쓴다.
+        /// 시즌과 함께 저장된다.
+        /// </summary>
+        public LineupCard MyLineup { get; set; }
 
         /// <summary>가장 최근에 끝난 날의 경기 결과 (첫 항목이 내 경기). 아직 없으면 비어 있다.</summary>
         public IReadOnlyList<GameRecord> LastDayResults => _lastDay;
@@ -263,6 +270,12 @@ namespace DailyFranchise.App
                 {
                     Team = r.Team, Wins = r.Wins, Losses = r.Losses, Draws = r.Draws,
                 }).ToList(),
+                Lineup = MyLineup == null ? new LineupSaveData() : new LineupSaveData
+                {
+                    Batting = MyLineup.Batting.Select(s => s.PlayerId).ToList(),
+                    Positions = MyLineup.Batting.Select(s => s.Position).ToList(),
+                    Bench = MyLineup.Bench.ToList(),
+                },
             };
         }
 
@@ -316,7 +329,29 @@ namespace DailyFranchise.App
                 });
             }
 
-            return new SeasonState(data.SeasonTitle, data.MyTeam, schedule, standings) { NextIndex = data.NextIndex };
+            return new SeasonState(data.SeasonTitle, data.MyTeam, schedule, standings)
+            {
+                NextIndex = data.NextIndex,
+                MyLineup = LineupFrom(data.Lineup),
+            };
+        }
+
+        /// <summary>저장된 라인업. 비어 있으면 null(기본 라인업). 모양이 깨졌으면 FormatException.</summary>
+        static LineupCard LineupFrom(LineupSaveData data)
+        {
+            if (data == null || data.IsEmpty) return null;
+            var batting = data.Batting ?? new List<string>();
+            var positions = data.Positions ?? new List<string>();
+            if (positions.Count != batting.Count)
+                throw new FormatException($"라인업 수비 위치 {positions.Count}개가 타순 {batting.Count}명과 다르다.");
+            try
+            {
+                return new LineupCard(batting.Select((id, i) => new LineupSlot(id, positions[i])), data.Bench ?? new List<string>());
+            }
+            catch (ArgumentException e)
+            {
+                throw new FormatException($"저장된 라인업이 잘못됐다: {e.Message}", e);
+            }
         }
 
         /// <summary>가상 구단 10개, 내 구단 부산 웨이브스, 10경기 일정의 더미 시즌.</summary>

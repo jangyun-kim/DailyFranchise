@@ -1,6 +1,7 @@
 using System;
 using DailyFranchise.App.Data;
 using DailyFranchise.Sim;
+using DailyFranchise.Sim.Data;
 using DailyFranchise.Sim.Fixtures;
 using DailyFranchise.UI;
 using DailyFranchise.UI.Data;
@@ -18,6 +19,7 @@ namespace DailyFranchise.App
     /// - 저장: 처음 만들어질 때(로비 최초 진입) 저장 파일이 있으면 이어서, 없으면 새 시즌. 매 경기 결과 반영 직후 저장.
     /// - 선수 DB: 처음 만들어질 때 <see cref="MasterDatabase"/>를 읽는다 (기본 비동기). 다 읽기 전에는 경기를 시작하지 않는다.
     ///   경기 시작 시 일정의 두 구단 선수단을 대진에 실어 경기 화면에 넘긴다.
+    /// - 라인업: 로비에서 바꾼 내 구단 타자 라인업(<see cref="SeasonState.MyLineup"/>)을 선수단에 적용하고, 바꿀 때마다 저장한다.
     /// </summary>
     public sealed class SeasonManager : MonoBehaviour
     {
@@ -57,6 +59,9 @@ namespace DailyFranchise.App
         public bool IsDatabaseReady => Database != null;
         /// <summary>선수 DB를 다 읽었을 때 (비동기 로딩 완료 시점). 동기 로딩이면 Awake 안에서 이미 끝나 있다.</summary>
         public event Action DatabaseReady;
+
+        /// <summary>내 구단 라인업이 바뀌었을 때 (로비 다시 그리기용).</summary>
+        public event Action LineupChanged;
 
         public SaveManager Saves { get; private set; }
         /// <summary>시작할 때 시즌을 어떻게 얻었는지 (불러옴 / 새 시즌 / 손상 복구).</summary>
@@ -105,6 +110,50 @@ namespace DailyFranchise.App
             DatabaseReady?.Invoke();
         }
 
+        /// <summary>선수 DB의 내 구단 기본 선수단 (라인업 변경 전). DB가 없거나 내 구단 데이터가 없으면 null.</summary>
+        public TeamRoster DefaultMyRoster => Database?.GetRoster(Season.MyTeam);
+
+        /// <summary>
+        /// 지금 쓰는 라인업 카드: 저장된 사용자 라인업이 DB 선수단과 맞으면 그것, 아니면 DB 기본 라인업.
+        /// 선수단이 없으면 null. 돌려준 카드를 고쳐도 시즌에는 반영되지 않는다 (<see cref="SwapLineup"/>을 쓴다).
+        /// </summary>
+        public LineupCard CurrentLineup
+        {
+            get
+            {
+                var roster = DefaultMyRoster;
+                if (roster == null) return null;
+                var saved = Season.MyLineup;
+                return saved != null && saved.Matches(roster) ? saved.Clone() : LineupCard.FromRoster(roster);
+            }
+        }
+
+        /// <summary>라인업을 적용한 내 구단 선수단. 경기 화면과 로비가 이걸 그린다. 없으면 null.</summary>
+        public TeamRoster MyRoster
+        {
+            get
+            {
+                var roster = DefaultMyRoster;
+                var card = CurrentLineup;
+                return roster == null || card == null ? roster : card.ApplyTo(roster);
+            }
+        }
+
+        /// <summary>
+        /// 라인업 두 자리를 맞바꾸고 바로 저장한다. 경기 중·전환 중이거나, 선수단이 없거나,
+        /// 바꿀 수 없는 조합(범위 밖·같은 자리·벤치끼리)이면 아무것도 바꾸지 않고 false.
+        /// </summary>
+        public bool SwapLineup(LineupSpot a, LineupSpot b)
+        {
+            if (_loading || Season.InProgress != null) return false;
+            var card = CurrentLineup;
+            if (card == null || !card.TrySwap(a, b)) return false;
+            Season.MyLineup = card;
+            Saves.Save(Season);
+            LineupChanged?.Invoke();
+            return true;
+        }
+
         /// <returns>경기 화면으로 넘어가면 true. 이미 전환 중이거나, 선수 DB를 읽는 중이거나, 남은 경기가 없으면 false.</returns>
         public bool StartNextGame()
         {
@@ -136,8 +185,11 @@ namespace DailyFranchise.App
         {
             var mySide = game.HomeTeam == Season.MyTeam ? TeamSide.Home : TeamSide.Away;
             return new Matchup(TeamInfoOf(game.AwayTeam), TeamInfoOf(game.HomeTeam), mySide,
-                Database?.GetRoster(game.AwayTeam), Database?.GetRoster(game.HomeTeam));
+                RosterOf(game.AwayTeam), RosterOf(game.HomeTeam));
         }
+
+        /// <summary>내 구단은 라인업을 적용한 선수단, 상대는 DB 선수단.</summary>
+        TeamRoster RosterOf(string team) => team == Season.MyTeam ? MyRoster : Database?.GetRoster(team);
 
         TeamInfo TeamInfoOf(string team)
         {

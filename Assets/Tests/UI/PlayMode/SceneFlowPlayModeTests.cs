@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using DailyFranchise.App;
 using DailyFranchise.App.Data;
 using DailyFranchise.Sim;
+using DailyFranchise.Sim.Data;
 using DailyFranchise.Sim.Fixtures;
 using NUnit.Framework;
 using UnityEngine;
@@ -416,6 +417,86 @@ namespace DailyFranchise.UI.Tests
             rt.Release();
             Object.Destroy(rt);
             Object.Destroy(panelCopy);
+        }
+
+        static void Click(VisualElement element)
+        {
+            using (var click = ClickEvent.GetPooled())
+            {
+                click.target = element;
+                element.SendEvent(click);
+            }
+        }
+
+        static string[] Names(VisualElement container) =>
+            container.Query<Label>(className: "col-name").ToList().Select(l => l.text).ToArray();
+
+        [UnityTest]
+        public IEnumerator 로비에서_3번_타자와_벤치_선수를_클릭해_바꾸면_저장되고_경기_화면에_반영된다()
+        {
+            var root = LobbyRoot();
+            Assert.That(root.Q("roster").childCount, Is.EqualTo(9));
+            Assert.That(root.Q("bench").childCount, Is.EqualTo(3));
+            Assert.That(Names(root.Q("roster"))[2], Is.EqualTo("성지환"));
+            Assert.That(Names(root.Q("bench"))[0], Is.EqualTo("소윤호"));
+
+            // 1) 3번 타자 클릭 → 강조
+            Click(root.Q("lineup-3"));
+            yield return null;
+            Assert.That(root.Q("lineup-3").ClassListContains("lobby-row--selected"), Is.True);
+            Assert.That(root.Q("bench-1").ClassListContains("lobby-row--swappable"), Is.True);
+            Assert.That(root.Q<Label>("lineup-hint").text, Does.StartWith("성지환 선택됨"));
+
+            // 2) 벤치 1번 클릭 → 맞바꾸고 바로 다시 그림
+            Click(root.Q("bench-1"));
+            yield return null;
+            Assert.That(Names(root.Q("roster"))[2], Is.EqualTo("소윤호"));
+            Assert.That(root.Q("lineup-3").Q<Label>(className: "col-pos").text, Is.EqualTo("RF"));
+            Assert.That(Names(root.Q("bench"))[0], Is.EqualTo("성지환"));
+            Assert.That(root.Query(className: "lobby-row--selected").ToList(), Is.Empty, "교체 후 선택 해제");
+            Assert.That(File.ReadAllText(TestSavePath), Does.Contain("WV010"), "세이브 파일에 덮어씀");
+
+            // 벤치끼리는 바꾸지 않고 선택만 옮긴다.
+            Click(root.Q("bench-1"));
+            Click(root.Q("bench-2"));
+            yield return null;
+            Assert.That(root.Q("bench-2").ClassListContains("lobby-row--selected"), Is.True);
+            Assert.That(root.Q("bench-1").ClassListContains("lobby-row--selected"), Is.False);
+            Assert.That(Names(root.Q("bench")), Is.EqualTo(new[] { "성지환", "피준서", "국태민" }));
+            Click(root.Q("bench-2")); // 취소
+            yield return null;
+
+            // 껐다 켜도 유지
+            yield return RestartFromLobby();
+            root = LobbyRoot();
+            Assert.That(Names(root.Q("roster"))[2], Is.EqualTo("소윤호"));
+            Assert.That(SeasonManager.Instance.Season.MyLineup, Is.Not.Null);
+
+            // 3) 경기 진입: 좌측 타순과 타석 카드
+            Submit(root.Q<Button>("start-game"));
+            yield return WaitForScene(SeasonManager.GameScene);
+            var game = Object.FindAnyObjectByType<GameScreenController>();
+            game.Playback.Pause();
+            yield return null;
+            var gameRoot = game.GetComponent<UIDocument>().rootVisualElement;
+            var lineupNames = gameRoot.Q("lineup").Query<Label>(className: "roster-name").ToList().Select(l => l.text).ToArray();
+            Assert.That(lineupNames, Is.EqualTo(SeasonManager.Instance.MyRoster.Lineup.Select(p => p.Name)));
+            Assert.That(lineupNames[2], Is.EqualTo("소윤호"));
+            Assert.That(gameRoot.Q("bench").Query<Label>(className: "roster-name").First().text, Is.EqualTo("성지환"));
+            Assert.That(gameRoot.Q<Label>("batter-name").text, Is.EqualTo("소윤호"), "장면의 3번 타자 자리");
+            Assert.That(game.Calculator.DecisionContext(game.Fixture.Branch, game.Fixture.Events).Batter.Name, Is.EqualTo("소윤호"));
+        }
+
+        [UnityTest]
+        public IEnumerator 경기_중에는_라인업을_바꿀_수_없다()
+        {
+            var manager = SeasonManager.Instance;
+            Assert.That(manager.SwapLineup(LineupSpot.Batting(1), LineupSpot.Batting(2)), Is.True);
+            Assert.That(manager.SwapLineup(LineupSpot.Bench(0), LineupSpot.Bench(1)), Is.False, "벤치끼리");
+            Assert.That(manager.SwapLineup(LineupSpot.Batting(0), LineupSpot.Bench(9)), Is.False, "범위 밖");
+            Submit(LobbyRoot().Q<Button>("start-game"));
+            yield return WaitForScene(SeasonManager.GameScene);
+            Assert.That(manager.SwapLineup(LineupSpot.Batting(1), LineupSpot.Batting(2)), Is.False, "경기 중");
         }
 
         [UnityTest]

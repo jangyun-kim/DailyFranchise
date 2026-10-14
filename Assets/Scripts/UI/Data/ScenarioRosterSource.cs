@@ -104,7 +104,7 @@ namespace DailyFranchise.UI.Data
                 return new RosterEntry
                 {
                     Order = e.Order, Role = data?.Position ?? e.Role, PlayerId = e.PlayerId,
-                    Note = data == null ? e.Note : BenchNote(data) ?? e.Note,
+                    Note = data == null ? e.Note : BenchNote(data),
                 };
             }).ToList();
 
@@ -144,10 +144,12 @@ namespace DailyFranchise.UI.Data
             string Rate(double v) => v.ToString(v < 1 ? ".000" : "0.000", inv);
         }
 
-        /// <summary>벤치 메모: 대타는 "좌/장타", 그 외는 메모 그대로. 메모가 없으면 null.</summary>
+        /// <summary>
+        /// 벤치 메모: 대타는 "좌/장타", 그 외는 메모 그대로. 메모가 없으면(예: 라인업에서 빠진 선발 타자) "좌타"처럼 타석만.
+        /// </summary>
         static string BenchNote(PlayerData p)
         {
-            if (p.Memo == null) return null;
+            if (p.Memo == null) return $"{HandText(p.Bats)}타";
             return p.Position == "대타" ? $"{HandText(p.Bats)}/{p.Memo}" : p.Memo;
         }
 

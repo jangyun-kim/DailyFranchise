@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using DailyFranchise.App.Data;
 using DailyFranchise.Sim.Data;
 using DailyFranchise.UI.Data;
@@ -10,6 +12,9 @@ namespace DailyFranchise.App
     /// 1920×1080 로비. SeasonManager의 시즌 상태를 읽어 일정·순위·라인업을 표시하고,
     /// [다음 경기 시작]으로 경기 화면 진입을 요청한다. 경기 화면을 직접 참조하지 않는다.
     /// 선수 DB를 읽는 동안에는 시작 버튼을 잠그고, 다 읽으면 다시 그린다.
+    /// 좌측 라인업은 Click-to-Swap으로 바꾼다: 첫 클릭으로 선수를 고르고(강조), 두 번째 클릭한 선수와 맞바꾼다.
+    /// 바꾼 라인업은 SeasonManager가 시즌에 반영·저장하고, 여기서는 다시 그리기만 한다.
+    /// 선택 상태 표시는 USS 클래스(lobby-row--selected / --swappable)로만 바꾼다.
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class LobbyController : MonoBehaviour
@@ -17,6 +22,12 @@ namespace DailyFranchise.App
         VisualElement _root;
         Button _start;
         SeasonManager _manager;
+        readonly LineupSelection _selection = new LineupSelection();
+        /// <summary>지금 그린 라인업 카드. 선수 DB가 없으면 null (교체 불가).</summary>
+        LineupCard _card;
+
+        /// <summary>현재 라인업 선택 상태 (테스트·진단용).</summary>
+        public LineupSelection Selection => _selection;
 
         void OnEnable()
         {
@@ -25,18 +36,46 @@ namespace DailyFranchise.App
             _start.clicked += OnStartClicked;
             _manager = SeasonManager.EnsureExists();
             _manager.DatabaseReady += OnDatabaseReady;
+            _manager.LineupChanged += OnLineupChanged;
+            _selection.Clear();
             Render();
         }
 
         void OnDisable()
         {
             if (_start != null) _start.clicked -= OnStartClicked;
-            if (_manager != null) _manager.DatabaseReady -= OnDatabaseReady;
+            if (_manager != null)
+            {
+                _manager.DatabaseReady -= OnDatabaseReady;
+                _manager.LineupChanged -= OnLineupChanged;
+            }
             _start = null;
             _manager = null;
         }
 
         void OnDatabaseReady() => Render();
+
+        void OnLineupChanged()
+        {
+            _selection.Clear();
+            RenderRoster(_manager.Season);
+        }
+
+        /// <summary>
+        /// 라인업 자리 클릭. 선수 DB 라인업이 없거나 경기 중이면 무시한다.
+        /// 두 번째 클릭이 맞바꿀 수 있는 자리면 SeasonManager에 교체를 요청한다 (성공하면 LineupChanged로 다시 그림).
+        /// </summary>
+        public void ClickLineupSpot(LineupSpot spot)
+        {
+            if (_card == null || !_card.Contains(spot) || _manager.Season.InProgress != null) return;
+            var result = _selection.Click(spot, _card.CanSwap);
+            if (result == LineupClick.Swap)
+            {
+                var (first, second) = _selection.PendingSwap.Value;
+                if (_manager.SwapLineup(first, second)) return;
+            }
+            RenderSelection();
+        }
 
         void OnStartClicked()
         {
@@ -71,19 +110,30 @@ namespace DailyFranchise.App
         void RenderRoster(SeasonState season)
         {
             var db = _manager.Database;
-            var mine = db?.GetRoster(season.MyTeam);
-            if (mine != null && mine.Lineup.Count > 0)
+            var mine = _manager.MyRoster;
+            _card = _manager.CurrentLineup;
+            if (mine != null && _card != null)
             {
                 RenderDatabaseRoster(mine);
                 Q<Label>("roster-source").text = $"표시 데이터: {MasterDatabase.RosterFileName} ({db.Season})";
+                RenderSelection();
                 return;
             }
 
-            // 선수 DB가 없거나 아직 읽는 중이면 경기 화면과 같은 더미 선수 데이터를 쓴다.
+            // 선수 DB가 없거나 아직 읽는 중이면 경기 화면과 같은 더미 선수 데이터를 쓴다 (교체 불가).
+            _card = null;
+            _selection.Clear();
             var roster = new DummyScenarioData();
-            var container = Q("roster");
+            FillDummy(Q("roster"), roster, roster.GetLineup(roster.MyTeam));
+            FillDummy(Q("bench"), roster, roster.GetBench(roster.MyTeam));
+            Q<Label>("roster-source").text = "표시 데이터: 가상 더미";
+            Q<Label>("lineup-hint").text = _manager.IsDatabaseReady ? "라인업 교체는 선수 데이터가 있을 때만 할 수 있습니다." : "";
+        }
+
+        static void FillDummy(VisualElement container, DummyScenarioData roster, IEnumerable<RosterEntry> entries)
+        {
             container.Clear();
-            foreach (var entry in roster.GetLineup(roster.MyTeam))
+            foreach (var entry in entries)
             {
                 var p = roster.GetPlayer(entry.PlayerId);
                 container.Add(Row("lobby-row",
@@ -92,19 +142,56 @@ namespace DailyFranchise.App
                     Cell(p.Name, "col-name"),
                     Cell(p.Handedness, "col-hand")));
             }
-            Q<Label>("roster-source").text = "표시 데이터: 가상 더미";
         }
 
         void RenderDatabaseRoster(TeamRoster roster)
         {
-            var container = Q("roster");
-            container.Clear();
+            var lineup = Q("roster");
+            lineup.Clear();
             foreach (var p in roster.Lineup)
-                container.Add(Row("lobby-row",
-                    Cell(p.Order.ToString(), "col-order"),
-                    Cell(p.Position, "col-pos"),
-                    Cell(p.Name, "col-name"),
-                    Cell(ScenarioRosterSource.HandednessText(p), "col-hand")));
+                lineup.Add(SpotRow(LineupSpot.Batting(p.Order), p.Order.ToString(), p));
+
+            var bench = Q("bench");
+            bench.Clear();
+            for (int i = 0; i < roster.Bench.Count; i++)
+                bench.Add(SpotRow(LineupSpot.Bench(i), "", roster.Bench[i]));
+        }
+
+        VisualElement SpotRow(LineupSpot spot, string order, PlayerData p)
+        {
+            var row = Row("lobby-row",
+                Cell(order, "col-order"),
+                Cell(p.Position, "col-pos"),
+                Cell(p.Name, "col-name"),
+                Cell(ScenarioRosterSource.HandednessText(p), "col-hand"));
+            row.name = spot.IsBench ? $"bench-{spot.Index + 1}" : $"lineup-{spot.Index + 1}";
+            row.userData = spot;
+            row.AddToClassList("lobby-row--selectable");
+            row.RegisterCallback<ClickEvent>(_ => ClickLineupSpot(spot));
+            return row;
+        }
+
+        /// <summary>선택·교체 가능 표시를 USS 클래스로만 갱신하고 안내 문구를 바꾼다.</summary>
+        void RenderSelection()
+        {
+            var selected = _selection.Selected;
+            foreach (var row in Q("roster").Children().Concat(Q("bench").Children()))
+            {
+                if (!(row.userData is LineupSpot spot)) continue;
+                row.EnableInClassList("lobby-row--selected", selected == spot);
+                row.EnableInClassList("lobby-row--swappable", selected.HasValue && _card.CanSwap(selected.Value, spot));
+            }
+
+            string name = selected.HasValue ? NameAt(selected.Value) : null;
+            Q<Label>("lineup-hint").text = _manager.Season.InProgress != null ? ""
+                : name == null ? "선수를 누른 뒤 바꿀 타순 또는 벤치 선수를 누르면 자리를 맞바꿉니다."
+                : $"{name} 선택됨 · 바꿀 선수를 누르세요 (다시 누르면 취소).";
+        }
+
+        string NameAt(LineupSpot spot)
+        {
+            var id = _card.PlayerAt(spot);
+            return id == null ? null : _manager.Database.FindPlayer(id)?.Name ?? id;
         }
 
         void RenderSchedule(SeasonState season)

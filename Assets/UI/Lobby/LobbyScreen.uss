@@ -165,6 +165,40 @@ Label {
     -unity-font-style: bold;
 }
 
+/* 라인업 교체 (Click-to-Swap). 상태는 클래스로만 바꾼다. */
+.bench-title {
+    margin-top: 14px;
+}
+
+.lobby-row--selectable:hover {
+    background-color: var(--panel-2);
+}
+
+.lobby-row--swappable {
+    border-left-width: 3px;
+    border-color: var(--line);
+}
+
+.lobby-row--selected {
+    background-color: var(--panel-2);
+    border-left-width: 3px;
+    border-color: var(--accent);
+}
+
+.lobby-row--selected > Label {
+    color: var(--accent);
+    -unity-font-style: bold;
+}
+
+.lineup-hint {
+    margin-top: 10px;
+    height: 40px;
+    font-size: 13px;
+    color: var(--muted);
+    white-space: normal;
+    -unity-text-align: upper-left;
+}
+
 /* 라인업 열 */
 .col-order { width: 28px; color: var(--muted); }
 .col-pos { width: 54px; color: var(--muted); }
