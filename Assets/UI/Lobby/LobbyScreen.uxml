@@ -44,6 +44,7 @@
                     <ui:Label class="col-num" text="승" />
                     <ui:Label class="col-num" text="패" />
                     <ui:Label class="col-num" text="무" />
+                    <ui:Label class="col-pct" text="승률" />
                     <ui:Label class="col-gb" text="승차" />
                 </ui:VisualElement>
                 <ui:VisualElement name="standings" />

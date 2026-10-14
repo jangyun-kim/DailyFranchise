@@ -36,6 +36,8 @@ namespace DailyFranchise.Sim
         GroundOut,
         FlyOut,
         LineOut,
+        /// <summary>내야·포수 뜬공 (번트 뜬공 포함). 타수에 넣는다.</summary>
+        PopOut,
         /// <summary>희생 번트 (스퀴즈 포함). 타자는 아웃, 주자 진루. 타수에 넣지 않는다.</summary>
         SacrificeBunt,
     }
@@ -47,5 +49,12 @@ namespace DailyFranchise.Sim
         Default,
         SwingAway,
         SqueezeBunt,
+    }
+
+    /// <summary>작전 실행 결과. 확률이 없는 작전(기본 진행)은 항상 Success.</summary>
+    public enum TacticOutcome
+    {
+        Success,
+        Failure,
     }
 }

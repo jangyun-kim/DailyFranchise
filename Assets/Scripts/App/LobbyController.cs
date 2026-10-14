@@ -43,7 +43,7 @@ namespace DailyFranchise.App
             var me = season.MyStanding;
             Q<Label>("my-record").text = me == null
                 ? "—"
-                : $"{me.Rank}위 · {me.Wins}승 {me.Losses}패 {me.Draws}무 · 진행 {season.GamesPlayed} / {season.Schedule.Count}경기";
+                : $"{me.Rank}위 · {me.Wins}승 {me.Losses}패 {me.Draws}무 · 승률 {me.WinPctText} · 진행 {season.GamesPlayed} / {season.Schedule.Count}경기";
 
             RenderRoster();
             RenderSchedule(season);
@@ -82,7 +82,7 @@ namespace DailyFranchise.App
             var next = season.NextGame;
             foreach (var g in season.Schedule)
             {
-                string status = g.Status == GameStatus.Final ? "종료"
+                string status = g.Status == GameStatus.Final ? FinalText(season, g)
                     : g.Status == GameStatus.InProgress ? "진행 중"
                     : g == next ? "다음 경기"
                     : "예정";
@@ -113,10 +113,20 @@ namespace DailyFranchise.App
                     Cell(s.Wins.ToString(), "col-num"),
                     Cell(s.Losses.ToString(), "col-num"),
                     Cell(s.Draws.ToString(), "col-num"),
+                    Cell(s.WinPctText, "col-pct"),
                     Cell(s.GamesBehind, "col-gb"));
                 row.EnableInClassList("lobby-row--mine", s.Team == season.MyTeam);
                 container.Add(row);
             }
+        }
+
+        /// <summary>종료 경기 상태 칸: 내 구단 기준 승/패/무 + 원정:홈 점수 (예: "패 3:2").</summary>
+        static string FinalText(SeasonState season, ScheduledGame g)
+        {
+            var outcome = season.MyOutcome(g);
+            if (!outcome.HasValue) return "종료";
+            string word = outcome == GameOutcome.Win ? "승" : outcome == GameOutcome.Loss ? "패" : "무";
+            return $"{word} {g.Score.Value}";
         }
 
         T Q<T>(string name) where T : VisualElement => _root.Q<T>(name);

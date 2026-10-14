@@ -1,3 +1,5 @@
+using DailyFranchise.Sim;
+using DailyFranchise.Sim.Fixtures;
 using DailyFranchise.UI;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -8,18 +10,29 @@ namespace DailyFranchise.App
     /// 씬을 넘어 시즌 상태를 유지하고 로비 ↔ 경기 화면 전환을 중계한다.
     /// 로비와 경기 화면은 서로를 모르며, 이 객체만 두 쪽을 안다.
     /// - 로비: StartNextGame() 호출
-    /// - 경기 화면: GameScreenController.ExitRequested 발생 → 이 객체가 구독해 로비로 복귀
+    /// - 경기 화면: 시즌 경기 장면(작전 승부처)을 불러오고, GameScreenController.ExitRequested(최종 점수)를 구독해
+    ///   결과를 시즌 성적·순위에 반영한 뒤 로비로 복귀
     /// </summary>
     public sealed class SeasonManager : MonoBehaviour
     {
         public const string LobbyScene = "LobbyScreen";
         public const string GameScene = "GameScreen";
+        /// <summary>시즌 경기로 재생할 장면. 고정 시나리오 단계라 모든 경기가 같은 승부처 장면이다.</summary>
+        public const string SeasonGameScenario = ScenarioCatalog.EighthBottomTactics;
 
         public static SeasonManager Instance { get; private set; }
 
         public SeasonState Season { get; private set; }
         /// <summary>처리한 경기 종료 요청 수 (중복 구독 진단용).</summary>
         public int ExitsHandled { get; private set; }
+        /// <summary>마지막으로 반영한 경기 최종 점수 (일정의 원정 : 홈 기준).</summary>
+        public GameScore? LastScore { get; private set; }
+
+        /// <summary>
+        /// 타 구단 경기 결과용 난수. 경기 화면의 작전 판정 난수(<see cref="GameScreenController.TacticRandom"/>)와 별개다.
+        /// 테스트는 고정 Seed를 넣는다.
+        /// </summary>
+        public IRandomSource LeagueRandom { get; set; } = SeededRandom.FromClock();
 
         GameScreenController _game;
         bool _loading;
@@ -69,7 +82,9 @@ namespace DailyFranchise.App
             if (scene.name != GameScene) return;
             DetachGame();
             _game = FindAnyObjectByType<GameScreenController>();
-            if (_game != null) _game.ExitRequested += OnGameExitRequested;
+            if (_game == null) return;
+            _game.ExitRequested += OnGameExitRequested;
+            if (Season.InProgress != null) _game.LoadScenario(SeasonGameScenario);
         }
 
         void OnSceneUnloaded(Scene scene)
@@ -77,12 +92,18 @@ namespace DailyFranchise.App
             if (scene.name == GameScene) DetachGame();
         }
 
-        void OnGameExitRequested()
+        void OnGameExitRequested(GameResult result)
         {
             if (_loading) return;
             ExitsHandled++;
             DetachGame();
-            if (Season.InProgress != null) Season.FinishCurrentGame();
+            if (Season.InProgress != null)
+            {
+                // 경기 화면은 더미 데이터라 내 구단을 늘 홈으로 그린다. 일정의 원정·홈 기준으로 바꿔 반영한다.
+                var score = Season.ScheduleScore(result.MyRuns, result.OpponentRuns);
+                LastScore = score;
+                Season.FinishCurrentGame(score, LeagueRandom);
+            }
             Load(LobbyScene);
         }
 

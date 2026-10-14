@@ -39,6 +39,8 @@ namespace DailyFranchise.UI.Tests
 
             _controller.Playback.Pause();
             _controller.Playback.Restart();
+            // 작전은 기본적으로 항상 성공 (0.0 < 성공률). 실패 경로 테스트는 따로 바꿔 넣는다.
+            _controller.TacticRandom = new ScriptedRandom(0.0);
             for (int i = 0; i < 3; i++) yield return null;
         }
 
@@ -412,7 +414,9 @@ namespace DailyFranchise.UI.Tests
             {
                 _controller.PreviewTactic(t);
                 yield return null;
-                Assert.That(Text(root, "tactic-desc"), Is.EqualTo(TacticText.Detail(t)));
+                Assert.That(Text(root, "tactic-desc"), Does.StartWith(TacticText.Detail(t)));
+                Assert.That(Text(root, "tactic-desc"), Does.EndWith(
+                    TacticText.Odds(Fixture8thBottomTactics.Create().Branch[t])), "설명 끝에 성공 확률");
                 var preview = LayoutChecker.Check(Screen);
                 Assert.That(preview, Is.Empty, $"[{t} 설명]\n" + string.Join("\n", preview));
             }
@@ -494,7 +498,7 @@ namespace DailyFranchise.UI.Tests
             yield return null;
             var notes = root.Q("log").Query<Label>(className: "log-entry--tactic").ToList();
             Assert.That(notes.Count, Is.EqualTo(1));
-            Assert.That(notes[0].text, Is.EqualTo("감독 작전 · 스퀴즈 번트"));
+            Assert.That(notes[0].text, Is.EqualTo("감독 작전 · 스퀴즈 번트 · 성공"));
             Assert.That(Text(root, "play-type"), Does.StartWith("스퀴즈 번트"));
             var issues = LayoutChecker.Check(Screen);
             Assert.That(issues, Is.Empty, string.Join("\n", issues));
@@ -515,6 +519,81 @@ namespace DailyFranchise.UI.Tests
             Assert.That(Text(root, "ls-home-h"), Is.EqualTo("6"));
             Assert.That(LineupNote(root, "home_b3"), Is.EqualTo("2-4"));
             Assert.That(Text(root, "status-inning"), Is.EqualTo("8회말 · 2사 · 1·2루"));
+        }
+
+        [UnityTest]
+        public IEnumerator 스퀴즈가_실패하면_무득점으로_이닝이_끝나고_실패가_표시된다()
+        {
+            var root = _doc.rootVisualElement;
+            _controller.TacticRandom = new ScriptedRandom(0.99); // 성공률 60% 이상 → 실패
+            _controller.LoadScenario(ScenarioCatalog.EighthBottomTactics);
+            _controller.Playback.SetSpeed(4);
+            _controller.Playback.Play();
+            yield return WaitForDecision();
+            Assert.That(_controller.FinalScore(), Is.EqualTo(new GameScore(3, 3)), "작전 전 종료는 기본 진행(적시타 동점)으로 계산");
+
+            Submit(root.Q<Button>("tactic-squeeze"));
+            Assert.That(_controller.TacticResult, Is.EqualTo(TacticOutcome.Failure));
+            Assert.That(_controller.Playback.Count, Is.EqualTo(3));
+            Assert.That(Text(root, "tactic-desc"), Does.EndWith("결과 대기 중"), "결과 투구 전에는 성패를 밝히지 않음");
+            yield return WaitForPlaybackEnd();
+            yield return WaitForField();
+
+            Assert.That(Text(root, "home-score"), Is.EqualTo("2"), "무득점");
+            Assert.That(Text(root, "status-inning"), Is.EqualTo("8회말 · 3아웃 · 이닝 종료"));
+            Assert.That(Text(root, "play-type"), Does.StartWith("뜬공 더블 아웃"));
+            Assert.That(_controller.Field.TokenCenters().Keys, Is.EquivalentTo(new[] { "home_b1" }), "1루 잔루");
+            Assert.That(LineupNote(root, "home_b3"), Is.EqualTo("1-4"), "실패한 번트 뜬공은 타수");
+            Assert.That(Text(root, "tactic-desc"), Does.EndWith("결과 · 스퀴즈 번트 실패"));
+            var notes = root.Q("log").Query<Label>(className: "log-entry--tactic").ToList();
+            Assert.That(notes.Select(n => n.text), Is.EqualTo(new[] { "감독 작전 · 스퀴즈 번트 · 실패" }));
+            Assert.That(_controller.FinalScore(), Is.EqualTo(new GameScore(3, 2)));
+            var issues = LayoutChecker.Check(Screen);
+            Assert.That(issues, Is.Empty, string.Join("\n", issues));
+        }
+
+        [UnityTest]
+        public IEnumerator 강공이_실패하면_병살로_이닝이_끝난다()
+        {
+            var root = _doc.rootVisualElement;
+            _controller.TacticRandom = new ScriptedRandom(0.5); // 강공 성공률 50% → 실패
+            _controller.LoadScenario(ScenarioCatalog.EighthBottomTactics);
+            _controller.Playback.SetSpeed(4);
+            _controller.Playback.Play();
+            yield return WaitForDecision();
+            Assert.That(_controller.ChooseTactic(TacticKind.SwingAway), Is.True);
+            yield return WaitForPlaybackEnd();
+            yield return WaitForField();
+
+            Assert.That(_controller.TacticResult, Is.EqualTo(TacticOutcome.Failure));
+            Assert.That(Text(root, "home-score"), Is.EqualTo("2"));
+            Assert.That(Text(root, "play-type"), Does.StartWith("땅볼 병살"));
+            Assert.That(_controller.Field.TokenCenters().Keys, Is.EquivalentTo(new[] { "home_b2" }), "3루 잔루");
+            Assert.That(_controller.FinalScore(), Is.EqualTo(new GameScore(3, 2)));
+            var issues = LayoutChecker.Check(Screen);
+            Assert.That(issues, Is.Empty, string.Join("\n", issues));
+        }
+
+        [UnityTest]
+        public IEnumerator 같은_Seed를_넣으면_작전_결과가_같다()
+        {
+            TacticOutcome? Choose(int seed)
+            {
+                _controller.TacticRandom = new SeededRandom(seed);
+                _controller.LoadScenario(ScenarioCatalog.EighthBottomTactics);
+                _controller.Playback.Pause();
+                _controller.Playback.SkipToEnd();
+                _controller.ChooseTactic(TacticKind.SqueezeBunt);
+                _controller.Playback.Pause();
+                return _controller.TacticResult;
+            }
+
+            var first = Enumerable.Range(0, 10).Select(i => Choose(100 + i)).ToList();
+            var again = Enumerable.Range(0, 10).Select(i => Choose(100 + i)).ToList();
+            Assert.That(again, Is.EqualTo(first));
+            Assert.That(first, Has.Some.EqualTo(TacticOutcome.Failure).And.Some.EqualTo(TacticOutcome.Success),
+                "Seed 100~109에서 성공·실패가 모두 나온다");
+            yield return null;
         }
 
         [UnityTest]

@@ -11,7 +11,8 @@ namespace DailyFranchise.Sim
             t == PlayType.Single || t == PlayType.Double || t == PlayType.Triple || t == PlayType.HomeRun;
 
         public static bool IsOut(PlayType t) =>
-            t == PlayType.GroundOut || t == PlayType.FlyOut || t == PlayType.LineOut || t == PlayType.SacrificeBunt;
+            t == PlayType.GroundOut || t == PlayType.FlyOut || t == PlayType.LineOut ||
+            t == PlayType.PopOut || t == PlayType.SacrificeBunt;
 
         /// <summary>안타로 타자가 진루하는 루 수 (홈런 = 4). 안타가 아니면 0.</summary>
         public static int BasesForHit(PlayType t)

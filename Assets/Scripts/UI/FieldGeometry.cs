@@ -74,6 +74,7 @@ namespace DailyFranchise.UI
             switch (t)
             {
                 case PlayType.SacrificeBunt: return edge * 0.25f;
+                case PlayType.PopOut: return edge * 0.3f;
                 case PlayType.GroundOut: return edge * 0.6f;
                 case PlayType.LineOut: return edge + 20f;
                 case PlayType.Single: return edge + 45f;

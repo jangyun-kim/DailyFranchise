@@ -180,10 +180,11 @@ Label {
 .col-status { flex-grow: 1; -unity-text-align: middle-right; padding-right: 8px; }
 
 /* 순위 열 */
-.col-rank { width: 48px; padding-left: 6px; }
+.col-rank { width: 44px; padding-left: 6px; }
 .col-standing-team { flex-grow: 1; }
-.col-num { width: 48px; -unity-text-align: middle-right; }
-.col-gb { width: 64px; -unity-text-align: middle-right; padding-right: 6px; }
+.col-num { width: 40px; -unity-text-align: middle-right; }
+.col-pct { width: 64px; -unity-text-align: middle-right; }
+.col-gb { width: 56px; -unity-text-align: middle-right; padding-right: 6px; }
 
 /* ───────── 하단 110px ───────── */
 .footer {

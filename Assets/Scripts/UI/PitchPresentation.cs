@@ -77,6 +77,7 @@ namespace DailyFranchise.UI
                 case PlayType.GroundOut: return "땅볼 아웃";
                 case PlayType.FlyOut: return "뜬공 아웃";
                 case PlayType.LineOut: return "직선타 아웃";
+                case PlayType.PopOut: return "내야 뜬공 아웃";
                 case PlayType.SacrificeBunt: return "희생 번트";
                 default: return "—";
             }

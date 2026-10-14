@@ -1,8 +1,9 @@
 using DailyFranchise.Sim;
+using DailyFranchise.Sim.Fixtures;
 
 namespace DailyFranchise.UI
 {
-    /// <summary>작전 버튼·설명 문구. 확률 계산 없이 표시용 설명만 담는다.</summary>
+    /// <summary>작전 버튼·설명 문구. 확률 판정은 BranchPoint가 하고, 여기서는 표시만 한다.</summary>
     public static class TacticText
     {
         public static string Label(TacticKind t)
@@ -31,5 +32,20 @@ namespace DailyFranchise.UI
                     return Label(t);
             }
         }
+
+        /// <summary>미리보기용 성공 확률 줄.</summary>
+        public static string Odds(TacticBranch branch) =>
+            branch.IsGamble
+                ? $"성공 확률 {System.Math.Round(branch.SuccessRate * 100)}% · 실패 {System.Math.Round((1 - branch.SuccessRate) * 100)}%"
+                : "확률 판정 없음 · 원래 흐름대로 진행";
+
+        /// <summary>작전 결과 한 단어. 기본 진행은 판정이 없으므로 "개입 없음".</summary>
+        public static string OutcomeText(TacticKind t, TacticOutcome outcome) =>
+            t == TacticKind.Default ? "개입 없음" : outcome == TacticOutcome.Success ? "성공" : "실패";
+
+        /// <summary>작전 결과가 나온 뒤 설명 칸 마지막 줄.</summary>
+        public static string OutcomeLine(TacticKind t, TacticOutcome outcome) =>
+            t == TacticKind.Default ? "결과 · 개입 없이 진행"
+                : outcome == TacticOutcome.Success ? $"결과 · {Label(t)} 성공" : $"결과 · {Label(t)} 실패";
     }
 }

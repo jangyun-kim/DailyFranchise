@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using DailyFranchise.App;
+using DailyFranchise.Sim;
 using NUnit.Framework;
 
 namespace DailyFranchise.UI.Tests
@@ -37,12 +38,12 @@ namespace DailyFranchise.UI.Tests
             Assert.That(s.InProgress, Is.SameAs(g1));
             Assert.Throws<InvalidOperationException>(() => s.StartNextGame(), "진행 중에 또 시작할 수 없음");
 
-            s.FinishCurrentGame();
+            s.FinishCurrentGame(new GameScore(3, 3), new SeededRandom(1));
             Assert.That(g1.Status, Is.EqualTo(GameStatus.Final));
             Assert.That(s.InProgress, Is.Null);
             Assert.That(s.GamesPlayed, Is.EqualTo(1));
             Assert.That(s.NextGame.Number, Is.EqualTo(2));
-            Assert.Throws<InvalidOperationException>(() => s.FinishCurrentGame(), "진행 중인 경기 없이 종료 불가");
+            Assert.Throws<InvalidOperationException>(() => s.FinishCurrentGame(new GameScore(1, 0), new SeededRandom(1)), "진행 중인 경기 없이 종료 불가");
         }
 
         [Test]
@@ -53,7 +54,7 @@ namespace DailyFranchise.UI.Tests
             {
                 Assert.That(s.IsSeasonOver, Is.False);
                 s.StartNextGame();
-                s.FinishCurrentGame();
+                s.FinishCurrentGame(new GameScore(3, 3), new SeededRandom(1));
             }
             Assert.That(s.IsSeasonOver, Is.True);
             Assert.That(s.NextGame, Is.Null);
