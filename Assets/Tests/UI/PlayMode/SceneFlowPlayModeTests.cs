@@ -585,6 +585,42 @@ namespace DailyFranchise.UI.Tests
         }
 
         [UnityTest]
+        public IEnumerator 퀵_시뮬_순환이_3아웃으로_끝나면_경기_종료로_로비에_돌아가고_결과가_반영된다()
+        {
+            var manager = SeasonManager.Instance;
+            manager.UseGeneratedScenario = true;
+            manager.ScenarioRandom = new SeededRandom(20261017);
+
+            Submit(LobbyRoot().Q<Button>("start-game"));
+            yield return WaitForScene(SeasonManager.GameScene);
+            var game = Object.FindAnyObjectByType<GameScreenController>();
+            game.TacticRandom = new ScriptedRandom(0.99); // 강공 실패만 → 3아웃
+            game.Playback.Pause();
+            game.Playback.SkipToEnd();
+            yield return null;
+
+            int guard = 0;
+            while (game.CurrentBranch != null)
+            {
+                Assert.That(++guard, Is.LessThanOrEqualTo(PlayByPlayGenerator.MaxPlateAppearancesPerHalf));
+                Assert.That(game.ChooseTactic(TacticKind.SwingAway), Is.True);
+                game.Playback.Pause();
+                game.Playback.SkipToEnd();
+                yield return null;
+            }
+            Assert.That(game.InningEndAwaitingExit, Is.True, "3아웃 · 경기 종료 대기");
+            var final = game.FinalScore();
+            var gameEnd = game.GetComponent<UIDocument>().rootVisualElement.Q<Button>("ctl-game-end");
+            Assert.That(gameEnd.enabledSelf, Is.True);
+            Assert.That(gameEnd.ClassListContains("btn--active"), Is.True, "경기 종료 안내 강조");
+
+            Submit(gameEnd);
+            yield return WaitForScene(SeasonManager.LobbyScene);
+            Assert.That(manager.LastScore, Is.EqualTo(final));
+            Assert.That(manager.Season.GamesPlayed, Is.EqualTo(1));
+        }
+
+        [UnityTest]
         public IEnumerator 시즌_경기는_기본으로_퀵_시뮬_장면을_쓴다()
         {
             DestroyManager();

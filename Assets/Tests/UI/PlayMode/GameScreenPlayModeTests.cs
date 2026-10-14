@@ -793,5 +793,136 @@ namespace DailyFranchise.UI.Tests
             var issues = LayoutChecker.Check(Screen);
             Assert.That(issues, Is.Empty, string.Join("\n", issues));
         }
+
+        // ── 인게임 Play-by-Play 순환 (Phase 14) ──
+
+        /// <summary>3루 주자가 있는 승부처가 나올 때까지 Seed를 바꿔 퀵 시뮬 경기를 불러온다.</summary>
+        void LoadGeneratedWithRunnerOnThird()
+        {
+            for (int seed = 1; seed < 100; seed++)
+            {
+                _controller.LoadGeneratedScenario(Data.Matchup.Default, new SeededRandom(seed));
+                _controller.Playback.Pause();
+                if (_controller.Generated.Situation.Runners.Third != null) return;
+            }
+            Assert.Fail("3루 주자 상황을 찾지 못함");
+        }
+
+        [UnityTest]
+        public IEnumerator 퀵_시뮬_강공_안타_뒤_득점이_오르고_4번_타자가_들어서며_작전이_다시_켜진다()
+        {
+            var root = _doc.rootVisualElement;
+            LoadGeneratedWithRunnerOnThird();
+            var game = _controller.Generated;
+            var s = game.Situation;
+            int runs = (s.Runners.Second != null ? 1 : 0) + 1;
+            _controller.Playback.SkipToEnd();
+            yield return null;
+            Assert.That(_controller.PlayByPlay, Is.True);
+            Assert.That(Text(root, "batter-name"), Is.EqualTo(_controller.Roster.GetPlayer("home_b3").Name));
+
+            // 0.0: 강공 성공 → 우전 적시타
+            _controller.Playback.SetSpeed(4);
+            Assert.That(_controller.ChooseTactic(TacticKind.SwingAway), Is.True);
+            yield return WaitForDecision();
+            yield return WaitForField();
+
+            Assert.That(_controller.TacticResult, Is.EqualTo(TacticOutcome.Success));
+            Assert.That(_controller.CurrentBranch, Is.Not.Null, "다음 타자 분기점");
+            Assert.That(_controller.Events.Count(e => e.BatterId == "home_b4"), Is.EqualTo(2), "각본의 4번 타자 삼진 대신 1-1까지만");
+            Assert.That(Text(root, "home-score"), Is.EqualTo((game.Fixture.HomeScoreBefore + runs).ToString()), "적시타 득점");
+            Assert.That(InningCells(root, 2)[7], Is.EqualTo(runs.ToString()), "8회말 칸");
+            Assert.That(Text(root, "batter-name"), Is.EqualTo(_controller.Roster.GetPlayer("home_b4").Name), "4번 타자 등장");
+            var current = root.Q("lineup").Children().Where(r => r.ClassListContains("roster-row--current")).Select(r => (string)r.userData);
+            Assert.That(current, Is.EqualTo(new[] { "home_b4" }), "좌측 타순 하이라이트");
+            Assert.That(Text(root, "status-inning"), Is.EqualTo($"8회말 · {PitchPresentation.OutsText(s.Outs)} · {new BaseState(FixtureGenerator.Batter1, s.Runners.First, null)}"));
+            Assert.That(Text(root, "headline-main"), Does.Contain("작전 선택 대기"));
+            Assert.That(root.Q<Button>("tactic-default").enabledSelf, Is.True);
+            Assert.That(root.Q<Button>("tactic-swing").enabledSelf, Is.True);
+            Assert.That(root.Q<Button>("tactic-squeeze").enabledSelf, Is.False, "단타 뒤 3루가 비어 스퀴즈 없음");
+            Assert.That(_controller.TacticSuccessRate(TacticKind.SwingAway), Is.InRange(0.05, 0.95));
+            var issues = LayoutChecker.Check(Screen);
+            Assert.That(issues, Is.Empty, string.Join("\n", issues));
+
+            // 로그(최근 5개)에서 작전 기록은 적시타 시점에 보인다. 다시 끝으로 가면 작전 대기로 돌아온다.
+            int hitIndex = _controller.Events.Select((e, i) => (e, i)).First(x => x.e.PlayType == PlayType.Single).i;
+            _controller.Playback.SeekTo(hitIndex);
+            yield return null;
+            Assert.That(root.Q("log").Children().OfType<Label>().Any(l => l.text == "감독 작전 · 강공 지시 · 성공"), Is.True);
+            _controller.Playback.SkipToEnd();
+            yield return null;
+            Assert.That(_controller.Playback.AwaitingDecision, Is.True);
+
+            // 두 번째 타석도 작전을 고를 수 있다
+            Assert.That(_controller.ChooseTactic(TacticKind.SwingAway), Is.True);
+            Assert.That(_controller.Decisions.Count, Is.EqualTo(2));
+            Assert.That(_controller.Decisions[1].AfterIndex, Is.GreaterThan(_controller.Decisions[0].AfterIndex));
+        }
+
+        [UnityTest]
+        public IEnumerator 퀵_시뮬_순환은_3아웃에서_멈추고_경기_종료로_이어진다()
+        {
+            var root = _doc.rootVisualElement;
+            _controller.LoadGeneratedScenario(Data.Matchup.Default, new SeededRandom(7));
+            _controller.TacticRandom = new ScriptedRandom(0.99); // 강공 실패 → 병살·땅볼, 이후 삼진
+            _controller.Playback.Pause();
+            _controller.Playback.SkipToEnd();
+            yield return null;
+
+            int guard = 0;
+            while (_controller.CurrentBranch != null)
+            {
+                Assert.That(++guard, Is.LessThanOrEqualTo(PlayByPlayGenerator.MaxPlateAppearancesPerHalf), "순환이 끝나지 않음");
+                Assert.That(_controller.Playback.AwaitingDecision, Is.True);
+                Assert.That(_controller.ChooseTactic(TacticKind.SwingAway), Is.True);
+                _controller.Playback.Pause();
+                _controller.Playback.SkipToEnd();
+                yield return null;
+            }
+            yield return WaitForField();
+
+            var last = _controller.Events[_controller.Events.Count - 1];
+            Assert.That(last.OutsAfter, Is.EqualTo(3));
+            Assert.That(_controller.Playback.IsAtEnd, Is.True);
+            Assert.That(_controller.Playback.AwaitingDecision, Is.False);
+            Assert.That(_controller.InningEndAwaitingExit, Is.True);
+            Assert.That(_controller.Decisions.Count, Is.InRange(1, 3));
+            Assert.That(Text(root, "status-inning"), Is.EqualTo("8회말 · 3아웃 · 이닝 종료"));
+            Assert.That(Text(root, "headline-main"), Is.EqualTo("8회말 종료 · 공수교대 · 경기 종료 대기"));
+            Assert.That(root.Q<Button>("tactic-default").enabledSelf, Is.False);
+            Assert.That(root.Q<Button>("tactic-swing").enabledSelf, Is.False);
+            // 씬 단독 실행(로비 흐름 없음)이라 [경기 종료]는 기존처럼 꺼진다. 로비 복귀는 SceneFlow 테스트에서 확인.
+            Assert.That(_controller.HasExitHandler, Is.False);
+            Assert.That(root.Q<Button>("ctl-game-end").ClassListContains("btn--active"), Is.False);
+            Assert.That(_controller.FinalScore(),
+                Is.EqualTo(new GameScore(int.Parse(Text(root, "away-score")), int.Parse(Text(root, "home-score")))));
+            var issues = LayoutChecker.Check(Screen);
+            Assert.That(issues, Is.Empty, string.Join("\n", issues));
+
+            // 처음으로: 같은 경기 첫 승부처로 복귀
+            Submit(root.Q<Button>("ctl-restart"));
+            yield return null;
+            Assert.That(_controller.Decisions, Is.Empty);
+            Assert.That(_controller.CurrentBranch, Is.SameAs(_controller.Fixture.Branch));
+            Assert.That(_controller.InningEndAwaitingExit, Is.False);
+        }
+
+        [UnityTest]
+        public IEnumerator 고정_작전_장면은_순환하지_않고_각본대로_끝난다()
+        {
+            _controller.LoadScenario(ScenarioCatalog.EighthBottomTactics);
+            _controller.Playback.Pause();
+            _controller.Playback.SkipToEnd();
+            yield return null;
+            Assert.That(_controller.PlayByPlay, Is.False);
+            Assert.That(_controller.ChooseTactic(TacticKind.SwingAway), Is.True);
+            _controller.Playback.Pause();
+            _controller.Playback.SkipToEnd();
+            yield return null;
+            Assert.That(_controller.CurrentBranch, Is.Null);
+            Assert.That(_controller.Playback.IsAtEnd, Is.True);
+            Assert.That(_controller.Events.Count, Is.EqualTo(Fixture8thBottom.Create().Events.Count), "각본 8구 그대로");
+            Assert.That(_controller.InningEndAwaitingExit, Is.False);
+        }
     }
 }

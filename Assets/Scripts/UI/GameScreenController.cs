@@ -12,6 +12,7 @@ namespace DailyFranchise.UI
     /// 1920×1080 경기 화면. ScenarioCatalog의 고정 장면 또는 퀵 시뮬레이션으로 만든 승부처 장면을 읽기 전용으로 재생하며,
     /// 이름·기록은 IRosterSource / IScoreboardSource에서 가져온다.
     /// 점수·H·아웃·주자·타자 기록은 필드 연출이 끝나는 순간에 반영한다 (StatsSync).
+    /// 퀵 시뮬레이션 경기는 Play-by-Play로 순환한다: 작전 타석이 끝나면 다음 타순 타자가 들어서 다시 작전을 기다리고, 3아웃이면 멈춘다.
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class GameScreenController : MonoBehaviour
@@ -22,13 +23,33 @@ namespace DailyFranchise.UI
 
         [SerializeField] bool autoPlayOnStart = true;
 
+        /// <summary>작전 선택 기록 하나: 분기점 투구 인덱스, 고른 작전, 결과, 판정에 쓴 성공률.</summary>
+        public readonly struct TacticDecision
+        {
+            public readonly int AfterIndex;
+            public readonly TacticKind Tactic;
+            public readonly TacticOutcome Outcome;
+            public readonly double Rate;
+
+            public TacticDecision(int afterIndex, TacticKind tactic, TacticOutcome outcome, double rate)
+            {
+                AfterIndex = afterIndex;
+                Tactic = tactic;
+                Outcome = outcome;
+                Rate = rate;
+            }
+        }
+
         ScenarioFixture _fixture;
-        /// <summary>현재 재생 경로. 일직선 장면은 Fixture 이벤트, 분기 장면은 작전 선택 후 기본 구간 + 후속 구간.</summary>
+        /// <summary>
+        /// 현재 재생 경로. 일직선 장면은 Fixture 이벤트, 분기 장면은 작전 선택 후 기본 구간 + 후속 구간.
+        /// Play-by-Play 경기는 타석이 끝날 때마다 다음 타자의 작전 전 구간이 이어 붙는다.
+        /// </summary>
         IReadOnlyList<PitchEvent> _events;
-        TacticKind? _chosenTactic;
-        TacticOutcome? _tacticOutcome;
+        /// <summary>지금(또는 다음에) 작전을 기다리는 분기점. 더 고를 작전이 없으면 null.</summary>
+        BranchPoint _branch;
+        readonly List<TacticDecision> _decisions = new List<TacticDecision>();
         TacticKind? _previewTactic;
-        double? _tacticRate;
         MatchupCalculator _calculator = new MatchupCalculator(null);
         IRosterSource _roster;
         IScoreboardSource _scoreboard;
@@ -73,11 +94,24 @@ namespace DailyFranchise.UI
         public string RosterSourceLabel { get; set; } = "선수 데이터";
         /// <summary>현재 장면의 원정·홈 시작 점수와 이벤트 (원정 경기면 뒤집은 사본).</summary>
         public ScenarioFixture Fixture => _fixture;
-        public TacticKind? ChosenTactic => _chosenTactic;
-        /// <summary>고른 작전의 성공/실패. 작전을 고르기 전이면 null.</summary>
-        public TacticOutcome? TacticResult => _tacticOutcome;
-        /// <summary>고른 작전을 판정할 때 쓴 성공률. 작전 전이면 null.</summary>
-        public double? ChosenTacticRate => _tacticRate;
+        /// <summary>마지막으로 고른 작전. 작전을 고르기 전이면 null.</summary>
+        public TacticKind? ChosenTactic => LastDecision?.Tactic;
+        /// <summary>마지막으로 고른 작전의 성공/실패. 작전을 고르기 전이면 null.</summary>
+        public TacticOutcome? TacticResult => LastDecision?.Outcome;
+        /// <summary>마지막으로 고른 작전을 판정할 때 쓴 성공률. 작전 전이면 null.</summary>
+        public double? ChosenTacticRate => LastDecision?.Rate;
+        /// <summary>이 경기에서 고른 작전 기록 (타석 순).</summary>
+        public IReadOnlyList<TacticDecision> Decisions => _decisions;
+        /// <summary>지금 작전을 기다리는(또는 기다릴) 분기점. 남은 분기점이 없으면 null.</summary>
+        public BranchPoint CurrentBranch => _branch;
+
+        /// <summary>
+        /// 인게임 Play-by-Play: 작전 타석이 끝나면 아웃·주자를 갱신한 상태에서 다음 타순 타자가 들어서고 다시 작전을 기다린다.
+        /// 3아웃이면 순환을 멈춘다. 퀵 시뮬레이션 경기에서만 켜진다 (고정 장면은 각본 그대로).
+        /// </summary>
+        public bool PlayByPlay => _generated != null;
+
+        TacticDecision? LastDecision => _decisions.Count > 0 ? _decisions[_decisions.Count - 1] : (TacticDecision?)null;
         /// <summary>
         /// 작전 성공률 계산기. 선수단이 주입되면(<see cref="ScenarioRosterSource"/>) 승부처 타자·투수 기록으로 계산하고,
         /// 더미 데이터면 장면 기본 성공률을 그대로 쓴다.
@@ -87,7 +121,7 @@ namespace DailyFranchise.UI
         /// <summary>현재 장면 승부처에서 이 작전을 고르면 쓸 성공률 (확률 판정이 없는 작전은 1).</summary>
         public double TacticSuccessRate(TacticKind tactic)
         {
-            var branch = _fixture.Branch ?? throw new System.InvalidOperationException("분기점이 없는 장면");
+            var branch = _branch ?? throw new System.InvalidOperationException("작전을 기다리는 분기점이 없다");
             return _calculator.TacticSuccessRate(branch, _events, tactic);
         }
 
@@ -125,12 +159,13 @@ namespace DailyFranchise.UI
 
         /// <summary>
         /// 현재 경로를 끝까지 진행했을 때의 점수. 장면 끝을 경기 끝으로 본다.
-        /// 작전을 고르지 않은 분기 장면은 개입 없이(기본 진행) 끝난 것으로 계산한다.
+        /// 첫 작전을 고르지 않은 분기 장면은 개입 없이(기본 진행) 끝난 것으로 계산한다.
+        /// Play-by-Play 중 다음 타자 작전 대기에서 끝내면 그때까지의 점수다 (남은 타석은 굴리지 않는다).
         /// </summary>
         public GameScore FinalScore()
         {
             var path = _events;
-            if (_fixture.Branch != null && !_chosenTactic.HasValue)
+            if (_fixture.Branch != null && _decisions.Count == 0)
                 path = _fixture.Branch.PathFor(_events, TacticKind.Default);
             var end = ScreenState.Build(path, _fixture.AwayScoreBefore, _fixture.HomeScoreBefore, path.Count - 1);
             return new GameScore(end.AwayScore, end.HomeScore);
@@ -197,8 +232,8 @@ namespace DailyFranchise.UI
             _matchup = data.Matchup;
             _fixture = data.Mirrored ? ScenarioMirror.Mirror(native) : native;
             _events = _fixture.Events;
-            _chosenTactic = null;
-            _tacticOutcome = null;
+            _branch = _fixture.Branch;
+            _decisions.Clear();
             _previewTactic = null;
             if (_matchup.HasRosters)
             {
@@ -212,11 +247,10 @@ namespace DailyFranchise.UI
                 _scoreboard = data;
             }
             _calculator = new MatchupCalculator(_roster as IPlayerLookup);
-            _tacticRate = null;
 
             _playback = new PitchPlayback(_events);
             _playback.SetSpeed(speed);
-            if (_fixture.Branch != null) _playback.SetDecisionPoint(_fixture.Branch.AfterIndex);
+            if (_branch != null) _playback.SetDecisionPoint(_branch.AfterIndex);
             _playback.IndexChanged += OnIndexChanged;
             _playback.StateChanged += OnPlaybackStateChanged;
 
@@ -244,22 +278,37 @@ namespace DailyFranchise.UI
         /// <summary>
         /// 승부처에서 작전을 고른다. <see cref="TacticRandom"/>으로 성공/실패를 정한 뒤, 이미 재생한 투구·기록·필드 상태는
         /// 그대로 두고 기본 구간 뒤에 그 결과의 후속 구간을 이어 붙여 재생을 재개한다.
+        /// Play-by-Play 경기(<see cref="PlayByPlay"/>)는 후속 구간을 이 타자의 타석 끝까지만 쓰고, 3아웃 전이면
+        /// 다음 타순 타자의 작전 전 구간과 새 분기점을 이어 붙인다 (<see cref="PlayByPlayGenerator"/>).
         /// </summary>
         /// <returns>분기했으면 true. 작전 대기 중이 아니거나 이 분기점에 없는 작전이면 false.</returns>
         public bool ChooseTactic(TacticKind tactic)
         {
-            var branch = _fixture.Branch;
+            var branch = _branch;
             if (branch == null || !_playback.AwaitingDecision || !branch.Offers(tactic)) return false;
 
             double rate = _calculator.TacticSuccessRate(branch, _events, tactic);
             var outcome = branch.Resolve(tactic, TacticRandom, rate);
             var path = branch.PathFor(_events, tactic, outcome);
+            BranchPoint next = null;
+            if (PlayByPlay)
+            {
+                // 각본의 후속 타자는 떼고, 갱신된 아웃·주자에서 다음 타순 타자가 들어선다. 3아웃이면 segment == null로 순환 종료.
+                path = PlayByPlayGenerator.UntilPlateAppearanceEnd(path, branch.AfterIndex + 1);
+                var segment = new PlayByPlayGenerator(_calculator, TacticRandom).Next(path);
+                if (segment != null)
+                {
+                    path.AddRange(segment.Events);
+                    next = segment.Branch;
+                }
+            }
+
             _events = path;
-            _tacticRate = rate;
-            _chosenTactic = tactic;
-            _tacticOutcome = outcome;
+            _branch = next;
+            _decisions.Add(new TacticDecision(branch.AfterIndex, tactic, outcome, rate));
             _previewTactic = null;
             _playback.ContinueWith(path); // StateChanged → Render
+            if (next != null) _playback.SetDecisionPoint(next.AfterIndex);
             _playback.Play();
             return true;
         }
@@ -274,7 +323,7 @@ namespace DailyFranchise.UI
         /// <summary>처음으로: 분기한 장면은 작전 선택 전 기본 구간으로 되돌린다.</summary>
         void RestartScenario()
         {
-            if (_chosenTactic.HasValue)
+            if (_decisions.Count > 0)
             {
                 // 퀵 시뮬레이션 경기는 다시 굴리지 않고 같은 경기로 되돌린다.
                 if (_generated != null) LoadGenerated(_generated, _matchup);
@@ -436,8 +485,9 @@ namespace DailyFranchise.UI
 
         void RenderTactics()
         {
-            var branch = _fixture.Branch;
+            var branch = _branch;
             bool open = branch != null && _playback.AwaitingDecision;
+            var chosen = ChosenTactic;
             _tactics.EnableInClassList("tactics--open", open);
             _tacticsTitle.text = open ? "감독 개입 · 작전을 선택하세요" : "감독 개입";
 
@@ -446,7 +496,7 @@ namespace DailyFranchise.UI
                 bool available = open && branch.Offers(pair.Key);
                 pair.Value.SetEnabled(available);
                 pair.Value.EnableInClassList("btn--tactic-available", available);
-                pair.Value.EnableInClassList("btn--active", !open && _chosenTactic == pair.Key);
+                pair.Value.EnableInClassList("btn--active", !open && chosen == pair.Key);
             }
 
             if (open && _previewTactic.HasValue && branch.Offers(_previewTactic.Value))
@@ -458,15 +508,19 @@ namespace DailyFranchise.UI
             }
             else if (open)
                 _tacticDesc.text = "승부처입니다. 버튼에 포인터를 올리면 실행 조건, 성공 이득, 실패 위험, 성공 확률을 볼 수 있습니다.";
-            else if (_chosenTactic.HasValue)
-                _tacticDesc.text = "선택한 작전 · " + TacticText.Detail(_chosenTactic.Value) + "\n" +
-                                   (TacticRevealed ? TacticText.OutcomeLine(_chosenTactic.Value, _tacticOutcome.Value) : "결과 대기 중");
+            else if (chosen.HasValue)
+                _tacticDesc.text = "선택한 작전 · " + TacticText.Detail(chosen.Value) + "\n" +
+                                   (TacticRevealed ? TacticText.OutcomeLine(chosen.Value, TacticResult.Value) : "결과 대기 중");
             else
                 _tacticDesc.text = "승부처가 오면 작전을 고를 수 있습니다. 대타·투수 교체는 아직 지원하지 않습니다.";
         }
 
+        /// <summary>Play-by-Play 순환이 3아웃으로 끝나 화면이 마지막 투구에 와 있다 (다음은 [경기 종료]).</summary>
+        public bool InningEndAwaitingExit =>
+            PlayByPlay && _decisions.Count > 0 && _branch == null && _playback.IsAtEnd && _events[_events.Count - 1].OutsAfter >= 3;
+
         /// <summary>작전 결과는 분기 직후 투구가 화면에 나온 뒤에 밝힌다.</summary>
-        bool TacticRevealed => _chosenTactic.HasValue && _playback.Index > _fixture.Branch.AfterIndex;
+        bool TacticRevealed => _decisions.Count > 0 && _playback.Index > LastDecision.Value.AfterIndex;
 
         void RenderScenarioTabs()
         {
@@ -492,6 +546,8 @@ namespace DailyFranchise.UI
             _nextPa.SetEnabled(!atEnd);
             _inningEnd.SetEnabled(!atEnd);
             _gameEnd.SetEnabled(HasExitHandler || !atEnd);
+            // Play-by-Play가 3아웃으로 끝나면 [경기 종료]로 결과 반영·로비 복귀를 안내한다.
+            _gameEnd.EnableInClassList("btn--active", InningEndAwaitingExit && HasExitHandler);
             _restart.SetEnabled(_playback.Index >= 0);
 
             _position.text = _playback.AwaitingDecision ? $"투구 {_playback.Index + 1} · 작전 대기"
@@ -569,7 +625,7 @@ namespace DailyFranchise.UI
             _headlineMain.text = _playback.AwaitingDecision
                 ? $"{half} · 승부처 · {PitchPresentation.OutsText(st.Outs)} {st.Runners} · 작전 선택 대기"
                 : inningOver
-                ? $"{half} 종료 · 공수교대"
+                ? (InningEndAwaitingExit ? $"{half} 종료 · 공수교대 · 경기 종료 대기" : $"{half} 종료 · 공수교대")
                 : $"{half} · {battingTeam.ShortName} 공격 · {PitchPresentation.OutsText(s.OutsBefore)} {s.RunnersBefore}";
             _headlineSub.text = $"{away.ShortName} {st.AwayScore} : {home.ShortName} {st.HomeScore} · " +
                                 ScoreSituation(away.ShortName, st.AwayScore, home.ShortName, st.HomeScore);
@@ -754,13 +810,14 @@ namespace DailyFranchise.UI
             }
 
             // 작전 선택 기록은 분기점 투구 바로 위(시간상 직후)에 끼우고, 투구와 같이 개수 제한에 포함한다.
-            int? tacticAfter = _chosenTactic.HasValue ? _fixture.Branch.AfterIndex : (int?)null;
+            var decisionAt = new Dictionary<int, TacticDecision>();
+            foreach (var d in _decisions) decisionAt[d.AfterIndex] = d;
             int budget = MaxLogEntries;
             for (int i = index; i >= 0 && budget > 0; i--)
             {
-                if (tacticAfter == i && index > i)
+                if (index > i && decisionAt.TryGetValue(i, out var decision))
                 {
-                    var note = new Label($"감독 작전 · {TacticText.Label(_chosenTactic.Value)} · {TacticText.OutcomeText(_chosenTactic.Value, _tacticOutcome.Value)}");
+                    var note = new Label($"감독 작전 · {TacticText.Label(decision.Tactic)} · {TacticText.OutcomeText(decision.Tactic, decision.Outcome)}");
                     note.AddToClassList("log-entry");
                     note.AddToClassList("log-entry--tactic");
                     _log.Add(note);
