@@ -45,12 +45,20 @@ namespace DailyFranchise.Sim.Fixtures
         /// <summary>
         /// 작전 결과를 정한다. 확률 작전만 난수를 하나 소비한다 (roll &lt; SuccessRate → 성공).
         /// </summary>
-        public TacticOutcome Resolve(TacticKind tactic, IRandomSource random)
+        public TacticOutcome Resolve(TacticKind tactic, IRandomSource random) => Resolve(tactic, random, this[tactic].SuccessRate);
+
+        /// <summary>
+        /// 바깥에서 계산한 성공률(예: <see cref="MatchupCalculator"/>)로 작전 결과를 정한다.
+        /// 확률 작전만 난수를 하나 소비한다 (roll &lt; successRate → 성공). 성공률은 [0, 1]이어야 한다.
+        /// </summary>
+        public TacticOutcome Resolve(TacticKind tactic, IRandomSource random, double successRate)
         {
             var branch = this[tactic];
             if (!branch.IsGamble) return TacticOutcome.Success;
+            if (double.IsNaN(successRate) || successRate < 0 || successRate > 1)
+                throw new ArgumentOutOfRangeException(nameof(successRate), successRate, "성공률은 0~1");
             if (random == null) throw new ArgumentNullException(nameof(random));
-            return random.NextDouble() < branch.SuccessRate ? TacticOutcome.Success : TacticOutcome.Failure;
+            return random.NextDouble() < successRate ? TacticOutcome.Success : TacticOutcome.Failure;
         }
 
         /// <summary>기본 구간 + 작전 결과 후속 구간. 기본 구간 이벤트 객체는 그대로 이어 쓴다.</summary>

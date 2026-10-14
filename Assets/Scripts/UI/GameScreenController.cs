@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using DailyFranchise.Sim;
+using DailyFranchise.Sim.Data;
 using DailyFranchise.Sim.Fixtures;
 using DailyFranchise.UI.Data;
 using UnityEngine;
@@ -27,6 +28,8 @@ namespace DailyFranchise.UI
         TacticKind? _chosenTactic;
         TacticOutcome? _tacticOutcome;
         TacticKind? _previewTactic;
+        double? _tacticRate;
+        MatchupCalculator _calculator = new MatchupCalculator(null);
         IRosterSource _roster;
         IScoreboardSource _scoreboard;
         PitchPlayback _playback;
@@ -69,6 +72,20 @@ namespace DailyFranchise.UI
         public TacticKind? ChosenTactic => _chosenTactic;
         /// <summary>고른 작전의 성공/실패. 작전을 고르기 전이면 null.</summary>
         public TacticOutcome? TacticResult => _tacticOutcome;
+        /// <summary>고른 작전을 판정할 때 쓴 성공률. 작전 전이면 null.</summary>
+        public double? ChosenTacticRate => _tacticRate;
+        /// <summary>
+        /// 작전 성공률 계산기. 선수단이 주입되면(<see cref="ScenarioRosterSource"/>) 승부처 타자·투수 기록으로 계산하고,
+        /// 더미 데이터면 장면 기본 성공률을 그대로 쓴다.
+        /// </summary>
+        public MatchupCalculator Calculator => _calculator;
+
+        /// <summary>현재 장면 승부처에서 이 작전을 고르면 쓸 성공률 (확률 판정이 없는 작전은 1).</summary>
+        public double TacticSuccessRate(TacticKind tactic)
+        {
+            var branch = _fixture.Branch ?? throw new System.InvalidOperationException("분기점이 없는 장면");
+            return _calculator.TacticSuccessRate(branch, _events, tactic);
+        }
 
         /// <summary>
         /// 작전 성공 판정에 쓰는 난수. 기본은 실행마다 다른 Seed이고, 테스트는 고정 Seed나 고정 값을 넣는다.
@@ -156,6 +173,8 @@ namespace DailyFranchise.UI
                 _roster = data;
                 _scoreboard = data;
             }
+            _calculator = new MatchupCalculator(_roster as IPlayerLookup);
+            _tacticRate = null;
 
             _playback = new PitchPlayback(_events);
             _playback.SetSpeed(speed);
@@ -194,9 +213,11 @@ namespace DailyFranchise.UI
             var branch = _fixture.Branch;
             if (branch == null || !_playback.AwaitingDecision || !branch.Offers(tactic)) return false;
 
-            var outcome = branch.Resolve(tactic, TacticRandom);
+            double rate = _calculator.TacticSuccessRate(branch, _events, tactic);
+            var outcome = branch.Resolve(tactic, TacticRandom, rate);
             var path = branch.PathFor(_events, tactic, outcome);
             _events = path;
+            _tacticRate = rate;
             _chosenTactic = tactic;
             _tacticOutcome = outcome;
             _previewTactic = null;
@@ -383,7 +404,12 @@ namespace DailyFranchise.UI
             }
 
             if (open && _previewTactic.HasValue && branch.Offers(_previewTactic.Value))
-                _tacticDesc.text = TacticText.Detail(_previewTactic.Value) + "\n" + TacticText.Odds(branch[_previewTactic.Value]);
+            {
+                var t = _previewTactic.Value;
+                var basis = branch[t].IsGamble ? TacticText.Basis(_calculator.DecisionContext(branch, _events)) : null;
+                _tacticDesc.text = TacticText.Detail(t) + "\n" + (basis != null ? basis + "\n" : "") +
+                                   TacticText.Odds(branch[t], TacticSuccessRate(t));
+            }
             else if (open)
                 _tacticDesc.text = "승부처입니다. 버튼에 포인터를 올리면 실행 조건, 성공 이득, 실패 위험, 성공 확률을 볼 수 있습니다.";
             else if (_chosenTactic.HasValue)

@@ -16,7 +16,7 @@ namespace DailyFranchise.App.Data
     /// - 문자열: <see cref="FromCsv"/> (파서 검증용)
     /// 읽기에 실패하면 경고를 남기고 빈 DB(<see cref="Empty"/>)를 돌려준다. 빈 DB면 경기 화면은 기존 더미 이름을 쓴다.
     /// </summary>
-    public sealed class MasterDatabase
+    public sealed class MasterDatabase : IPlayerLookup
     {
         public const string TeamsResource = "Database/Teams";
         public const string RosterResource = "Database/SampleRoster";
@@ -93,10 +93,12 @@ namespace DailyFranchise.App.Data
                     Order = row.Int("order"),
                     Memo = row.Optional("memo"),
                     BattingAverage = row.Double("avg"),
+                    OnBasePercentage = row.Double("obp"),
                     HomeRuns = row.Int("hr"),
                     Ops = row.Double("ops"),
                     StolenBases = row.Int("sb"),
                     Era = row.Double("era"),
+                    OpponentAverage = row.Double("baa"),
                     Wins = row.Int("w"),
                     Losses = row.Int("l"),
                     Saves = row.Int("sv"),

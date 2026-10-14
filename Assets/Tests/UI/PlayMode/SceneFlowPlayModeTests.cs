@@ -368,6 +368,57 @@ namespace DailyFranchise.UI.Tests
         }
 
         [UnityTest]
+        public IEnumerator 작전_버튼_설명에_타자_투수_기록으로_계산한_성공률이_표시되고_그_확률로_판정한다()
+        {
+            Submit(LobbyRoot().Q<Button>("start-game"));
+            yield return WaitForScene(SeasonManager.GameScene);
+            var game = Object.FindAnyObjectByType<GameScreenController>();
+            var doc = game.GetComponent<UIDocument>();
+            var rt = new RenderTexture(1920, 1080, 24);
+            rt.Create();
+            var panelCopy = Object.Instantiate(doc.panelSettings);
+            panelCopy.targetTexture = rt;
+            doc.panelSettings = panelCopy;
+            game.Playback.Pause();
+            game.Playback.SkipToEnd();
+            Assert.That(game.Playback.AwaitingDecision, Is.True);
+            yield return null;
+            yield return null;
+            var root = doc.rootVisualElement;
+            var branch = game.Fixture.Branch;
+
+            double squeeze = game.TacticSuccessRate(TacticKind.SqueezeBunt);
+            double swing = game.TacticSuccessRate(TacticKind.SwingAway);
+            Assert.That(squeeze, Is.Not.EqualTo(Fixture8thBottomTactics.SqueezeSuccessRate), "DB 기록 반영");
+            Assert.That(swing, Is.Not.EqualTo(Fixture8thBottomTactics.SwingAwaySuccessRate));
+
+            // 버튼에 포인터를 올리면(미리보기) 근거와 동적 성공률이 보인다.
+            foreach (var (tactic, rate) in new[] { (TacticKind.SqueezeBunt, squeeze), (TacticKind.SwingAway, swing) })
+            {
+                game.PreviewTactic(tactic);
+                yield return null;
+                var desc = root.Q<Label>("tactic-desc").text;
+                Assert.That(desc, Does.Contain("근거 · 성지환 타율 .318 vs 염태준 평균자책 3.21 · 득점권"));
+                Assert.That(desc, Does.EndWith(TacticText.Odds(branch[tactic], rate)));
+                var issues = LayoutChecker.Check(root.Q("screen"));
+                Assert.That(issues, Is.Empty, $"[{tactic} 설명]\n" + string.Join("\n", issues));
+            }
+            Assert.That(root.Q<Label>("tactic-desc").text, Does.EndWith("성공 확률 52% · 실패 48%"));
+            game.PreviewTactic(null);
+
+            // 난수 0.6: 고정 60%였다면 실패지만, 계산된 61%로는 성공.
+            Assert.That(squeeze, Is.GreaterThan(0.6));
+            game.TacticRandom = new ScriptedRandom(0.6);
+            Assert.That(game.ChooseTactic(TacticKind.SqueezeBunt), Is.True);
+            Assert.That(game.ChosenTacticRate, Is.EqualTo(squeeze));
+            Assert.That(game.TacticResult, Is.EqualTo(TacticOutcome.Success));
+
+            rt.Release();
+            Object.Destroy(rt);
+            Object.Destroy(panelCopy);
+        }
+
+        [UnityTest]
         public IEnumerator 경기_화면_단독_실행에서는_경기_종료가_장면_끝으로_이동한다()
         {
             DestroyManager();

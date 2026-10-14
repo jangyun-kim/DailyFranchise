@@ -16,7 +16,7 @@ namespace DailyFranchise.UI.Data
     /// 자리 규칙 (home_ = 내 구단, away_ = 상대. 장면이 뒤집혀도 같다):
     ///   bN → 타순 N, phN → 벤치 순서 N(대타), prN → 벤치 순서 2+N(대주자), rpN → 불펜 순서 N, sp → 선발 순서 1
     /// </summary>
-    public sealed class ScenarioRosterSource : IRosterSource, IScoreboardSource
+    public sealed class ScenarioRosterSource : IRosterSource, IScoreboardSource, IPlayerLookup
     {
         /// <summary>장면 벤치의 대타 자리 수. 대주자는 그 뒤 순서를 쓴다.</summary>
         const int PinchHitterSlots = 2;
@@ -62,6 +62,9 @@ namespace DailyFranchise.UI.Data
             if (TryIndex(slot, "rp", out n)) return At(roster.Bullpen, n);
             return null;
         }
+
+        /// <summary>확률 계산기용: 장면 선수 ID의 외부 선수 데이터 (= <see cref="Resolve"/>).</summary>
+        public PlayerData FindPlayer(string playerId) => Resolve(playerId);
 
         public PlayerInfo GetPlayer(string playerId)
         {

@@ -33,11 +33,31 @@ namespace DailyFranchise.UI
             }
         }
 
-        /// <summary>미리보기용 성공 확률 줄.</summary>
-        public static string Odds(TacticBranch branch) =>
-            branch.IsGamble
-                ? $"성공 확률 {System.Math.Round(branch.SuccessRate * 100)}% · 실패 {System.Math.Round((1 - branch.SuccessRate) * 100)}%"
-                : "확률 판정 없음 · 원래 흐름대로 진행";
+        /// <summary>미리보기용 성공 확률 줄 (장면 기본 성공률).</summary>
+        public static string Odds(TacticBranch branch) => Odds(branch, branch.SuccessRate);
+
+        /// <summary>미리보기용 성공 확률 줄. 성공·실패 %는 합이 100이 되도록 성공 쪽만 반올림한다.</summary>
+        public static string Odds(TacticBranch branch, double successRate)
+        {
+            if (!branch.IsGamble) return "확률 판정 없음 · 원래 흐름대로 진행";
+            int success = (int)System.Math.Round(successRate * 100, System.MidpointRounding.AwayFromZero);
+            return $"성공 확률 {success}% · 실패 {100 - success}%";
+        }
+
+        /// <summary>
+        /// 성공률 근거 줄: "근거 · 성지환 타율 .318 vs 염태준 평균자책 3.21 · 득점권".
+        /// 선수 데이터가 없으면(장면 기본 성공률) null.
+        /// </summary>
+        public static string Basis(MatchupContext context)
+        {
+            if (context == null) return null;
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            var b = context.Batter;
+            var p = context.Pitcher;
+            string avg = b.BattingAverage.ToString(b.BattingAverage < 1 ? ".000" : "0.000", inv);
+            string text = $"근거 · {b.Name} 타율 {avg} vs {p.Name} 평균자책 {p.Era.ToString("0.00", inv)}";
+            return context.Situation.RunnersInScoringPosition ? text + " · 득점권" : text;
+        }
 
         /// <summary>작전 결과 한 단어. 기본 진행은 판정이 없으므로 "개입 없음".</summary>
         public static string OutcomeText(TacticKind t, TacticOutcome outcome) =>

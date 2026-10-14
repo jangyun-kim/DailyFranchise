@@ -46,18 +46,29 @@ namespace DailyFranchise.Sim.Data
 
         // 타자 시즌 기록
         public double BattingAverage;
+        /// <summary>출루율. 0이면 기록 없음 (확률 계산은 타율로 추정).</summary>
+        public double OnBasePercentage;
         public int HomeRuns;
         public double Ops;
         public int StolenBases;
 
         // 투수 시즌 기록
         public double Era;
+        /// <summary>피안타율. 0이면 기록 없음 (확률 계산은 평균자책으로 추정).</summary>
+        public double OpponentAverage;
         public int Wins;
         public int Losses;
         public int Saves;
         public int Holds;
 
         public bool IsPitcher => Role == RosterRole.Starter || Role == RosterRole.Bullpen;
+    }
+
+    /// <summary>선수 ID로 선수 데이터를 찾는다. 확률 계산기(<see cref="DailyFranchise.Sim.MatchupCalculator"/>)가 DB 구현을 모르게 하는 경계.</summary>
+    public interface IPlayerLookup
+    {
+        /// <summary>없으면 null.</summary>
+        PlayerData FindPlayer(string playerId);
     }
 
     /// <summary>구단 기본 정보.</summary>
