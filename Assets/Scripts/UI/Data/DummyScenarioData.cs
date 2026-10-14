@@ -7,11 +7,14 @@ namespace DailyFranchise.UI.Data
     /// ScenarioCatalog 장면용 더미 표시 데이터. 팀·선수 이름과 기록은 모두 가상이다.
     /// 선수 정보는 모든 장면이 공유하고, 스코어보드 기초값만 장면별로 다르다.
     /// 장면별 이닝 득점 합은 해당 Fixture의 시작 점수와 일치해야 한다 (테스트로 검증).
+    /// 선수·스코어보드 데이터는 내 구단을 홈으로 짜여 있다. 대진(<see cref="Matchup"/>)이 내 구단을 원정으로 주면
+    /// 선수 소속·라인업·스코어보드의 원정 ↔ 홈을 뒤집고(<see cref="Mirrored"/>), 경기 화면은 장면도
+    /// <see cref="ScenarioMirror"/>로 뒤집어 재생한다.
     /// </summary>
     public sealed class DummyScenarioData : IRosterSource, IScoreboardSource
     {
-        static readonly TeamInfo Away = new TeamInfo { Name = "서울 블루윙스", ShortName = "서울" };
-        static readonly TeamInfo Home = new TeamInfo { Name = "부산 웨이브스", ShortName = "부산" };
+        /// <summary>더미 데이터가 짜인 기준: 내 구단 = 홈.</summary>
+        const TeamSide NativeMySide = TeamSide.Home;
 
         static readonly Dictionary<string, (TeamBoxSeed away, TeamBoxSeed home)> BoxSeeds =
             new Dictionary<string, (TeamBoxSeed, TeamBoxSeed)>
@@ -35,12 +38,15 @@ namespace DailyFranchise.UI.Data
 
         readonly Dictionary<string, PlayerInfo> _players = new Dictionary<string, PlayerInfo>();
         readonly string _scenarioId;
+        readonly Matchup _matchup;
 
-        public DummyScenarioData(string scenarioId = ScenarioCatalog.EighthBottom)
+        /// <param name="matchup">그릴 대진. null이면 <see cref="Matchup.Default"/>.</param>
+        public DummyScenarioData(string scenarioId = ScenarioCatalog.EighthBottom, Matchup matchup = null)
         {
             if (!BoxSeeds.ContainsKey(scenarioId))
                 throw new System.ArgumentException($"더미 스코어보드가 없는 시나리오: {scenarioId}", nameof(scenarioId));
             _scenarioId = scenarioId;
+            _matchup = matchup ?? Matchup.Default;
 
             AddPitcher(Fixture8thBottom.Pitcher, "강민혁", TeamSide.Away, "선발", "좌투",
                 "시즌 11승 6패 · 평균자책 3.18", "오늘 7.1이닝 · 2실점", 87, 78);
@@ -70,10 +76,15 @@ namespace DailyFranchise.UI.Data
             AddBatter("away_b5", "탁성호", "LF", "좌투좌타", "타율 .268 · 15홈런", 2, 0, null, 73, TeamSide.Away);
         }
 
-        public TeamSide MyTeam => TeamSide.Home;
+        public TeamSide MyTeam => _matchup.MySide;
         public string FeaturedPlayerId => Fixture8thBottom.Batter1;
 
-        public TeamInfo GetTeam(TeamSide side) => side == TeamSide.Away ? Away : Home;
+        /// <summary>내 구단이 원정이라 더미 데이터의 원정 ↔ 홈을 뒤집었는지. 이때 장면도 뒤집어 재생해야 한다.</summary>
+        public bool Mirrored => _matchup.MySide != NativeMySide;
+
+        public Matchup Matchup => _matchup;
+
+        public TeamInfo GetTeam(TeamSide side) => _matchup.Get(side);
 
         public PlayerInfo GetPlayer(string playerId)
         {
@@ -87,7 +98,7 @@ namespace DailyFranchise.UI.Data
 
         public IReadOnlyList<RosterEntry> GetLineup(TeamSide side)
         {
-            if (side != TeamSide.Home) return new RosterEntry[0];
+            if (side != MyTeam) return new RosterEntry[0];
             return new[]
             {
                 Slot(1, Fixture8thBottom.RunnerOnFirst),
@@ -104,7 +115,7 @@ namespace DailyFranchise.UI.Data
 
         public IReadOnlyList<RosterEntry> GetBench(TeamSide side)
         {
-            if (side != TeamSide.Home) return new RosterEntry[0];
+            if (side != MyTeam) return new RosterEntry[0];
             return new[]
             {
                 new RosterEntry { Role = "대타", PlayerId = "home_ph1", Note = "좌/장타" },
@@ -115,7 +126,7 @@ namespace DailyFranchise.UI.Data
 
         public IReadOnlyList<RosterEntry> GetBullpen(TeamSide side)
         {
-            if (side != TeamSide.Home) return new RosterEntry[0];
+            if (side != MyTeam) return new RosterEntry[0];
             return new[]
             {
                 new RosterEntry { Role = "마무리", PlayerId = "home_rp1", Note = "준비" },
@@ -127,8 +138,11 @@ namespace DailyFranchise.UI.Data
         public TeamBoxSeed GetBoxSeed(TeamSide side)
         {
             var seeds = BoxSeeds[_scenarioId];
-            return side == TeamSide.Away ? seeds.away : seeds.home;
+            return Native(side) == TeamSide.Away ? seeds.away : seeds.home;
         }
+
+        /// <summary>화면 기준 쪽 → 더미 데이터가 짜인 기준 쪽.</summary>
+        TeamSide Native(TeamSide side) => !Mirrored ? side : side == TeamSide.Away ? TeamSide.Home : TeamSide.Away;
 
         RosterEntry Slot(int order, string id) =>
             new RosterEntry { Order = order, Role = _players[id].Position, PlayerId = id };
@@ -138,7 +152,7 @@ namespace DailyFranchise.UI.Data
         {
             _players[id] = new PlayerInfo
             {
-                Id = id, Name = name, Side = side, Position = role, Handedness = hand,
+                Id = id, Name = name, Side = Native(side), Position = role, Handedness = hand,
                 SeasonLine = season, TodayLine = today, PitchesBeforeScene = pitches, Fitness = fitness,
             };
         }
@@ -148,7 +162,7 @@ namespace DailyFranchise.UI.Data
         {
             _players[id] = new PlayerInfo
             {
-                Id = id, Name = name, Side = side, Position = pos, Handedness = hand,
+                Id = id, Name = name, Side = Native(side), Position = pos, Handedness = hand,
                 SeasonLine = season, TodayAtBats = atBats, TodayHits = hits, TodayExtra = extra, Fitness = fitness,
             };
         }

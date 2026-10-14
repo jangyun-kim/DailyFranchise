@@ -32,6 +32,7 @@ namespace DailyFranchise.UI
         PitchPlayback _playback;
         readonly StatsSync _sync = new StatsSync();
         string _scenarioId = ScenarioCatalog.EighthBottom;
+        Matchup _matchup = Matchup.Default;
 
         VisualElement _root;
         AbsZoneView _abs;
@@ -57,6 +58,10 @@ namespace DailyFranchise.UI
         public FieldView Field => _field;
         public StatsSync Sync => _sync;
         public string ScenarioId => _scenarioId;
+        /// <summary>지금 그리는 대진 (원정·홈 = 화면의 원정·홈).</summary>
+        public Matchup Matchup => _matchup;
+        /// <summary>현재 장면의 원정·홈 시작 점수와 이벤트 (원정 경기면 뒤집은 사본).</summary>
+        public ScenarioFixture Fixture => _fixture;
         public TacticKind? ChosenTactic => _chosenTactic;
         /// <summary>고른 작전의 성공/실패. 작전을 고르기 전이면 null.</summary>
         public TacticOutcome? TacticResult => _tacticOutcome;
@@ -112,21 +117,29 @@ namespace DailyFranchise.UI
 
         /// <summary>
         /// 시나리오를 교체한다. 이전 재생기 구독, 필드 연출·토큰, ABS 점등·마커, 로그, 기록 동기화를 모두 초기화한다.
-        /// 배속 설정은 유지한다.
+        /// 배속 설정과 현재 대진은 유지한다.
         /// </summary>
-        public void LoadScenario(string scenarioId)
+        public void LoadScenario(string scenarioId) => LoadScenario(scenarioId, _matchup);
+
+        /// <summary>
+        /// 대진을 지정해 시나리오를 불러온다. 헤더·스코어보드·좌측 선수단의 팀명은 대진을 따르고,
+        /// 내 구단이 원정이면 장면을 원정·홈을 맞바꾼 사본(<see cref="ScenarioMirror"/>)으로 재생한다.
+        /// </summary>
+        /// <param name="matchup">null이면 <see cref="Matchup.Default"/>(서울 원정 vs 부산 홈).</param>
+        public void LoadScenario(string scenarioId, Matchup matchup)
         {
             var entry = ScenarioCatalog.Find(scenarioId);
             int speed = _playback?.Speed ?? 1;
             DetachPlayback();
 
+            var data = new DummyScenarioData(entry.Id, matchup);
             _scenarioId = entry.Id;
-            _fixture = entry.Create();
+            _matchup = data.Matchup;
+            _fixture = data.Mirrored ? ScenarioMirror.Mirror(entry.Create()) : entry.Create();
             _events = _fixture.Events;
             _chosenTactic = null;
             _tacticOutcome = null;
             _previewTactic = null;
-            var data = new DummyScenarioData(entry.Id);
             _roster = data;
             _scoreboard = data;
 

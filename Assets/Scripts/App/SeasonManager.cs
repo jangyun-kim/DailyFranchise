@@ -1,6 +1,7 @@
 using DailyFranchise.Sim;
 using DailyFranchise.Sim.Fixtures;
 using DailyFranchise.UI;
+using DailyFranchise.UI.Data;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -10,8 +11,9 @@ namespace DailyFranchise.App
     /// 씬을 넘어 시즌 상태를 유지하고 로비 ↔ 경기 화면 전환을 중계한다.
     /// 로비와 경기 화면은 서로를 모르며, 이 객체만 두 쪽을 안다.
     /// - 로비: StartNextGame() 호출
-    /// - 경기 화면: 시즌 경기 장면(작전 승부처)을 불러오고, GameScreenController.ExitRequested(최종 점수)를 구독해
-    ///   결과를 시즌 성적·순위에 반영한 뒤 로비로 복귀
+    /// - 경기 화면: 일정표의 대진으로 시즌 경기 장면(작전 승부처)을 불러오고, GameScreenController.ExitRequested(최종 점수)를
+    ///   구독해 결과를 시즌 성적·순위에 반영·저장한 뒤 로비로 복귀
+    /// - 저장: 처음 만들어질 때(로비 최초 진입) 저장 파일이 있으면 이어서, 없으면 새 시즌. 매 경기 결과 반영 직후 저장.
     /// </summary>
     public sealed class SeasonManager : MonoBehaviour
     {
@@ -34,6 +36,16 @@ namespace DailyFranchise.App
         /// </summary>
         public IRandomSource LeagueRandom { get; set; } = SeededRandom.FromClock();
 
+        /// <summary>
+        /// 저장 파일 경로 재지정. null이면 <see cref="SaveManager.DefaultPath"/>.
+        /// SeasonManager가 만들어지기 전에 정해야 한다 (테스트가 실제 저장 파일을 건드리지 않게 할 때 쓴다).
+        /// </summary>
+        public static string SavePathOverride { get; set; }
+
+        public SaveManager Saves { get; private set; }
+        /// <summary>시작할 때 시즌을 어떻게 얻었는지 (불러옴 / 새 시즌 / 손상 복구).</summary>
+        public SeasonLoadStatus LoadStatus { get; private set; }
+
         GameScreenController _game;
         bool _loading;
 
@@ -53,7 +65,9 @@ namespace DailyFranchise.App
             }
             Instance = this;
             DontDestroyOnLoad(gameObject);
-            Season = SeasonState.CreateDummy();
+            Saves = new SaveManager(SavePathOverride ?? SaveManager.DefaultPath);
+            Season = Saves.LoadOrCreate(SeasonState.CreateDummy, out var status);
+            LoadStatus = status;
             SceneManager.sceneLoaded += OnSceneLoaded;
             SceneManager.sceneUnloaded += OnSceneUnloaded;
         }
@@ -84,8 +98,13 @@ namespace DailyFranchise.App
             _game = FindAnyObjectByType<GameScreenController>();
             if (_game == null) return;
             _game.ExitRequested += OnGameExitRequested;
-            if (Season.InProgress != null) _game.LoadScenario(SeasonGameScenario);
+            if (Season.InProgress != null) _game.LoadScenario(SeasonGameScenario, MatchupOf(Season.InProgress));
         }
+
+        /// <summary>일정표 경기의 대진. 원정·홈과 팀명은 일정 그대로, 내 구단 쪽을 함께 넘긴다.</summary>
+        public Matchup MatchupOf(ScheduledGame game) =>
+            Matchup.FromNames(game.AwayTeam, game.HomeTeam,
+                game.HomeTeam == Season.MyTeam ? TeamSide.Home : TeamSide.Away);
 
         void OnSceneUnloaded(Scene scene)
         {
@@ -99,10 +118,11 @@ namespace DailyFranchise.App
             DetachGame();
             if (Season.InProgress != null)
             {
-                // 경기 화면은 더미 데이터라 내 구단을 늘 홈으로 그린다. 일정의 원정·홈 기준으로 바꿔 반영한다.
+                // 경기 화면은 일정의 원정·홈대로 그리지만, 내 구단 득점 기준으로 다시 맞춰 반영한다.
                 var score = Season.ScheduleScore(result.MyRuns, result.OpponentRuns);
                 LastScore = score;
                 Season.FinishCurrentGame(score, LeagueRandom);
+                Saves.Save(Season);
             }
             Load(LobbyScene);
         }

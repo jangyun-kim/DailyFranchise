@@ -1,5 +1,7 @@
 using System.Collections;
+using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using DailyFranchise.App;
 using DailyFranchise.Sim;
 using DailyFranchise.Sim.Fixtures;
@@ -14,10 +16,15 @@ namespace DailyFranchise.UI.Tests
     /// <summary>로비 ↔ 경기 화면 왕복과 SeasonManager 수명 검증.</summary>
     public class SceneFlowPlayModeTests
     {
+        /// <summary>실제 저장 파일(persistentDataPath)을 건드리지 않도록 테스트 전용 경로를 쓴다.</summary>
+        static readonly string TestSavePath = Path.Combine(Application.temporaryCachePath, "playmode_" + SaveManager.FileName);
+
         [UnitySetUp]
         public IEnumerator SetUp()
         {
             DestroyManager();
+            SeasonManager.SavePathOverride = TestSavePath;
+            DeleteSave();
             SceneManager.LoadScene(SeasonManager.LobbyScene);
             yield return WaitForScene(SeasonManager.LobbyScene);
             // 타 구단 결과는 고정 Seed로만 만든다.
@@ -28,7 +35,24 @@ namespace DailyFranchise.UI.Tests
         public IEnumerator TearDown()
         {
             DestroyManager();
+            DeleteSave();
+            SeasonManager.SavePathOverride = null;
             yield return null;
+        }
+
+        static void DeleteSave()
+        {
+            if (File.Exists(TestSavePath)) File.Delete(TestSavePath);
+        }
+
+        /// <summary>Play 모드를 껐다 다시 켠 것처럼 SeasonManager를 없애고 로비부터 다시 시작한다.</summary>
+        static IEnumerator RestartFromLobby()
+        {
+            DestroyManager();
+            yield return null;
+            SceneManager.LoadScene(SeasonManager.LobbyScene);
+            yield return WaitForScene(SeasonManager.LobbyScene);
+            SeasonManager.Instance.LeagueRandom = new SeededRandom(20261015);
         }
 
         static void DestroyManager()
@@ -207,11 +231,79 @@ namespace DailyFranchise.UI.Tests
             Assert.That(LobbyRoot().Q("game-1").Q<Label>(className: "col-status").text, Is.EqualTo("무 3:3"));
             Assert.That(me.Draws, Is.EqualTo(d + 1));
 
-            // 2경기: 부산(원정) vs 인천(홈). 화면은 부산을 홈으로 그리므로 화면 3:2(부산 2점)는 일정 기준 2:3.
+            // 2경기: 부산(원정) vs 인천(홈). 화면은 장면을 뒤집어 9회초 부산 공격으로 그리고, 스퀴즈 실패로 2:3 패.
             yield return PlayGame(TacticKind.SqueezeBunt, 0.99);
             Assert.That(SeasonManager.Instance.LastScore, Is.EqualTo(new GameScore(2, 3)));
             Assert.That(LobbyRoot().Q("game-2").Q<Label>(className: "col-status").text, Is.EqualTo("패 2:3"));
             Assert.That(me.Losses, Is.EqualTo(l + 1));
+        }
+
+        [UnityTest]
+        public IEnumerator 경기를_마치면_저장되고_다시_시작하면_2경기부터_이어지며_대진이_일정표와_같다()
+        {
+            Assert.That(SeasonManager.Instance.LoadStatus, Is.EqualTo(SeasonLoadStatus.NewSeason));
+            yield return PlayGame(null, 0.99);
+            Assert.That(File.Exists(TestSavePath), Is.True, "경기 결과 반영 직후 저장");
+
+            var before = SeasonManager.Instance.Season;
+            var standings = before.Standings.Select(r => (r.Rank, r.Team, r.Wins, r.Losses, r.Draws)).ToList();
+
+            yield return RestartFromLobby();
+            var manager = SeasonManager.Instance;
+            Assert.That(manager.LoadStatus, Is.EqualTo(SeasonLoadStatus.Loaded));
+            Assert.That(manager.Season, Is.Not.SameAs(before), "새로 불러온 시즌");
+            Assert.That(manager.Season.GamesPlayed, Is.EqualTo(1));
+            Assert.That(manager.Season.Standings.Select(r => (r.Rank, r.Team, r.Wins, r.Losses, r.Draws)), Is.EqualTo(standings));
+            var root = LobbyRoot();
+            Assert.That(root.Q<Label>("next-game").text, Does.StartWith("경기 2 · "));
+            Assert.That(root.Q("game-1").Q<Label>(className: "col-status").text, Is.EqualTo("무 3:3"));
+
+            // 2경기 진입: 부산(원정, 내 구단) vs 인천(홈)
+            var scheduled = manager.Season.NextGame;
+            Submit(root.Q<Button>("start-game"));
+            yield return WaitForScene(SeasonManager.GameScene);
+            var game = Object.FindAnyObjectByType<GameScreenController>();
+            var gameRoot = game.GetComponent<UIDocument>().rootVisualElement;
+            Assert.That(game.Matchup.Away.Name, Is.EqualTo(scheduled.AwayTeam));
+            Assert.That(game.Matchup.Home.Name, Is.EqualTo(scheduled.HomeTeam));
+            Assert.That(game.Matchup.MySide, Is.EqualTo(Data.TeamSide.Away));
+            Assert.That(gameRoot.Q<Label>("away-name").text, Is.EqualTo("부산 웨이브스"));
+            Assert.That(gameRoot.Q<Label>("home-name").text, Is.EqualTo("인천 하버스"));
+            Assert.That(gameRoot.Query<Label>(className: "team-badge").ToList().Select(l => l.text), Is.EqualTo(new[] { "부산", "인천" }));
+            Assert.That(gameRoot.Query<Label>(className: "ls-cell--team").ToList().Select(l => l.text).Where(t => t != ""),
+                Is.EqualTo(new[] { "부산", "인천" }), "스코어보드 행: 원정 → 홈");
+            Assert.That(gameRoot.Q<Label>("roster-title").text, Is.EqualTo("내 선수단 · 부산"));
+            Assert.That(gameRoot.Q<Label>("pitcher-team").text, Does.StartWith("인천 · "), "상대 투수");
+            Assert.That(game.Fixture.Events[0].HalfInning, Is.EqualTo(HalfInning.Top), "원정 공격 = 9회초");
+
+            // 화면 원정 2 : 홈 3 → 스퀴즈 실패로 그대로 끝나면 일정 기준도 2:3 패.
+            game.TacticRandom = new ScriptedRandom(0.99);
+            game.Playback.Pause();
+            game.Playback.SkipToEnd();
+            Assert.That(game.ChooseTactic(TacticKind.SqueezeBunt), Is.True);
+            game.Playback.Pause();
+            game.Playback.SkipToEnd();
+            yield return null;
+            Submit(gameRoot.Q<Button>("ctl-game-end"));
+            yield return WaitForScene(SeasonManager.LobbyScene);
+            Assert.That(manager.LastScore, Is.EqualTo(new GameScore(2, 3)));
+            Assert.That(LobbyRoot().Q("game-2").Q<Label>(className: "col-status").text, Is.EqualTo("패 2:3"));
+
+            yield return RestartFromLobby();
+            Assert.That(SeasonManager.Instance.Season.GamesPlayed, Is.EqualTo(2));
+            Assert.That(LobbyRoot().Q<Label>("next-game").text, Does.StartWith("경기 3 · "));
+        }
+
+        [UnityTest]
+        public IEnumerator 손상된_저장_파일은_경고만_남기고_새_시즌으로_덮어쓴다()
+        {
+            File.WriteAllText(TestSavePath, "{ \"Version\": 1, \"Schedule\": [ { broken");
+            LogAssert.Expect(LogType.Warning, new Regex("손상"));
+            yield return RestartFromLobby();
+
+            Assert.That(SeasonManager.Instance.LoadStatus, Is.EqualTo(SeasonLoadStatus.RecoveredFromCorrupt));
+            Assert.That(LobbyRoot().Q<Label>("next-game").text, Does.StartWith("경기 1 · "));
+            Assert.That(SaveManager.FromJson(File.ReadAllText(TestSavePath)).GamesPlayed, Is.EqualTo(0), "새 시즌으로 덮어씀");
         }
 
         [UnityTest]

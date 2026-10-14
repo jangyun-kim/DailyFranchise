@@ -238,6 +238,87 @@ namespace DailyFranchise.App
             }
         }
 
+        /// <summary>저장용 형태로 바꾼다. 경기 중에는 저장할 수 없다 (로비에서만 저장한다).</summary>
+        public SeasonSaveData ToSaveData()
+        {
+            if (InProgress != null) throw new InvalidOperationException($"경기 중에는 저장하지 않는다: {InProgress.Number}");
+            return new SeasonSaveData
+            {
+                Version = SeasonSaveData.CurrentVersion,
+                SeasonTitle = SeasonTitle,
+                MyTeam = MyTeam,
+                NextIndex = NextIndex,
+                Schedule = _schedule.Select(g => new ScheduledGameData
+                {
+                    Number = g.Number,
+                    Date = g.Date,
+                    AwayTeam = g.AwayTeam,
+                    HomeTeam = g.HomeTeam,
+                    Stadium = g.Stadium,
+                    Final = g.Status == GameStatus.Final,
+                    AwayScore = g.Score?.Away ?? 0,
+                    HomeScore = g.Score?.Home ?? 0,
+                }).ToList(),
+                Standings = _standings.Select(r => new StandingData
+                {
+                    Team = r.Team, Wins = r.Wins, Losses = r.Losses, Draws = r.Draws,
+                }).ToList(),
+            };
+        }
+
+        /// <summary>
+        /// 저장 형태에서 시즌을 되살린다. 내용이 앞뒤가 맞지 않으면(버전·빈 일정·모르는 팀·진행 상황 불일치 등)
+        /// <see cref="FormatException"/>을 던진다. 순위·승차는 성적으로 다시 계산한다.
+        /// </summary>
+        public static SeasonState FromSaveData(SeasonSaveData data)
+        {
+            if (data == null) throw new FormatException("저장 데이터가 없다.");
+            if (data.Version != SeasonSaveData.CurrentVersion)
+                throw new FormatException($"저장 형식 버전 불일치: {data.Version} (현재 {SeasonSaveData.CurrentVersion})");
+            if (string.IsNullOrEmpty(data.MyTeam)) throw new FormatException("내 구단이 비어 있다.");
+            if (data.Schedule == null || data.Schedule.Count == 0) throw new FormatException("일정이 비어 있다.");
+            if (data.Standings == null || data.Standings.Count == 0) throw new FormatException("순위표가 비어 있다.");
+            if (data.NextIndex < 0 || data.NextIndex > data.Schedule.Count)
+                throw new FormatException($"진행 위치가 일정 범위를 벗어났다: {data.NextIndex} / {data.Schedule.Count}");
+
+            var teams = new HashSet<string>();
+            var standings = new List<StandingRow>();
+            foreach (var s in data.Standings)
+            {
+                if (s == null || string.IsNullOrEmpty(s.Team) || !teams.Add(s.Team))
+                    throw new FormatException($"순위표 팀이 비었거나 중복: {s?.Team}");
+                if (s.Wins < 0 || s.Losses < 0 || s.Draws < 0) throw new FormatException($"음수 성적: {s.Team}");
+                standings.Add(new StandingRow { Team = s.Team, Wins = s.Wins, Losses = s.Losses, Draws = s.Draws });
+            }
+            if (!teams.Contains(data.MyTeam)) throw new FormatException($"내 구단이 순위표에 없다: {data.MyTeam}");
+
+            var schedule = new List<ScheduledGame>();
+            for (int i = 0; i < data.Schedule.Count; i++)
+            {
+                var g = data.Schedule[i] ?? throw new FormatException($"일정 {i + 1}번째 항목이 비어 있다.");
+                if (!teams.Contains(g.AwayTeam) || !teams.Contains(g.HomeTeam) || g.AwayTeam == g.HomeTeam)
+                    throw new FormatException($"경기 {g.Number}: 팀이 잘못됐다 ({g.AwayTeam} vs {g.HomeTeam})");
+                if (g.AwayTeam != data.MyTeam && g.HomeTeam != data.MyTeam)
+                    throw new FormatException($"경기 {g.Number}: 내 구단 경기가 아니다.");
+                // 치른 경기는 앞에서부터 이어진다: 진행 위치 앞은 모두 종료, 뒤는 모두 예정.
+                if (g.Final != (i < data.NextIndex))
+                    throw new FormatException($"경기 {g.Number}: 종료 여부가 진행 위치({data.NextIndex})와 맞지 않는다.");
+                if (g.Final && (g.AwayScore < 0 || g.HomeScore < 0)) throw new FormatException($"경기 {g.Number}: 음수 점수");
+                schedule.Add(new ScheduledGame
+                {
+                    Number = g.Number,
+                    Date = g.Date,
+                    AwayTeam = g.AwayTeam,
+                    HomeTeam = g.HomeTeam,
+                    Stadium = g.Stadium,
+                    Status = g.Final ? GameStatus.Final : GameStatus.Scheduled,
+                    Score = g.Final ? new GameScore(g.AwayScore, g.HomeScore) : (GameScore?)null,
+                });
+            }
+
+            return new SeasonState(data.SeasonTitle, data.MyTeam, schedule, standings) { NextIndex = data.NextIndex };
+        }
+
         /// <summary>가상 구단 10개, 내 구단 부산 웨이브스, 10경기 일정의 더미 시즌.</summary>
         public static SeasonState CreateDummy()
         {
