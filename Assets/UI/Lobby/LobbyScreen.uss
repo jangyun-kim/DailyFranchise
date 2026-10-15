@@ -112,6 +112,67 @@ Label {
 
 .center {
     width: 1110px;
+    flex-direction: column;
+}
+
+/* 프런트 오피스 대시보드 (중앙 상단): 팀 주요 통계 540 / 15 / 팀 내 기록 1위 555 */
+.dashboard {
+    height: 268px;
+    flex-direction: row;
+    margin-bottom: 12px;
+}
+
+.dashboard__card--stats {
+    width: 540px;
+    margin-right: 15px;
+}
+
+.dashboard__card--leaders {
+    flex-grow: 1;
+}
+
+.stat-tiles {
+    flex-direction: row;
+    margin-top: 8px;
+}
+
+.stat-tile {
+    flex-grow: 1;
+    flex-basis: 0;
+    height: 116px;
+    margin-right: 8px;
+    padding: 12px 10px;
+    border-radius: 6px;
+    background-color: var(--panel-2);
+}
+
+.stat-tile:last-child {
+    margin-right: 0;
+}
+
+.stat-tile--wide {
+    flex-grow: 1.6;
+}
+
+.stat-tile__label {
+    height: 22px;
+    font-size: 13px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+.stat-tile__value {
+    height: 58px;
+    font-size: 30px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.stat-tile__value--plus { color: #E5534B; }
+.stat-tile__value--minus { color: #4C9BE8; }
+
+.schedule-panel {
+    flex-grow: 1;
 }
 
 .side--right {
@@ -222,6 +283,12 @@ Label {
 .col-num { width: 40px; -unity-text-align: middle-right; }
 .col-pct { width: 64px; -unity-text-align: middle-right; }
 .col-gb { width: 56px; -unity-text-align: middle-right; padding-right: 6px; }
+
+/* 팀 내 기록 1위 열 */
+.col-leader-cat { width: 110px; padding-left: 6px; color: var(--muted); }
+.col-leader-name { flex-grow: 1; -unity-font-style: bold; }
+.col-leader-role { width: 110px; color: var(--muted); }
+.col-leader-value { width: 100px; -unity-text-align: middle-right; padding-right: 6px; color: var(--accent); -unity-font-style: bold; }
 
 /* ───────── 하단 110px ───────── */
 .footer {

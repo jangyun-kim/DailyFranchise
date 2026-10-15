@@ -10,6 +10,9 @@ namespace DailyFranchise.App
         public ScheduledGame Game;
         public GameScore Score;
         public GameOutcome MyOutcome;
+        /// <summary>이 경기 내 구단 득점·실점 (시즌 누적 RS/RA에 더해진 값).</summary>
+        public int MyRunsScored;
+        public int MyRunsAllowed;
         /// <summary>반영 직전 / 직후 내 구단 순위.</summary>
         public int RankBefore;
         public int RankAfter;
@@ -21,8 +24,8 @@ namespace DailyFranchise.App
 
     /// <summary>
     /// 경기가 끝난 뒤의 시즌 진행. 씬과 무관한 순수 C#이라 EditMode에서 그대로 검증한다.
-    /// 1) 진행 중인 경기를 최종 점수로 끝내 내 구단·상대의 승/패/무를 기록한다.
-    /// 2) 같은 날 타 구단 경기를 난수로 만들어 함께 기록한다 (내 구단만 순위가 오르지 않게).
+    /// 1) 진행 중인 경기를 최종 점수로 끝내 내 구단·상대의 승/패/무와 득점·실점(RS/RA)을 기록한다.
+    /// 2) 같은 날 타 구단 경기를 난수로 만들어 함께 기록한다 (내 구단만 순위·득실점이 쌓이지 않게).
     /// 3) 순위표를 다시 정렬하고 일정을 다음 경기로 전진한다.
     /// 4) 곧바로 저장해, 로비로 돌아가기 전에 꺼져도 결과가 남는다.
     /// </summary>
@@ -38,12 +41,15 @@ namespace DailyFranchise.App
             int rankBefore = season.MyStanding?.Rank ?? 0;
 
             season.FinishCurrentGame(finalScore, leagueRandom);
+            var mine = season.LastDayResults[0];
 
             return new PostGameReport
             {
                 Game = game,
                 Score = finalScore,
-                MyOutcome = season.MyOutcome(game).Value,
+                MyOutcome = mine.OutcomeFor(season.MyTeam),
+                MyRunsScored = mine.RunsFor(season.MyTeam),
+                MyRunsAllowed = mine.RunsAgainst(season.MyTeam),
                 RankBefore = rankBefore,
                 RankAfter = season.MyStanding?.Rank ?? 0,
                 DayResults = new List<GameRecord>(season.LastDayResults),

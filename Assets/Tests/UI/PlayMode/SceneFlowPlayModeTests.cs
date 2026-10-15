@@ -203,6 +203,14 @@ namespace DailyFranchise.UI.Tests
             Assert.That(SeasonManager.Instance.LastReport.MyOutcome, Is.EqualTo(GameOutcome.Loss));
             Assert.That(SeasonManager.Instance.LastReport.Saved, Is.True, "로비 복귀 전에 저장");
             Assert.That(root.Q<Label>("next-game").text, Does.StartWith("경기 2 · "), "일정 전진");
+
+            // 대시보드: 이번 경기 득실점(홈 2 : 원정 3)이 시즌 누적에 더해져 바로 보인다.
+            Assert.That((SeasonManager.Instance.LastReport.MyRunsScored, SeasonManager.Instance.LastReport.MyRunsAllowed), Is.EqualTo((2, 3)));
+            Assert.That(root.Q<Label>("stat-rs").text, Is.EqualTo(me.RunsScored.ToString()));
+            Assert.That(root.Q<Label>("stat-ra").text, Is.EqualTo(me.RunsAllowed.ToString()));
+            Assert.That(root.Q<Label>("stat-diff").text, Is.EqualTo(me.RunDifferentialText));
+            Assert.That(root.Q<Label>("stat-l10").text, Is.EqualTo("0승 1패"));
+            Assert.That(root.Q("team-leaders").childCount, Is.EqualTo(4), "타율·홈런·평균자책·세이브 1위");
             Assert.That(root.Q<Label>("my-record").text, Does.StartWith($"{me.Rank}위 · {me.Wins}승 {me.Losses}패 {me.Draws}무 · 승률 {me.WinPctText}"));
 
             // 순위표 UI가 재정렬된 SeasonState와 행 단위로 일치하고, 승률 내림차순이다.

@@ -64,5 +64,8 @@ namespace DailyFranchise.App
         public int Draws;
         /// <summary>가장 최근 경기일 직전 순위 (0 = 없음). 이 필드가 없는 이전 저장 파일은 0으로 읽힌다.</summary>
         public int PreviousRank;
+        /// <summary>시즌 누적 득점·실점. 이 필드가 없는 이전 저장 파일은 0으로 읽힌다.</summary>
+        public int RunsScored;
+        public int RunsAllowed;
     }
 }

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using DailyFranchise.App.Data;
 using DailyFranchise.Sim.Data;
@@ -15,6 +16,8 @@ namespace DailyFranchise.App
     /// 좌측 라인업은 Click-to-Swap으로 바꾼다: 첫 클릭으로 선수를 고르고(강조), 두 번째 클릭한 선수와 맞바꾼다.
     /// 바꾼 라인업은 SeasonManager가 시즌에 반영·저장하고, 여기서는 다시 그리기만 한다.
     /// 선택 상태 표시는 USS 클래스(lobby-row--selected / --swappable)로만 바꾼다.
+    /// 중앙 상단 대시보드: 내 구단 시즌 득점·실점·득실차·최근 10경기(SeasonState, 경기마다 PostGameProcessor가 갱신)와
+    /// 팀 내 기록 1위(RosterAnalyzer, 라인업을 적용한 선수단의 DB 기록 기준 — 라인업을 바꾸면 다시 뽑는다).
     /// 순위표는 SeasonState가 정렬한 순서(승률 → 다승 → 무승부 → 잔여 경기)대로 그리고, 직전 경기일 대비 순위 변동을 함께 보인다.
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
@@ -60,6 +63,7 @@ namespace DailyFranchise.App
         {
             _selection.Clear();
             RenderRoster(_manager.Season);
+            RenderLeaders();
         }
 
         /// <summary>
@@ -97,6 +101,8 @@ namespace DailyFranchise.App
                 : $"{me.Rank}위 · {me.Wins}승 {me.Losses}패 {me.Draws}무 · 승률 {me.WinPctText} · 진행 {season.GamesPlayed} / {season.Schedule.Count}경기";
 
             RenderRoster(season);
+            RenderTeamStats(season);
+            RenderLeaders();
             RenderSchedule(season);
             RenderStandings(season);
 
@@ -195,6 +201,58 @@ namespace DailyFranchise.App
         {
             var id = _card.PlayerAt(spot);
             return id == null ? null : _manager.Database.FindPlayer(id)?.Name ?? id;
+        }
+
+        void RenderTeamStats(SeasonState season)
+        {
+            var me = season.MyStanding;
+            var l10 = season.MyRecentForm();
+            Q<Label>("stat-rs").text = me?.RunsScored.ToString() ?? "—";
+            Q<Label>("stat-ra").text = me?.RunsAllowed.ToString() ?? "—";
+            var diff = Q<Label>("stat-diff");
+            diff.text = me?.RunDifferentialText ?? "—";
+            diff.EnableInClassList("stat-tile__value--plus", me != null && me.RunDifferential > 0);
+            diff.EnableInClassList("stat-tile__value--minus", me != null && me.RunDifferential < 0);
+            Q<Label>("stat-l10").text = l10.Text;
+            Q<Label>("stat-note").text = StatNoteText(me, l10);
+        }
+
+        /// <summary>
+        /// 팀 통계 보조 줄: 경기당 득·실점과 최근 전적 집계 경기 수
+        /// (예: "41경기 · 경기당 득점 4.9 / 실점 4.3 · 최근 전적 3경기 기준").
+        /// </summary>
+        public static string StatNoteText(StandingRow me, RecentForm recent)
+        {
+            if (me == null || me.GamesPlayed == 0) return "";
+            var inv = CultureInfo.InvariantCulture;
+            string rs = ((double)me.RunsScored / me.GamesPlayed).ToString("0.0", inv);
+            string ra = ((double)me.RunsAllowed / me.GamesPlayed).ToString("0.0", inv);
+            string text = $"{me.GamesPlayed}경기 · 경기당 득점 {rs} / 실점 {ra}";
+            return recent.Games < 10 ? $"{text} · 최근 전적 {recent.Games}경기 기준" : text;
+        }
+
+        /// <summary>팀 내 기록 1위. 선수 DB가 없으면(읽는 중 포함) 안내 문구만 보인다.</summary>
+        void RenderLeaders()
+        {
+            var container = Q("team-leaders");
+            container.Clear();
+            var roster = _manager.MyRoster;
+            if (roster == null)
+            {
+                Q<Label>("leaders-source").text = _manager.IsDatabaseReady ? "내 구단 선수 데이터가 없습니다." : "선수 데이터 불러오는 중…";
+                return;
+            }
+            foreach (var leader in RosterAnalyzer.Leaders(roster))
+            {
+                var row = Row("lobby-row",
+                    Cell(leader.CategoryText, "col-leader-cat"),
+                    Cell(leader.Player.Name, "col-leader-name"),
+                    Cell(leader.Player.Position, "col-leader-role"),
+                    Cell(leader.ValueText, "col-leader-value"));
+                row.name = "leader-" + leader.Category;
+                container.Add(row);
+            }
+            Q<Label>("leaders-source").text = $"기준: {MasterDatabase.RosterFileName} 시즌 기록 · 타자는 선발 라인업만";
         }
 
         void RenderSchedule(SeasonState season)

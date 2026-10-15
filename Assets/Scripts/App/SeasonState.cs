@@ -35,6 +35,39 @@ namespace DailyFranchise.App
             bool awayWon = Score.Away > Score.Home;
             return (team == AwayTeam) == awayWon ? GameOutcome.Win : GameOutcome.Loss;
         }
+
+        /// <summary>이 팀의 득점.</summary>
+        public int RunsFor(string team)
+        {
+            if (team != AwayTeam && team != HomeTeam) throw new ArgumentException($"이 경기 팀이 아니다: {team}", nameof(team));
+            return team == AwayTeam ? Score.Away : Score.Home;
+        }
+
+        /// <summary>이 팀의 실점 (상대 득점).</summary>
+        public int RunsAgainst(string team)
+        {
+            if (team != AwayTeam && team != HomeTeam) throw new ArgumentException($"이 경기 팀이 아니다: {team}", nameof(team));
+            return team == AwayTeam ? Score.Home : Score.Away;
+        }
+    }
+
+    /// <summary>최근 N경기 전적 (예: L10 "6승 4패").</summary>
+    public readonly struct RecentForm
+    {
+        public RecentForm(int wins, int losses, int draws)
+        {
+            Wins = wins;
+            Losses = losses;
+            Draws = draws;
+        }
+
+        public int Wins { get; }
+        public int Losses { get; }
+        public int Draws { get; }
+        public int Games => Wins + Losses + Draws;
+
+        /// <summary>"6승 4패" (무승부가 있으면 "5승 4패 1무"). 경기가 없으면 "—".</summary>
+        public string Text => Games == 0 ? "—" : Draws == 0 ? $"{Wins}승 {Losses}패" : $"{Wins}승 {Losses}패 {Draws}무";
     }
 
     public sealed class ScheduledGame
@@ -62,6 +95,15 @@ namespace DailyFranchise.App
         public string GamesBehind;
         /// <summary>가장 최근 경기일 직전 순위. 0이면 아직 없다 (시즌 첫 경기 전·이전 저장 파일).</summary>
         public int PreviousRank;
+        /// <summary>시즌 누적 득점(RS)·실점(RA). 이 값이 없던 이전 저장 파일은 0에서 시작한다.</summary>
+        public int RunsScored;
+        public int RunsAllowed;
+
+        /// <summary>득실차 (RS - RA).</summary>
+        public int RunDifferential => RunsScored - RunsAllowed;
+
+        /// <summary>득실차 표기 (예: "+12", "-3", "0").</summary>
+        public string RunDifferentialText => RunDifferential > 0 ? "+" + RunDifferential : RunDifferential.ToString(CultureInfo.InvariantCulture);
 
         public int GamesPlayed => Wins + Losses + Draws;
 
@@ -76,6 +118,14 @@ namespace DailyFranchise.App
 
         /// <summary>승률 표기 (예: 0.561).</summary>
         public string WinPctText => WinPct.ToString("0.000", CultureInfo.InvariantCulture);
+
+        /// <summary>경기 한 건을 반영한다: 승/패/무와 득실점.</summary>
+        public void Apply(GameRecord game)
+        {
+            Apply(game.OutcomeFor(Team));
+            RunsScored += game.RunsFor(Team);
+            RunsAllowed += game.RunsAgainst(Team);
+        }
 
         public void Apply(GameOutcome outcome)
         {
@@ -159,6 +209,26 @@ namespace DailyFranchise.App
                 ? new GameRecord { AwayTeam = game.AwayTeam, HomeTeam = game.HomeTeam, Score = game.Score.Value }.OutcomeFor(MyTeam)
                 : (GameOutcome?)null;
 
+        /// <summary>
+        /// 내 구단 최근 경기 전적 (일정에서 끝난 경기 중 마지막 <paramref name="count"/>경기).
+        /// 저장된 일정만 보므로 이 세이브에서 치른 경기만 센다.
+        /// </summary>
+        public RecentForm MyRecentForm(int count = 10)
+        {
+            if (count <= 0) throw new ArgumentOutOfRangeException(nameof(count), count, "1 이상이어야 한다.");
+            int w = 0, l = 0, d = 0;
+            for (int i = NextIndex - 1; i >= 0 && i >= NextIndex - count; i--)
+            {
+                switch (MyOutcome(_schedule[i]))
+                {
+                    case GameOutcome.Win: w++; break;
+                    case GameOutcome.Loss: l++; break;
+                    case GameOutcome.Draw: d++; break;
+                }
+            }
+            return new RecentForm(w, l, d);
+        }
+
         public ScheduledGame StartNextGame()
         {
             if (InProgress != null) throw new InvalidOperationException($"이미 진행 중인 경기가 있다: {InProgress.Number}");
@@ -194,8 +264,8 @@ namespace DailyFranchise.App
             foreach (var row in _standings) row.PreviousRank = row.Rank;
             foreach (var r in _lastDay)
             {
-                StandingOf(r.AwayTeam)?.Apply(r.OutcomeFor(r.AwayTeam));
-                StandingOf(r.HomeTeam)?.Apply(r.OutcomeFor(r.HomeTeam));
+                StandingOf(r.AwayTeam)?.Apply(r);
+                StandingOf(r.HomeTeam)?.Apply(r);
             }
             Rerank();
 
@@ -284,6 +354,7 @@ namespace DailyFranchise.App
                 Standings = _standings.Select(r => new StandingData
                 {
                     Team = r.Team, Wins = r.Wins, Losses = r.Losses, Draws = r.Draws, PreviousRank = r.PreviousRank,
+                    RunsScored = r.RunsScored, RunsAllowed = r.RunsAllowed,
                 }).ToList(),
                 Lineup = MyLineup == null ? new LineupSaveData() : new LineupSaveData
                 {
@@ -318,9 +389,11 @@ namespace DailyFranchise.App
                 if (s.Wins < 0 || s.Losses < 0 || s.Draws < 0) throw new FormatException($"음수 성적: {s.Team}");
                 if (s.PreviousRank < 0 || s.PreviousRank > data.Standings.Count)
                     throw new FormatException($"직전 순위가 범위를 벗어났다: {s.Team} {s.PreviousRank}");
+                if (s.RunsScored < 0 || s.RunsAllowed < 0) throw new FormatException($"음수 득실점: {s.Team}");
                 standings.Add(new StandingRow
                 {
                     Team = s.Team, Wins = s.Wins, Losses = s.Losses, Draws = s.Draws, PreviousRank = s.PreviousRank,
+                    RunsScored = s.RunsScored, RunsAllowed = s.RunsAllowed,
                 });
             }
             if (!teams.Contains(data.MyTeam)) throw new FormatException($"내 구단이 순위표에 없다: {data.MyTeam}");
@@ -418,6 +491,14 @@ namespace DailyFranchise.App
                 new StandingRow { Team = "서울 그리폰스", Wins = 17, Losses = 24, Draws = 0 },
                 new StandingRow { Team = "고양 스타즈", Wins = 15, Losses = 27, Draws = 0 },
             };
+            // 개막 후 득실점: 경기당 4.6점 안팎에 승패 마진만큼 벌린다 (리그 득점 합 = 실점 합).
+            foreach (var row in standings)
+            {
+                int margin = (int)Math.Round((row.Wins - row.Losses) * 2.5, MidpointRounding.AwayFromZero);
+                int baseline = (int)Math.Round(row.GamesPlayed * 4.6);
+                row.RunsScored = baseline + margin;
+                row.RunsAllowed = baseline - margin;
+            }
             return new SeasonState("2026 시즌 · 5월", my, schedule, standings);
         }
     }

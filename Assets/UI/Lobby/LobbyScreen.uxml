@@ -14,7 +14,7 @@
             </ui:VisualElement>
         </ui:VisualElement>
 
-        <!-- 중단 850px: 좌 330 라인업 / 중앙 1110 일정 / 우 450 순위 -->
+        <!-- 중단 850px: 좌 330 라인업 / 중앙 1110 (대시보드 + 일정) / 우 450 순위 -->
         <ui:VisualElement class="main">
             <ui:VisualElement class="panel side side--left">
                 <ui:Label class="panel-title" text="내 구단 라인업" />
@@ -25,18 +25,52 @@
                 <ui:Label name="roster-source" class="footnote" text="" />
             </ui:VisualElement>
 
-            <ui:VisualElement class="panel center">
-                <ui:Label class="panel-title" text="시즌 일정" />
-                <ui:VisualElement class="lobby-row lobby-row--head">
-                    <ui:Label class="col-no" text="경기" />
-                    <ui:Label class="col-date" text="날짜" />
-                    <ui:Label class="col-team" text="원정" />
-                    <ui:Label class="col-vs" text="" />
-                    <ui:Label class="col-team" text="홈" />
-                    <ui:Label class="col-stadium" text="구장" />
-                    <ui:Label class="col-status" text="상태" />
+            <ui:VisualElement class="center">
+                <!-- 프런트 오피스 대시보드: 팀 주요 통계 / 팀 내 기록 1위 -->
+                <ui:VisualElement class="dashboard">
+                    <ui:VisualElement name="team-stats" class="panel dashboard__card dashboard__card--stats">
+                        <ui:Label class="panel-title" text="팀 주요 통계" />
+                        <ui:VisualElement class="stat-tiles">
+                            <ui:VisualElement class="stat-tile">
+                                <ui:Label class="stat-tile__label" text="득점 RS" />
+                                <ui:Label name="stat-rs" class="stat-tile__value" text="—" />
+                            </ui:VisualElement>
+                            <ui:VisualElement class="stat-tile">
+                                <ui:Label class="stat-tile__label" text="실점 RA" />
+                                <ui:Label name="stat-ra" class="stat-tile__value" text="—" />
+                            </ui:VisualElement>
+                            <ui:VisualElement class="stat-tile">
+                                <ui:Label class="stat-tile__label" text="득실차" />
+                                <ui:Label name="stat-diff" class="stat-tile__value" text="—" />
+                            </ui:VisualElement>
+                            <ui:VisualElement class="stat-tile stat-tile--wide">
+                                <ui:Label class="stat-tile__label" text="최근 10경기" />
+                                <ui:Label name="stat-l10" class="stat-tile__value" text="—" />
+                            </ui:VisualElement>
+                        </ui:VisualElement>
+                        <ui:Label name="stat-note" class="footnote" text="" />
+                    </ui:VisualElement>
+
+                    <ui:VisualElement name="team-leaders-panel" class="panel dashboard__card dashboard__card--leaders">
+                        <ui:Label class="panel-title" text="팀 내 기록 1위" />
+                        <ui:VisualElement name="team-leaders" />
+                        <ui:Label name="leaders-source" class="footnote" text="" />
+                    </ui:VisualElement>
                 </ui:VisualElement>
-                <ui:VisualElement name="schedule" />
+
+                <ui:VisualElement class="panel schedule-panel">
+                    <ui:Label class="panel-title" text="시즌 일정" />
+                    <ui:VisualElement class="lobby-row lobby-row--head">
+                        <ui:Label class="col-no" text="경기" />
+                        <ui:Label class="col-date" text="날짜" />
+                        <ui:Label class="col-team" text="원정" />
+                        <ui:Label class="col-vs" text="" />
+                        <ui:Label class="col-team" text="홈" />
+                        <ui:Label class="col-stadium" text="구장" />
+                        <ui:Label class="col-status" text="상태" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="schedule" />
+                </ui:VisualElement>
             </ui:VisualElement>
 
             <ui:VisualElement class="panel side side--right">
