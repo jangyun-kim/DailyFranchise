@@ -184,6 +184,30 @@ namespace DailyFranchise.App
         /// </summary>
         public LineupCard MyLineup { get; set; }
 
+        /// <summary>구단 예산 (원). 0 이상 (<see cref="FranchiseFinance.ClampBudget"/>). 시즌과 함께 저장된다.</summary>
+        public int Budget { get; private set; } = FranchiseFinance.DefaultBudget;
+
+        /// <summary>팬 만족도 (%). 0~100 (<see cref="FranchiseFinance.ClampFanApproval"/>). 시즌과 함께 저장된다.</summary>
+        public int FanApproval { get; private set; } = FranchiseFinance.DefaultFanApproval;
+
+        /// <summary>
+        /// 재정 변화를 적용한다. 예산은 0 아래로, 팬 만족도는 0~100 밖으로 나가지 않는다.
+        /// </summary>
+        /// <returns>범위 제한 뒤 실제로 바뀐 양.</returns>
+        public FinanceChange ApplyFinance(FinanceChange change)
+        {
+            int budget = Budget, fan = FanApproval;
+            SetFinance((long)Budget + change.BudgetDelta, (long)FanApproval + change.FanDelta);
+            return new FinanceChange(Budget - budget, FanApproval - fan);
+        }
+
+        /// <summary>예산·팬 만족도를 범위 안으로 맞춰 정한다 (불러오기·테스트용).</summary>
+        public void SetFinance(long budget, long fanApproval)
+        {
+            Budget = FranchiseFinance.ClampBudget(budget);
+            FanApproval = FranchiseFinance.ClampFanApproval(fanApproval);
+        }
+
         /// <summary>가장 최근에 끝난 날의 경기 결과 (첫 항목이 내 경기). 아직 없으면 비어 있다.</summary>
         public IReadOnlyList<GameRecord> LastDayResults => _lastDay;
 
@@ -362,6 +386,9 @@ namespace DailyFranchise.App
                     Positions = MyLineup.Batting.Select(s => s.Position).ToList(),
                     Bench = MyLineup.Bench.ToList(),
                 },
+                HasFinance = true,
+                Budget = Budget,
+                FanApproval = FanApproval,
             };
         }
 
@@ -422,11 +449,15 @@ namespace DailyFranchise.App
                 });
             }
 
-            return new SeasonState(data.SeasonTitle, data.MyTeam, schedule, standings)
+            var season = new SeasonState(data.SeasonTitle, data.MyTeam, schedule, standings)
             {
                 NextIndex = data.NextIndex,
                 MyLineup = LineupFrom(data.Lineup),
             };
+            // 재정 필드가 없는 이전 저장 파일(Phase 20 이전)은 기본값(₩5,000,000 · 50%)으로 시작한다.
+            // 범위를 벗어난 값은 손상으로 보지 않고 범위 안으로 맞춘다.
+            if (data.HasFinance) season.SetFinance(data.Budget, data.FanApproval);
+            return season;
         }
 
         /// <summary>저장된 라인업. 비어 있으면 null(기본 라인업). 모양이 깨졌으면 FormatException.</summary>

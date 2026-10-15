@@ -810,5 +810,87 @@ namespace DailyFranchise.UI.Tests
             Assert.That(manager.Season.MyStanding.Draws, Is.EqualTo(1), "무승부 반영");
             Assert.That(manager.FullInningMode, Is.True, "진행 방식은 실행 중 유지");
         }
+
+        static IEnumerator CheckLobbyLayout(string label)
+        {
+            var doc = Object.FindAnyObjectByType<LobbyController>().GetComponent<UIDocument>();
+            var rt = new RenderTexture(1920, 1080, 24);
+            rt.Create();
+            var panelCopy = Object.Instantiate(doc.panelSettings);
+            panelCopy.targetTexture = rt;
+            doc.panelSettings = panelCopy;
+            yield return null;
+            yield return null;
+            var issues = LayoutChecker.Check(doc.rootVisualElement.Q("screen"));
+            rt.Release();
+            Object.Destroy(rt);
+            Object.Destroy(panelCopy);
+            Assert.That(issues, Is.Empty, $"[{label}]\n" + string.Join("\n", issues));
+        }
+
+        [UnityTest]
+        public IEnumerator 로비_프런트_오피스는_예산_팬_만족도_오늘_날짜를_보이고_경기_뒤_바로_갱신된다()
+        {
+            var manager = SeasonManager.Instance;
+            var root = LobbyRoot();
+            Assert.That(root.Q<Label>("today").text, Is.EqualTo("오늘 " + FranchiseFinance.TodayText(System.DateTime.Now)));
+            Assert.That(root.Q<Label>("fo-budget").text, Is.EqualTo("₩ 5,000,000"));
+            Assert.That(root.Q<Label>("fo-fan").text, Is.EqualTo("50%"));
+            Assert.That(root.Q("fo-fan-fill").style.width.value, Is.EqualTo(Length.Percent(50)));
+            Assert.That(root.Q("fo-fan-fill").ClassListContains("fo-fill--happy") || root.Q("fo-fan-fill").ClassListContains("fo-fill--angry"),
+                Is.False, "50%는 보통");
+            Assert.That(root.Q<Label>("fo-season").text, Is.EqualTo("0 / 10경기"));
+            Assert.That(root.Q<Label>("fo-budget-delta").text, Is.EqualTo("승 +₩50,000 · 패 +₩20,000"), "아직 치른 경기가 없으면 규칙 안내");
+            yield return CheckLobbyLayout("첫 로비");
+
+            // 고정 장면 1경기 → 로비 복귀
+            Submit(LobbyRoot().Q<Button>("start-game"));
+            yield return WaitForScene(SeasonManager.GameScene);
+            var game = Object.FindAnyObjectByType<GameScreenController>();
+            game.Playback.Pause();
+            game.Playback.SkipToEnd();
+            Assert.That(game.ChooseTactic(TacticKind.Default), Is.True);
+            game.Playback.Pause();
+            game.Playback.SkipToEnd();
+            yield return null;
+            Submit(game.GetComponent<UIDocument>().rootVisualElement.Q<Button>("ctl-game-end"));
+            yield return WaitForScene(SeasonManager.LobbyScene);
+
+            var report = manager.LastReport;
+            var change = FranchiseFinance.For(report.MyOutcome);
+            Assert.That(report.Finance, Is.EqualTo(change));
+            root = LobbyRoot();
+            Assert.That(root.Q<Label>("fo-budget").text, Is.EqualTo(FranchiseFinance.BudgetText(5_000_000 + change.BudgetDelta)), "즉시 갱신");
+            Assert.That(root.Q<Label>("fo-fan").text, Is.EqualTo($"{50 + change.FanDelta}%"));
+            Assert.That(root.Q("fo-fan-fill").style.width.value, Is.EqualTo(Length.Percent(50 + change.FanDelta)));
+            Assert.That(root.Q<Label>("fo-budget-delta").text, Does.Contain(FranchiseFinance.BudgetDeltaText(change.BudgetDelta)));
+            Assert.That(root.Q<Label>("fo-fan-delta").text, Does.EndWith(FranchiseFinance.FanDeltaText(change.FanDelta)));
+            Assert.That(root.Q<Label>("fo-season").text, Is.EqualTo("1 / 10경기"));
+            Assert.That((manager.Season.Budget, manager.Season.FanApproval), Is.EqualTo((5_000_000 + change.BudgetDelta, 50 + change.FanDelta)));
+            yield return CheckLobbyLayout("경기 후 로비");
+
+            // 재시작해도 저장된 재정으로 이어진다.
+            yield return RestartFromLobby();
+            Assert.That(LobbyRoot().Q<Label>("fo-budget").text, Is.EqualTo(FranchiseFinance.BudgetText(5_000_000 + change.BudgetDelta)));
+            Assert.That(LobbyRoot().Q<Label>("fo-fan").text, Is.EqualTo($"{50 + change.FanDelta}%"));
+        }
+
+        [UnityTest]
+        public IEnumerator 팬_만족도_80_이상은_초록_30_미만은_빨강으로_보인다()
+        {
+            var manager = SeasonManager.Instance;
+            var lobby = Object.FindAnyObjectByType<LobbyController>();
+            foreach (var (fan, cls) in new[] { (85, "fo-fill--happy"), (20, "fo-fill--angry") })
+            {
+                manager.Season.SetFinance(1_234_567, fan);
+                lobby.enabled = false;
+                lobby.enabled = true; // 다시 그리기
+                yield return null;
+                var root = LobbyRoot();
+                Assert.That(root.Q("fo-fan-fill").ClassListContains(cls), Is.True, $"{fan}% → {cls}");
+                Assert.That(root.Q<Label>("fo-fan").ClassListContains(cls.Replace("fill", "percent")), Is.True);
+                Assert.That(root.Q<Label>("fo-budget").text, Is.EqualTo("₩ 1,234,567"));
+            }
+        }
     }
 }

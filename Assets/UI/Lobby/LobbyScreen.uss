@@ -151,7 +151,12 @@ Label {
 }
 
 .stat-tile--wide {
-    flex-grow: 1.6;
+    flex-grow: 2;
+}
+
+/* 최근 10경기는 무승부가 끼면 "5승 4패 1무"처럼 길어진다 → 글자를 줄여 칸 안에 둔다. */
+.stat-tile--wide .stat-tile__value {
+    font-size: 24px;
 }
 
 .stat-tile__label {
@@ -352,4 +357,94 @@ Label {
     border-color: var(--accent);
     color: var(--accent);
     -unity-font-style: bold;
+}
+
+/* ───────── 헤더: 오늘 날짜 + 프런트 오피스 (Phase 21) ───────── */
+.today {
+    height: 22px;
+    font-size: 14px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+/* 헤더 가운데 고정 폭 패널: 좌측 타이틀·우측 성적과 겹치지 않도록 줄어들지 않는다. */
+.front-office {
+    width: 860px;
+    height: 96px;
+    flex-shrink: 0;
+    flex-direction: row;
+    padding: 10px 16px;
+    border-radius: 8px;
+    background-color: var(--panel-2);
+}
+
+.fo-cell {
+    flex-grow: 1;
+    flex-basis: 0;
+    margin-right: 20px;
+}
+
+.fo-cell--last {
+    margin-right: 0;
+}
+
+.fo-label {
+    height: 18px;
+    font-size: 12px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+.fo-value {
+    height: 34px;
+    font-size: 24px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.fo-gauge {
+    height: 34px;
+    flex-direction: row;
+    align-items: center;
+}
+
+.fo-track {
+    flex-grow: 1;
+    height: 12px;
+    border-radius: 6px;
+    background-color: var(--line);
+    overflow: hidden;
+}
+
+.fo-fill {
+    height: 12px;
+    border-radius: 6px;
+    background-color: var(--accent);
+}
+
+.fo-fill--happy { background-color: #3FB950; }
+.fo-fill--angry { background-color: #E5534B; }
+.fo-fill--season { background-color: #4C9BE8; }
+
+.fo-percent {
+    width: 56px;
+    margin-left: 10px;
+    font-size: 20px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-right;
+}
+
+.fo-percent--wide {
+    width: 92px;
+    font-size: 17px;
+}
+
+.fo-percent--happy { color: #3FB950; }
+.fo-percent--angry { color: #E5534B; }
+
+.fo-delta {
+    height: 20px;
+    font-size: 13px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
 }

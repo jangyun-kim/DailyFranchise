@@ -18,6 +18,12 @@ namespace DailyFranchise.App
         public int RankAfter;
         /// <summary>그날 경기 결과 전체 (첫 항목이 내 경기).</summary>
         public IReadOnlyList<GameRecord> DayResults;
+        /// <summary>반영 직전 / 직후 예산·팬 만족도와 실제 변화량 (범위 제한 뒤).</summary>
+        public int BudgetBefore;
+        public int BudgetAfter;
+        public int FanApprovalBefore;
+        public int FanApprovalAfter;
+        public FinanceChange Finance;
         /// <summary>바로 저장에 성공했는지. 디스크 오류면 false (진행 상황은 메모리에 남아 다음 저장 때 다시 쓴다).</summary>
         public bool Saved;
     }
@@ -27,7 +33,8 @@ namespace DailyFranchise.App
     /// 1) 진행 중인 경기를 최종 점수로 끝내 내 구단·상대의 승/패/무와 득점·실점(RS/RA)을 기록한다.
     /// 2) 같은 날 타 구단 경기를 난수로 만들어 함께 기록한다 (내 구단만 순위·득실점이 쌓이지 않게).
     /// 3) 순위표를 다시 정렬하고 일정을 다음 경기로 전진한다.
-    /// 4) 곧바로 저장해, 로비로 돌아가기 전에 꺼져도 결과가 남는다.
+    /// 4) 내 구단 승/무/패로 예산(관중 수입)·팬 만족도를 바꾼다 (<see cref="FranchiseFinance.For"/>, 범위 제한).
+    /// 5) 곧바로 저장해, 로비로 돌아가기 전에 꺼져도 결과가 남는다.
     /// </summary>
     public static class PostGameProcessor
     {
@@ -42,12 +49,20 @@ namespace DailyFranchise.App
 
             season.FinishCurrentGame(finalScore, leagueRandom);
             var mine = season.LastDayResults[0];
+            var outcome = mine.OutcomeFor(season.MyTeam);
+            int budgetBefore = season.Budget, fanBefore = season.FanApproval;
+            var finance = season.ApplyFinance(FranchiseFinance.For(outcome));
 
             return new PostGameReport
             {
                 Game = game,
                 Score = finalScore,
-                MyOutcome = mine.OutcomeFor(season.MyTeam),
+                MyOutcome = outcome,
+                BudgetBefore = budgetBefore,
+                BudgetAfter = season.Budget,
+                FanApprovalBefore = fanBefore,
+                FanApprovalAfter = season.FanApproval,
+                Finance = finance,
                 MyRunsScored = mine.RunsFor(season.MyTeam),
                 MyRunsAllowed = mine.RunsAgainst(season.MyTeam),
                 RankBefore = rankBefore,

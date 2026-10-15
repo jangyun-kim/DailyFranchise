@@ -27,6 +27,14 @@ namespace DailyFranchise.App
         /// 이 필드가 없는 이전 저장 파일도 그대로 읽힌다.
         /// </summary>
         public LineupSaveData Lineup = new LineupSaveData();
+
+        /// <summary>
+        /// 재정 필드(<see cref="Budget"/>, <see cref="FanApproval"/>)가 저장돼 있는지 (Phase 21).
+        /// 이 필드가 없는 이전 저장 파일은 false로 읽혀 기본값(₩5,000,000 · 50%)을 쓴다 — 저장된 0과 "없음"을 구분하기 위한 표시.
+        /// </summary>
+        public bool HasFinance;
+        public int Budget;
+        public int FanApproval;
     }
 
     [Serializable]

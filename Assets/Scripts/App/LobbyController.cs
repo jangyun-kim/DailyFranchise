@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -19,6 +20,8 @@ namespace DailyFranchise.App
     /// 중앙 상단 대시보드: 내 구단 시즌 득점·실점·득실차·최근 10경기(SeasonState, 경기마다 PostGameProcessor가 갱신)와
     /// 팀 내 기록 1위(RosterAnalyzer, 라인업을 적용한 선수단의 DB 기록 기준 — 라인업을 바꾸면 다시 뽑는다).
     /// 순위표는 SeasonState가 정렬한 순서(승률 → 다승 → 무승부 → 잔여 경기)대로 그리고, 직전 경기일 대비 순위 변동을 함께 보인다.
+    /// 헤더 프런트 오피스(Phase 21): 구단 예산·팬 만족도 게이지(80% 이상 초록, 30% 미만 빨강)·시즌 진행도와
+    /// 직전 경기 재정 변화, 왼쪽 위에 현실 날짜(<see cref="Clock"/>).
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class LobbyController : MonoBehaviour
@@ -28,6 +31,9 @@ namespace DailyFranchise.App
         Button _mode;
         SeasonManager _manager;
         readonly LineupSelection _selection = new LineupSelection();
+
+        /// <summary>오늘 날짜 (현실 시간). 테스트는 고정 날짜를 넣는다.</summary>
+        public Func<DateTime> Clock { get; set; } = () => DateTime.Now;
         /// <summary>지금 그린 라인업 카드. 선수 DB가 없으면 null (교체 불가).</summary>
         LineupCard _card;
 
@@ -109,6 +115,7 @@ namespace DailyFranchise.App
                 ? "—"
                 : $"{me.Rank}위 · {me.Wins}승 {me.Losses}패 {me.Draws}무 · 승률 {me.WinPctText} · 진행 {season.GamesPlayed} / {season.Schedule.Count}경기";
 
+            RenderFrontOffice(season);
             RenderRoster(season);
             RenderTeamStats(season);
             RenderLeaders();
@@ -339,6 +346,41 @@ namespace DailyFranchise.App
         }
 
         T Q<T>(string name) where T : VisualElement => _root.Q<T>(name);
+
+        /// <summary>헤더: 오늘 날짜와 프런트 오피스 (예산·팬 만족도·시즌 진행). 직전 경기 변화는 이번 실행에서 치른 경기만.</summary>
+        void RenderFrontOffice(SeasonState season)
+        {
+            Q<Label>("today").text = "오늘 " + FranchiseFinance.TodayText(Clock());
+
+            var report = _manager.LastReport;
+            Q<Label>("fo-budget").text = FranchiseFinance.BudgetText(season.Budget);
+            Q<Label>("fo-budget-delta").text = report == null
+                ? $"승 {FranchiseFinance.BudgetDeltaText(FranchiseFinance.WinIncome)} · 패 {FranchiseFinance.BudgetDeltaText(FranchiseFinance.LossIncome)}"
+                : $"직전 경기({OutcomeText(report.MyOutcome)}) 관중 수입 {FranchiseFinance.BudgetDeltaText(report.Finance.BudgetDelta)}";
+
+            int fan = season.FanApproval;
+            var mood = FranchiseFinance.MoodOf(fan);
+            var fill = Q<VisualElement>("fo-fan-fill");
+            fill.style.width = Length.Percent(fan);
+            fill.EnableInClassList("fo-fill--happy", mood == FanMood.Happy);
+            fill.EnableInClassList("fo-fill--angry", mood == FanMood.Angry);
+            var fanLabel = Q<Label>("fo-fan");
+            fanLabel.text = fan + "%";
+            fanLabel.EnableInClassList("fo-percent--happy", mood == FanMood.Happy);
+            fanLabel.EnableInClassList("fo-percent--angry", mood == FanMood.Angry);
+            Q<Label>("fo-fan-delta").text = report == null
+                ? $"승 {FranchiseFinance.FanDeltaText(FranchiseFinance.WinFan)} · 패 {FranchiseFinance.FanDeltaText(FranchiseFinance.LossFan)}"
+                : $"직전 경기({OutcomeText(report.MyOutcome)}) {FranchiseFinance.FanDeltaText(report.Finance.FanDelta)}";
+
+            int played = season.GamesPlayed, total = season.Schedule.Count;
+            Q<VisualElement>("fo-season-fill").style.width = Length.Percent(total == 0 ? 0 : 100f * played / total);
+            Q<Label>("fo-season").text = $"{played} / {total}경기";
+            var next = season.NextGame;
+            Q<Label>("fo-season-next").text = next == null ? "시즌 종료" : $"다음 경기일 {next.Date} · 남은 {total - played}경기";
+        }
+
+        static string OutcomeText(GameOutcome outcome) =>
+            outcome == GameOutcome.Win ? "승" : outcome == GameOutcome.Loss ? "패" : "무";
         VisualElement Q(string name) => _root.Q(name);
 
         static VisualElement Row(string cls, params VisualElement[] cells)

@@ -2,11 +2,39 @@
     <Style src="LobbyScreen.uss" />
     <ui:VisualElement name="screen" class="screen">
 
-        <!-- 상단 120px: 타이틀 / 시즌 / 내 구단 성적 -->
+        <!-- 상단 120px: 타이틀·시즌·오늘 날짜 / 프런트 오피스(예산·팬 만족도·시즌 진행) / 내 구단 성적 -->
         <ui:VisualElement class="header">
             <ui:VisualElement class="header__title">
                 <ui:Label class="app-title" text="데일리 프랜차이즈" />
                 <ui:Label name="season-title" class="season-title" text="—" />
+                <ui:Label name="today" class="today" text="—" />
+            </ui:VisualElement>
+            <ui:VisualElement name="front-office" class="front-office">
+                <ui:VisualElement class="fo-cell">
+                    <ui:Label class="fo-label" text="FRONT OFFICE · 구단 예산" />
+                    <ui:Label name="fo-budget" class="fo-value" text="—" />
+                    <ui:Label name="fo-budget-delta" class="fo-delta" text="" />
+                </ui:VisualElement>
+                <ui:VisualElement class="fo-cell">
+                    <ui:Label class="fo-label" text="팬 만족도" />
+                    <ui:VisualElement class="fo-gauge">
+                        <ui:VisualElement class="fo-track">
+                            <ui:VisualElement name="fo-fan-fill" class="fo-fill" />
+                        </ui:VisualElement>
+                        <ui:Label name="fo-fan" class="fo-percent" text="—" />
+                    </ui:VisualElement>
+                    <ui:Label name="fo-fan-delta" class="fo-delta" text="" />
+                </ui:VisualElement>
+                <ui:VisualElement class="fo-cell fo-cell--last">
+                    <ui:Label class="fo-label" text="시즌 진행" />
+                    <ui:VisualElement class="fo-gauge">
+                        <ui:VisualElement class="fo-track">
+                            <ui:VisualElement name="fo-season-fill" class="fo-fill fo-fill--season" />
+                        </ui:VisualElement>
+                        <ui:Label name="fo-season" class="fo-percent fo-percent--wide" text="—" />
+                    </ui:VisualElement>
+                    <ui:Label name="fo-season-next" class="fo-delta" text="" />
+                </ui:VisualElement>
             </ui:VisualElement>
             <ui:VisualElement class="header__team">
                 <ui:Label name="my-team" class="my-team" text="—" />
