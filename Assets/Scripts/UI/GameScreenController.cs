@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using DailyFranchise.Sim;
@@ -13,16 +14,27 @@ namespace DailyFranchise.UI
     /// 1920×1080 경기 화면. ScenarioCatalog의 고정 장면 또는 퀵 시뮬레이션으로 만든 승부처 장면을 읽기 전용으로 재생하며,
     /// 이름·기록은 IRosterSource / IScoreboardSource에서 가져온다.
     /// 점수·H·아웃·주자·타자 기록은 필드 연출이 끝나는 순간에 반영한다 (StatsSync).
-    /// 퀵 시뮬레이션 경기는 Play-by-Play로 순환한다: 작전 타석이 끝나면 다음 타순 타자가 들어서 다시 작전을 기다린다.
-    /// 내 구단 공격 반 이닝이 3아웃으로 끝나면 이어서 내 구단 수비 반 이닝(9회초, 원정 경기면 9회말)을 진행하고,
-    /// 수비 중 작전 대기에서는 [투수 교체]로 불펜 투수를 올릴 수 있다 (Phase 19). 수비 반 이닝이 끝나면 경기 종료 대기.
+    /// Play-by-Play 경기(퀵 시뮬레이션 8회 시작 또는 1회부터 하는 풀 이닝)는 타석마다 작전을 기다리며 정규 이닝 루프를 돈다
+    /// (Phase 20): 반 이닝이 3아웃이면 공수를 바꾸고, 경기 끝은 야구 규칙대로 판정한다
+    /// (<see cref="PlayByPlayGenerator.GameEndsAfterHalf"/>·<see cref="PlayByPlayGenerator.HomeWinsInBottom"/>: 9회초 뒤 홈 리드면 종료,
+    /// 아니면 9회말, 끝내기 즉시 종료, 동점이면 12회까지 연장 후 무승부).
+    /// 내 구단 수비 중 작전 대기에서는 [투수 교체]로 불펜 투수를 올리고, 상대(CPU) 투수는 CPU 수비 이닝이 시작될 때
+    /// <see cref="CpuRosterManager"/>가 체력 고갈·실점 기준으로 바꾼다.
     /// 투수 체력(<see cref="PitcherState"/>)은 실제 투구 수로 계산해 확률 보정(<see cref="StaminaModifier"/>)에 쓴다.
+    ///
+    /// 종료 보장: 반 이닝마다 타석 수 한도(<see cref="PlayByPlayGenerator.MaxPlateAppearancesPerHalf"/>)가 있고(닿으면 반 이닝을
+    /// 끝낸 것으로 본다), 회는 <see cref="PlayByPlayGenerator.MaxInnings"/>를 넘지 않는다.
+    /// 결정론: 난수는 작전을 고를 때(<see cref="TacticRandom"/>)만 쓴다. 다음 타석 구간 생성·CPU 교체 판단은 난수를 쓰지 않는다.
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class GameScreenController : MonoBehaviour, IPitcherStateSource
     {
         /// <summary>내 구단 선발 투수의 장면 자리 ID (장면 ID의 home_ = 내 구단).</summary>
         public const string MyStarterId = "home_sp";
+        /// <summary>상대(CPU) 선발 투수의 장면 자리 ID.</summary>
+        public const string CpuStarterId = "away_sp";
+        /// <summary>1회부터 하는 풀 이닝 경기의 장면 ID.</summary>
+        public const string FullGameScenarioId = "full";
 
         const int MinInnings = 9;
         const int MaxLogEntries = 5;
@@ -70,7 +82,11 @@ namespace DailyFranchise.UI
         /// <summary>Play-by-Play가 내 구단 수비 반 이닝에 들어섰는지.</summary>
         bool _defenseStarted;
         /// <summary>투수 교체 기록: 교체한 작전 대기 투구 인덱스, 강판 투수, 등판 투수.</summary>
-        readonly List<(int afterIndex, string from, string to)> _pitchingChanges = new List<(int, string, string)>();
+        readonly List<PitchingChange> _pitchingChanges = new List<PitchingChange>();
+        /// <summary>상대(CPU) 투수 운용 AI. 장면을 불러올 때마다 새로 만든다.</summary>
+        CpuRosterManager _cpu;
+        /// <summary>1회부터 하는 풀 이닝 경기인가.</summary>
+        bool _fullGame;
         bool _previewPitching;
         bool _bullpenOpen;
         Button _pitchingButton;
@@ -127,8 +143,12 @@ namespace DailyFranchise.UI
 
         /// <summary>내 구단 투수 운용 상태 (지금 투수·강판 투수·교체 후보). 원본 선수단과 별개인 경기 중 사본.</summary>
         public InGameRoster MyPitching => _myPitching;
-        /// <summary>이 경기의 투수 교체 기록.</summary>
-        public IReadOnlyList<(int afterIndex, string from, string to)> PitchingChanges => _pitchingChanges;
+        /// <summary>이 경기의 투수 교체 기록 (내 구단 수동 + CPU 자동, 일어난 순).</summary>
+        public IReadOnlyList<PitchingChange> PitchingChanges => _pitchingChanges;
+        /// <summary>상대(CPU) 투수 운용 상태.</summary>
+        public InGameRoster CpuPitching => _cpu?.Roster;
+        /// <summary>1회부터 하는 풀 이닝 경기인가.</summary>
+        public bool IsFullGame => _fullGame;
         /// <summary>Play-by-Play가 내 구단 수비 반 이닝에 들어섰는지.</summary>
         public bool DefenseStarted => _defenseStarted;
         /// <summary>투수 교체 모달이 열려 있는지.</summary>
@@ -152,19 +172,24 @@ namespace DailyFranchise.UI
             PitcherStateAt(pitcherId, _branch != null ? _branch.AfterIndex : _playback?.Index ?? ScreenState.BeforeFirstPitch);
 
         /// <summary>events[0..throughIndex] 기준 투수 체력. 투수를 모르면 null.</summary>
-        public PitcherState PitcherStateAt(string pitcherId, int throughIndex)
+        public PitcherState PitcherStateAt(string pitcherId, int throughIndex) => PitcherStateAt(pitcherId, _events, throughIndex);
+
+        PitcherState PitcherStateAt(string pitcherId, IReadOnlyList<PitchEvent> events, int throughIndex)
         {
-            if (pitcherId == null || _roster == null || _events == null) return null;
+            if (pitcherId == null || _roster == null || events == null) return null;
             int before = _roster.GetPlayer(pitcherId).PitchesBeforeScene;
             return new PitcherState(pitcherId, PitcherState.IsStarterSlot(pitcherId),
-                before + PitcherState.PitchesBy(_events, pitcherId, throughIndex));
+                before + PitcherState.PitchesBy(events, pitcherId, throughIndex));
         }
 
         /// <summary>
         /// 인게임 Play-by-Play: 작전 타석이 끝나면 아웃·주자를 갱신한 상태에서 다음 타순 타자가 들어서고 다시 작전을 기다린다.
-        /// 3아웃이면 순환을 멈춘다. 퀵 시뮬레이션 경기에서만 켜진다 (고정 장면은 각본 그대로).
+        /// 3아웃이면 공수를 바꿔 경기 끝까지 돈다. 퀵 시뮬레이션·풀 이닝 경기에서만 켜진다 (고정 장면은 각본 그대로).
         /// </summary>
-        public bool PlayByPlay => _generated != null;
+        public bool PlayByPlay => _generated != null || _fullGame;
+
+        /// <summary>Play-by-Play 경기가 규칙상 끝났다 (더 고를 작전이 없다).</summary>
+        public bool GameOver => PlayByPlay && _decisions.Count > 0 && _branch == null;
 
         TacticDecision? LastDecision => _decisions.Count > 0 ? _decisions[_decisions.Count - 1] : (TacticDecision?)null;
         /// <summary>
@@ -252,7 +277,8 @@ namespace DailyFranchise.UI
         {
             var entry = ScenarioCatalog.Find(scenarioId);
             _generated = null;
-            Apply(entry.Id, entry.Create(), new DummyScenarioData(entry.Id, matchup));
+            _fullGame = false;
+            Apply(entry.Id, entry.Create, new DummyScenarioData(entry.Id, matchup));
         }
 
         /// <summary>
@@ -274,20 +300,67 @@ namespace DailyFranchise.UI
         void LoadGenerated(GeneratedGame game, Matchup matchup)
         {
             _generated = game;
-            Apply(FixtureGenerator.ScenarioId, game.Fixture, new DummyScenarioData(game, matchup));
+            _fullGame = false;
+            Apply(FixtureGenerator.ScenarioId, () => game.Fixture, new DummyScenarioData(game, matchup));
         }
 
-        /// <param name="native">내 구단 = 홈 기준 장면.</param>
-        void Apply(string scenarioId, ScenarioFixture native, DummyScenarioData data)
+        /// <summary>
+        /// 1회부터 하는 풀 이닝 경기를 불러온다 (Phase 20). 0 : 0, 1회초 원정 1번 타자 vs 홈 선발에서 시작해 타석마다 작전을 기다리며
+        /// 경기 끝까지 Play-by-Play로 진행한다. 내 구단이 원정이면 1회초가 내 공격이다 (장면을 뒤집지 않고 화면 기준으로 만든다).
+        /// 퀵 시뮬레이션을 쓰지 않으므로 생성 난수가 필요 없다. 작전 결과 난수는 <see cref="TacticRandom"/>.
+        /// </summary>
+        /// <param name="matchup">null이면 <see cref="Matchup.Default"/>.</param>
+        public void LoadFullGame(Matchup matchup = null)
+        {
+            var m = matchup ?? Matchup.Default;
+            _generated = null;
+            _fullGame = true;
+            Apply(FullGameScenarioId, CreateFullGameFixture, DummyScenarioData.ForFullGame(m), mirror: false);
+        }
+
+        /// <summary>풀 이닝 첫 장면: 1회초 선두 타자의 작전 전 2구와 첫 분기점. Apply 안에서 선수단·계산기를 정한 뒤 만든다.</summary>
+        ScenarioFixture CreateFullGameFixture()
+        {
+            bool userTop = IsUserBatting(HalfInning.Top);
+            var first = Generator().StartHalf(new List<PitchEvent>(), 1, HalfInning.Top,
+                LeadoffFor(new List<PitchEvent>(), userTop), FieldingPitcher(userTop), userTop);
+            return new ScenarioFixture
+            {
+                Id = FullGameScenarioId,
+                Title = "풀 이닝",
+                AwayScoreBefore = 0,
+                HomeScoreBefore = 0,
+                ZoneRule = ZoneRuleConfig.ProvisionalKbo,
+                Events = first.Events.ToList(),
+                Branch = first.Branch,
+            };
+        }
+
+        /// <summary>
+        /// 다음 타석 구간 생성기. 난수는 작전을 고르는 순간의 <see cref="TacticRandom"/>을 쓴다 (테스트가 경기를 불러온 뒤 바꿔도 반영).
+        /// </summary>
+        PlayByPlayGenerator Generator() => new PlayByPlayGenerator(_calculator, new LiveRandom(this));
+
+        /// <summary>호출 시점의 <see cref="TacticRandom"/>으로 넘겨주는 난수.</summary>
+        sealed class LiveRandom : IRandomSource
+        {
+            readonly GameScreenController _owner;
+            public LiveRandom(GameScreenController owner) => _owner = owner;
+            public double NextDouble() => _owner.TacticRandom.NextDouble();
+            public int Next(int maxExclusive) => _owner.TacticRandom.Next(maxExclusive);
+        }
+
+        /// <param name="createNative">장면을 만든다. 선수단·계산기를 정한 뒤 부른다.</param>
+        /// <param name="mirror">true면 내 구단이 원정일 때 장면을 뒤집는다 (내 구단 = 홈 기준으로 짠 장면). 풀 이닝은 화면 기준이라 false.</param>
+        void Apply(string scenarioId, Func<ScenarioFixture> createNative, DummyScenarioData data, bool mirror = true)
         {
             int speed = _playback?.Speed ?? 1;
             DetachPlayback();
 
             _scenarioId = scenarioId;
             _matchup = data.Matchup;
-            _fixture = data.Mirrored ? ScenarioMirror.Mirror(native) : native;
-            _events = _fixture.Events;
-            _branch = _fixture.Branch;
+            _events = null;
+            _branch = null;
             _decisions.Clear();
             _previewTactic = null;
             _previewPitching = false;
@@ -307,6 +380,12 @@ namespace DailyFranchise.UI
             }
             _calculator = new MatchupCalculator(_roster as IPlayerLookup, pitcherStates: this);
             _myPitching = BuildMyPitching();
+            _cpu = new CpuRosterManager(BuildCpuPitching());
+
+            var native = createNative();
+            _fixture = mirror && data.Mirrored ? ScenarioMirror.Mirror(native) : native;
+            _events = _fixture.Events;
+            _branch = _fixture.Branch;
 
             _playback = new PitchPlayback(_events);
             _playback.SetSpeed(speed);
@@ -346,17 +425,28 @@ namespace DailyFranchise.UI
         {
             var branch = _branch;
             if (branch == null || !_playback.AwaitingDecision || !branch.Offers(tactic)) return false;
+            Resolve(tactic);
+            ContinuePlayback();
+            _playback.Play();
+            return true;
+        }
 
+        /// <summary>
+        /// 지금 분기점에서 작전을 판정하고 경로를 잇는다 (재생기는 건드리지 않는다). Play-by-Play면 타석 끝까지 자르고 다음 구간을 붙인다.
+        /// </summary>
+        void Resolve(TacticKind tactic)
+        {
+            var branch = _branch;
             double rate = _calculator.TacticSuccessRate(branch, _events, tactic);
             var outcome = branch.Resolve(tactic, TacticRandom, rate);
             var path = branch.PathFor(_events, tactic, outcome);
             BranchPoint next = null;
             if (PlayByPlay)
             {
-                // 각본의 후속 타자는 떼고, 갱신된 아웃·주자에서 다음 타순 타자가 들어선다.
-                // 공격 반 이닝이 3아웃이면 수비 반 이닝으로 넘어가고, 수비까지 끝나면 segment == null로 순환 종료.
+                // 각본의 후속 타자는 떼고, 갱신된 아웃·주자에서 다음 타자(또는 공수 교대 뒤 다음 반 이닝)가 들어선다.
+                // 경기가 끝나면 segment == null로 순환 종료.
                 path = PlayByPlayGenerator.UntilPlateAppearanceEnd(path, branch.AfterIndex + 1);
-                var segment = NextSegment(new PlayByPlayGenerator(_calculator, TacticRandom), path);
+                var segment = NextSegment(Generator(), path);
                 if (segment != null)
                 {
                     path.AddRange(segment.Events);
@@ -368,31 +458,105 @@ namespace DailyFranchise.UI
             _branch = next;
             _decisions.Add(new TacticDecision(branch.AfterIndex, tactic, outcome, rate));
             _previewTactic = null;
-            _playback.ContinueWith(path); // StateChanged → Render
-            if (next != null) _playback.SetDecisionPoint(next.AfterIndex);
-            _playback.Play();
-            return true;
+        }
+
+        /// <summary>작전 대기 중인 재생기를 지금 경로로 이어 붙이고 다음 분기점을 건다.</summary>
+        void ContinuePlayback()
+        {
+            _playback.ContinueWith(_events); // StateChanged → Render
+            if (_branch != null) _playback.SetDecisionPoint(_branch.AfterIndex);
         }
 
         /// <summary>
-        /// 다음 타석 구간. 같은 반 이닝이 이어지면 다음 타자, 내 구단 공격이 3아웃으로 끝났으면 수비 반 이닝 첫 타자
-        /// (상대 선두 타자 vs 내 지금 투수). 수비 반 이닝이 끝났거나, 9회 이후 말 공격에서 홈이 앞서면(끝내기·말 공격 생략) null.
+        /// [이닝 종료] (Play-by-Play 작전 대기 중): 이번 반 이닝의 남은 타석을 모두 [기본 진행]으로 처리하고 반 이닝 마지막 투구로 간다.
+        /// 다음 반 이닝 첫 타자의 작전 대기에서 다시 멈춘다. 경기가 끝나면 끝까지 간다.
+        /// </summary>
+        /// <returns>처리했으면 true. Play-by-Play 작전 대기가 아니면 false.</returns>
+        public bool AutoPlayHalfInning()
+        {
+            if (!PlayByPlay || _branch == null || !_playback.AwaitingDecision) return false;
+            var start = _events[_branch.AfterIndex];
+            int guard = 0;
+            do
+            {
+                Resolve(TacticKind.Default);
+            } while (_branch != null && SameHalf(_events[_branch.AfterIndex], start)
+                     && ++guard < PlayByPlayGenerator.MaxPlateAppearancesPerHalf);
+
+            int end = _events.Count - 1;
+            while (end > 0 && !SameHalf(_events[end], start)) end--;
+            ContinuePlayback();
+            _playback.SeekTo(end);
+            _playback.Play();
+            return true;
+
+            bool SameHalf(PitchEvent a, PitchEvent b) => a.Inning == b.Inning && a.HalfInning == b.HalfInning;
+        }
+
+        /// <summary>
+        /// 타석이 끝난 경로 다음에 올 타석 구간. 경기가 끝났으면 null.
+        /// 1) 9회 이후 말 공격에서 홈이 앞서면 끝내기 → null.
+        /// 2) 3아웃 전이면 같은 반 이닝 다음 타자 (지금 수비 쪽 투수). 타석 수 한도 등으로 이어 갈 수 없으면 반 이닝을 끝낸 것으로 본다.
+        /// 3) 반 이닝이 끝났으면 <see cref="PlayByPlayGenerator.GameEndsAfterHalf"/>로 경기 끝을 판정하고, 아니면 다음 반 이닝 첫 타자.
+        ///    CPU가 수비를 시작하는 반 이닝이면 그 전에 CPU 투수 교체를 판단한다.
         /// </summary>
         PlateAppearanceSegment NextSegment(PlayByPlayGenerator generator, List<PitchEvent> path)
         {
             var last = path[path.Count - 1];
             var score = ScreenState.Build(path, _fixture.AwayScoreBefore, _fixture.HomeScoreBefore, path.Count - 1);
-            if (PlayByPlayGenerator.HomeWinsInBottom(last.Inning, last.HalfInning, score.AwayScore, score.HomeScore)) return null;
-
             bool userBatting = IsUserBatting(last.HalfInning);
-            var segment = generator.Next(path, userBatting ? null : _myPitching.CurrentPitcherId, userBatting);
-            if (segment != null || !userBatting || _defenseStarted || last.OutsAfter < 3) return segment;
+            var step = PlayByPlayGenerator.StepAfter(last, score.AwayScore, score.HomeScore, PlayByPlayGenerator.HalfInningContinues(path));
+            if (step == GameFlowStep.GameOver) return null;
+            if (step == GameFlowStep.ContinueHalf) return generator.Next(path, FieldingPitcher(userBatting), userBatting);
 
             var (inning, half) = PlayByPlayGenerator.NextHalf(last.Inning, last.HalfInning);
-            if (PlayByPlayGenerator.HomeWinsInBottom(inning, half, score.AwayScore, score.HomeScore)) return null;
-            _defenseStarted = true;
-            string leadoff = BattingOrder.IdFor("away_b1", _generated.AwayNinthLeadoffOrder);
-            return generator.StartHalf(path, inning, half, leadoff, _myPitching.CurrentPitcherId, userBatting: false);
+            bool nextUserBatting = IsUserBatting(half);
+            if (nextUserBatting) CpuHalfInningStart(path, inning);
+            else _defenseStarted = true;
+            return generator.StartHalf(path, inning, half, LeadoffFor(path, nextUserBatting), FieldingPitcher(nextUserBatting), nextUserBatting);
+        }
+
+        /// <summary>이 반 이닝에 수비하는 쪽의 지금 투수: 내가 공격이면 CPU 투수, 수비면 내 투수.</summary>
+        string FieldingPitcher(bool userBatting) => userBatting ? _cpu.Roster.CurrentPitcherId : _myPitching.CurrentPitcherId;
+
+        /// <summary>
+        /// 공격하는 쪽의 반 이닝 선두 타자: 그 팀이 경로에서 마지막으로 친 타자의 다음 타순. 아직 친 적이 없으면
+        /// 퀵 시뮬레이션 경기의 상대는 1~8회 기록으로 어림한 타순(<see cref="GeneratedGame.AwayNinthLeadoffOrder"/>), 그 외는 1번.
+        /// </summary>
+        string LeadoffFor(IReadOnlyList<PitchEvent> path, bool userBatting)
+        {
+            string prefix = userBatting ? "home_b" : "away_b";
+            for (int i = path.Count - 1; i >= 0; i--)
+            {
+                var id = path[i].BatterId;
+                if (id != null && id.StartsWith(prefix, StringComparison.Ordinal) && BattingOrder.OrderOf(id) != null)
+                    return BattingOrder.Next(id);
+            }
+            int order = !userBatting && _generated != null ? _generated.AwayNinthLeadoffOrder : 1;
+            return prefix + order;
+        }
+
+        /// <summary>CPU 수비 반 이닝 시작 직전: 지금 CPU 투수의 체력·실점으로 교체를 판단하고, 바꿨으면 기록한다.</summary>
+        void CpuHalfInningStart(IReadOnlyList<PitchEvent> path, int inning)
+        {
+            string current = _cpu.Roster.CurrentPitcherId;
+            int through = path.Count - 1;
+            var change = _cpu.OnHalfInningStart(inning, PitcherStateAt(current, path, through),
+                PitcherState.RunsAllowedBy(path, current, through));
+            if (change != null) _pitchingChanges.Add(new PitchingChange(through, change.From, change.To, byCpu: true, change.Reason));
+        }
+
+        /// <summary>
+        /// 상대(CPU) 투수 운용 상태: 상대 선발(away_sp)이 마운드에 있고, 상대 불펜 자리(away_rpN)의 선수 사본을 대기 명단으로 둔다.
+        /// 선수단이 실려 있으면 그 불펜(대기 순서)을, 없으면 더미 상대 불펜을 쓴다.
+        /// </summary>
+        InGameRoster BuildCpuPitching()
+        {
+            var source = _roster as ScenarioRosterSource;
+            IEnumerable<string> ids = source != null && source.Resolve(CpuStarterId) != null
+                ? Enumerable.Range(1, 9).Select(i => "away_rp" + i).Where(id => source.Resolve(id) != null).ToList()
+                : DummyScenarioData.OpponentBullpen;
+            return new InGameRoster(CpuStarterId, ids.Select(id => DataFor(id, RosterRole.Bullpen, _roster.GetPlayer(id).Position)));
         }
 
         /// <summary>
@@ -405,15 +569,16 @@ namespace DailyFranchise.UI
             var pool = _roster.GetBench(my).Select(e => DataFor(e.PlayerId, RosterRole.Bench, e.Role))
                 .Concat(_roster.GetBullpen(my).Select(e => DataFor(e.PlayerId, RosterRole.Bullpen, e.Role)));
             return new InGameRoster(MyStarterId, pool);
+        }
 
-            PlayerData DataFor(string sceneId, RosterRole role, string position)
-            {
-                var data = (_roster as ScenarioRosterSource)?.Resolve(sceneId);
-                var copy = data != null ? data.CloneAs(data.Role, data.Order, data.Position)
-                    : new PlayerData { Name = _roster.GetPlayer(sceneId).Name, Role = role, Position = position };
-                copy.Id = sceneId;
-                return copy;
-            }
+        /// <summary>장면 자리 ID의 선수 사본 (ID = 장면 자리). 선수단이 없으면 더미 표시 정보로 만든다.</summary>
+        PlayerData DataFor(string sceneId, RosterRole role, string position)
+        {
+            var data = (_roster as ScenarioRosterSource)?.Resolve(sceneId);
+            var copy = data != null ? data.CloneAs(data.Role, data.Order, data.Position)
+                : new PlayerData { Name = _roster.GetPlayer(sceneId).Name, Role = role, Position = position };
+            copy.Id = sceneId;
+            return copy;
         }
 
         /// <summary>
@@ -427,8 +592,8 @@ namespace DailyFranchise.UI
             string from = _myPitching.CurrentPitcherId;
             var played = _events.Take(_branch.AfterIndex + 1).ToList();
             _myPitching.BringIn(pitcherId);
-            _branch = new PlayByPlayGenerator(_calculator, TacticRandom).Relieve(played, pitcherId, userBatting: false);
-            _pitchingChanges.Add((_branch.AfterIndex, from, pitcherId));
+            _branch = Generator().Relieve(played, pitcherId, userBatting: false);
+            _pitchingChanges.Add(new PitchingChange(_branch.AfterIndex, from, pitcherId, byCpu: false));
             _previewPitching = false;
             CloseBullpen();
             MarkBullpen();
@@ -510,10 +675,11 @@ namespace DailyFranchise.UI
         /// <summary>처음으로: 분기한 장면은 작전 선택 전 기본 구간으로 되돌린다.</summary>
         void RestartScenario()
         {
-            if (_decisions.Count > 0)
+            if (_decisions.Count > 0 || _pitchingChanges.Count > 0)
             {
                 // 퀵 시뮬레이션 경기는 다시 굴리지 않고 같은 경기로 되돌린다.
-                if (_generated != null) LoadGenerated(_generated, _matchup);
+                if (_fullGame) LoadFullGame(_matchup);
+                else if (_generated != null) LoadGenerated(_generated, _matchup);
                 else LoadScenario(_scenarioId);
                 _playback.Pause();
             }
@@ -635,7 +801,11 @@ namespace DailyFranchise.UI
             _restart.clicked += RestartScenario;
             _nextPitch.clicked += () => _playback.StepPitch();
             _nextPa.clicked += () => _playback.SkipToPlateAppearanceEnd();
-            _inningEnd.clicked += () => _playback.SkipToHalfInningEnd();
+            // Play-by-Play 작전 대기 중이면 이번 반 이닝을 기본 진행으로 끝까지 처리한다.
+            _inningEnd.clicked += () =>
+            {
+                if (!AutoPlayHalfInning()) _playback.SkipToHalfInningEnd();
+            };
             _gameEnd.clicked += RequestExit;
             _auto.clicked += () => _playback.TogglePlay();
 
@@ -673,6 +843,12 @@ namespace DailyFranchise.UI
             };
             generatedTab.AddToClassList("debug-strip__btn");
             _scenarioTabs.Add(generatedTab);
+            var fullTab = new Button(() => LoadFullGame(_matchup))
+            {
+                text = "풀 이닝", name = "scenario-" + FullGameScenarioId, userData = FullGameScenarioId,
+            };
+            fullTab.AddToClassList("debug-strip__btn");
+            _scenarioTabs.Add(fullTab);
         }
 
         void BindTactic(string buttonName, TacticKind kind)
@@ -745,8 +921,7 @@ namespace DailyFranchise.UI
         /// <summary>
         /// Play-by-Play 순환이 끝나(수비 반 이닝 3아웃·끝내기·말 공격 생략) 화면이 마지막 투구에 와 있다 (다음은 [경기 종료]).
         /// </summary>
-        public bool InningEndAwaitingExit =>
-            PlayByPlay && _decisions.Count > 0 && _branch == null && _playback.IsAtEnd;
+        public bool InningEndAwaitingExit => GameOver && _playback.IsAtEnd;
 
         /// <summary>작전 결과는 분기 직후 투구가 화면에 나온 뒤에 밝힌다.</summary>
         bool TacticRevealed => _decisions.Count > 0 && _playback.Index > LastDecision.Value.AfterIndex;
@@ -773,7 +948,7 @@ namespace DailyFranchise.UI
             _auto.SetEnabled(!atEnd || _playback.IsPlaying);
             _nextPitch.SetEnabled(!atEnd);
             _nextPa.SetEnabled(!atEnd);
-            _inningEnd.SetEnabled(!atEnd);
+            _inningEnd.SetEnabled(!atEnd || (PlayByPlay && _playback.AwaitingDecision));
             _gameEnd.SetEnabled(HasExitHandler || !atEnd);
             // Play-by-Play가 3아웃으로 끝나면 [경기 종료]로 결과 반영·로비 복귀를 안내한다.
             _gameEnd.EnableInClassList("btn--active", InningEndAwaitingExit && HasExitHandler);
@@ -879,8 +1054,8 @@ namespace DailyFranchise.UI
 
             // 투수·타자. 작전 대기 중 투수를 바꿨으면 그 투구 시점부터 새 투수를 보인다.
             string pitcherId = s.PitcherId;
-            if (_pitchingChanges.Count > 0 && s.Index == _pitchingChanges[_pitchingChanges.Count - 1].afterIndex)
-                pitcherId = _pitchingChanges[_pitchingChanges.Count - 1].to;
+            var relief = _pitchingChanges.LastOrDefault(c => !c.ByCpu && c.AfterIndex == s.Index);
+            if (relief != null) pitcherId = relief.To;
             var pitcher = _roster.GetPlayer(pitcherId);
             var pitcherState = PitcherStateAt(pitcherId, s.Index);
             var batter = _roster.GetPlayer(s.BatterId);
@@ -1056,7 +1231,7 @@ namespace DailyFranchise.UI
             // 작전 선택 기록은 분기점 투구 바로 위(시간상 직후)에 끼우고, 투구와 같이 개수 제한에 포함한다.
             var decisionAt = new Dictionary<int, TacticDecision>();
             foreach (var d in _decisions) decisionAt[d.AfterIndex] = d;
-            var changesAt = _pitchingChanges.ToLookup(c => c.afterIndex);
+            var changesAt = _pitchingChanges.ToLookup(c => c.AfterIndex);
             int budget = MaxLogEntries;
             for (int i = index; i >= 0 && budget > 0; i--)
             {
@@ -1068,10 +1243,14 @@ namespace DailyFranchise.UI
                     _log.Add(note);
                     if (--budget == 0) break;
                 }
-                // 투수 교체는 작전 대기 중(분기점 투구 직후)에 일어나므로 그 투구가 보이면 함께 보인다.
+                // 내 투수 교체는 작전 대기 중(분기점 투구 직후)이라 그 투구가 보이면 함께 보이고,
+                // CPU 교체는 이닝 교대 때라 다음 반 이닝 투구가 보일 때 보인다.
                 foreach (var change in changesAt[i].Reverse())
                 {
-                    var note = new Label($"투수 교체 · {NameOf(change.from)} → {NameOf(change.to)}");
+                    if (change.ByCpu && index <= i) continue;
+                    var note = new Label(change.ByCpu
+                        ? $"상대 투수 교체 · {NameOf(change.From)} → {NameOf(change.To)} ({change.Reason})"
+                        : $"투수 교체 · {NameOf(change.From)} → {NameOf(change.To)}");
                     note.AddToClassList("log-entry");
                     note.AddToClassList("log-entry--tactic");
                     _log.Add(note);

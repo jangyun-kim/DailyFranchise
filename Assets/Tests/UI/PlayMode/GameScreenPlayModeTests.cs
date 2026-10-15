@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using DailyFranchise.Sim;
 using DailyFranchise.Sim.Fixtures;
@@ -860,7 +861,7 @@ namespace DailyFranchise.UI.Tests
         }
 
         [UnityTest]
-        public IEnumerator 퀵_시뮬_순환은_공격_3아웃_뒤_9회초_수비까지_돌고_경기_종료로_이어진다()
+        public IEnumerator 퀵_시뮬_순환은_야구_규칙대로_9회말_연장까지_돌고_경기_종료로_이어진다()
         {
             var root = _doc.rootVisualElement;
             _controller.LoadGeneratedScenario(Data.Matchup.Default, new SeededRandom(7));
@@ -869,11 +870,12 @@ namespace DailyFranchise.UI.Tests
             _controller.Playback.SkipToEnd();
             yield return null;
 
-            // Phase 19: 공격(강공) 3아웃 뒤 9회초 수비(기본 진행만)로 이어진다.
+            // Phase 19·20: 공격(강공) 3아웃 뒤 9회초 수비(기본 진행만), 홈이 앞서지 않으면 9회말·연장까지 이어진다.
             int guard = 0;
             while (_controller.CurrentBranch != null)
             {
-                Assert.That(++guard, Is.LessThanOrEqualTo(2 * PlayByPlayGenerator.MaxPlateAppearancesPerHalf), "순환이 끝나지 않음");
+                Assert.That(++guard, Is.LessThanOrEqualTo(2 * PlayByPlayGenerator.MaxInnings * PlayByPlayGenerator.MaxPlateAppearancesPerHalf),
+                    "순환이 끝나지 않음");
                 Assert.That(_controller.Playback.AwaitingDecision, Is.True);
                 var tactic = _controller.AwaitingDefenseDecision ? TacticKind.Default : TacticKind.SwingAway;
                 Assert.That(_controller.ChooseTactic(tactic), Is.True);
@@ -883,18 +885,28 @@ namespace DailyFranchise.UI.Tests
             }
             yield return WaitForField();
 
+            // 0.99: 강공 실패·기본 진행 범타만 → 9회초 이후 득점이 없다. 끝나는 반 이닝은 점수로 정해진다:
+            // 홈 리드 → 9회초에서 종료, 원정 리드 → 9회말 뒤 종료, 동점 → 12회말까지 연장 뒤 무승부.
             var last = _controller.Events[_controller.Events.Count - 1];
+            var final = _controller.FinalScore();
+            var expectedEnd = final.Home > final.Away ? (9, HalfInning.Top)
+                : final.Away > final.Home ? (9, HalfInning.Bottom) : (PlayByPlayGenerator.MaxInnings, HalfInning.Bottom);
             Assert.That(last.OutsAfter, Is.EqualTo(3));
-            Assert.That((last.Inning, last.HalfInning), Is.EqualTo((9, HalfInning.Top)), "9회초 수비로 끝남");
+            Assert.That((last.Inning, last.HalfInning), Is.EqualTo(expectedEnd), $"최종 {final}");
+            Assert.That(_controller.Events.Any(e => e.Inning == 9 && e.HalfInning == HalfInning.Bottom),
+                Is.EqualTo(final.Home <= final.Away), "홈이 9회초 뒤 앞서지 않으면 반드시 9회말 공격");
             Assert.That(_controller.DefenseStarted, Is.True);
             Assert.That(_controller.Playback.IsAtEnd, Is.True);
             Assert.That(_controller.Playback.AwaitingDecision, Is.False);
             Assert.That(_controller.InningEndAwaitingExit, Is.True);
+            Assert.That(_controller.GameOver, Is.True);
             var offense = _controller.Decisions.Count(d => _controller.Events[d.AfterIndex].Inning == 8);
             Assert.That(offense, Is.InRange(1, 3), "8회말 공격 작전");
-            Assert.That(_controller.Decisions.Count - offense, Is.EqualTo(3), "0.99 → 9회초 세 타자 범타");
-            Assert.That(Text(root, "status-inning"), Is.EqualTo("9회초 · 3아웃 · 이닝 종료"));
-            Assert.That(Text(root, "headline-main"), Is.EqualTo("9회초 종료 · 경기 종료 대기"));
+            Assert.That(_controller.Decisions.Count(d => _controller.Events[d.AfterIndex] is var e && e.Inning == 9 && e.HalfInning == HalfInning.Top),
+                Is.EqualTo(3), "0.99 → 9회초 세 타자 범타");
+            string half = $"{expectedEnd.Item1}회{(expectedEnd.Item2 == HalfInning.Top ? "초" : "말")}";
+            Assert.That(Text(root, "status-inning"), Is.EqualTo($"{half} · 3아웃 · 이닝 종료"));
+            Assert.That(Text(root, "headline-main"), Is.EqualTo($"{half} 종료 · 경기 종료 대기"));
             Assert.That(root.Q<Button>("tactic-default").enabledSelf, Is.False);
             Assert.That(root.Q<Button>("tactic-swing").enabledSelf, Is.False);
             // 씬 단독 실행(로비 흐름 없음)이라 [경기 종료]는 기존처럼 꺼진다. 로비 복귀는 SceneFlow 테스트에서 확인.
@@ -1055,6 +1067,139 @@ namespace DailyFranchise.UI.Tests
             Assert.That(_controller.MyPitching.CurrentPitcherId, Is.EqualTo("home_sp"));
             Assert.That(_controller.MyPitching.UsedPitchers, Is.Empty);
             Assert.That(_controller.DefenseStarted, Is.False);
+        }
+
+        /// <summary>기본 진행 타석은 난수 2개(출루 판정 0.99 → 범타, 결과 0.1 → 삼진)를 쓴다 → 모든 타석 4구 삼진.</summary>
+        static ScriptedRandom AllStrikeouts() => new ScriptedRandom(0.99, 0.1);
+
+        IEnumerator PlayToDecisionEnd()
+        {
+            _controller.Playback.Pause();
+            _controller.Playback.SkipToEnd();
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator 풀_이닝은_1회초부터_공수를_바꾸고_동점이면_12회말_무승부로_끝나며_CPU가_지친_선발을_바꾼다()
+        {
+            var root = _doc.rootVisualElement;
+            _controller.LoadFullGame(Data.Matchup.Default); // 내 구단 = 홈 → 초는 내 수비, 말은 내 공격
+            _controller.TacticRandom = AllStrikeouts();
+            yield return PlayToDecisionEnd();
+
+            Assert.That(_controller.IsFullGame, Is.True);
+            Assert.That(_controller.PlayByPlay, Is.True);
+            var first = _controller.Events[_controller.CurrentBranch.AfterIndex];
+            Assert.That((first.Inning, first.HalfInning, first.BatterId, first.PitcherId), Is.EqualTo((1, HalfInning.Top, "away_b1", "home_sp")));
+            Assert.That(_controller.AwaitingDefenseDecision, Is.True, "1회초는 내 수비");
+            Assert.That(Text(root, "away-score") + ":" + Text(root, "home-score"), Is.EqualTo("0:0"));
+            Assert.That(Text(root, "pitcher-line1"), Does.EndWith(" · 2구"), "풀 이닝은 투구 수 0에서 시작");
+
+            int guard = 0;
+            while (_controller.CurrentBranch != null)
+            {
+                Assert.That(++guard, Is.LessThanOrEqualTo(2 * PlayByPlayGenerator.MaxInnings * PlayByPlayGenerator.MaxPlateAppearancesPerHalf), "무한 루프");
+                Assert.That(_controller.ChooseTactic(TacticKind.Default), Is.True);
+                yield return PlayToDecisionEnd();
+            }
+            yield return WaitForField();
+
+            var events = _controller.Events;
+            var halves = events.Select(e => (e.Inning, e.HalfInning)).Distinct().ToList();
+            Assert.That(halves, Has.Count.EqualTo(24), "1회초 ~ 12회말");
+            Assert.That(halves.First(), Is.EqualTo((1, HalfInning.Top)));
+            Assert.That(halves.Last(), Is.EqualTo((PlayByPlayGenerator.MaxInnings, HalfInning.Bottom)));
+            foreach (var h in halves)
+            {
+                var pa = events.Where(e => (e.Inning, e.HalfInning) == h && e.Outcome != PlateAppearanceOutcome.None).ToList();
+                Assert.That(pa.Select(e => e.Outcome), Is.EqualTo(Enumerable.Repeat(PlateAppearanceOutcome.Strikeout, 3)), $"{h} 삼자 삼진");
+                bool userBatting = h.HalfInning == HalfInning.Bottom;
+                Assert.That(pa.All(e => e.BatterId.StartsWith(userBatting ? "home_b" : "away_b")), Is.True, $"{h} 공격 팀");
+            }
+            Assert.That(events.Where(e => e.HalfInning == HalfInning.Top && e.Outcome != PlateAppearanceOutcome.None)
+                .Select(e => e.BatterId).Take(10), Is.EqualTo(new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 1 }.Select(n => "away_b" + n)), "타순이 이닝을 넘어 이어진다");
+            Assert.That(_controller.FinalScore(), Is.EqualTo(new GameScore(0, 0)), "12회 동점 → 무승부");
+            Assert.That(_controller.GameOver, Is.True);
+            Assert.That(_controller.InningEndAwaitingExit, Is.True);
+            Assert.That(Text(root, "headline-main"), Is.EqualTo("12회말 종료 · 경기 종료 대기"));
+
+            // CPU: 말마다 12구 → 9회말까지 108구로 고갈 → 10회말 시작 전에 마무리(9회 이후 우선)로 교체.
+            var cpuChanges = _controller.PitchingChanges.Where(c => c.ByCpu).ToList();
+            Assert.That(cpuChanges, Has.Count.EqualTo(1));
+            var change = cpuChanges[0];
+            Assert.That((change.From, change.To, change.Reason), Is.EqualTo(("away_sp", "away_rp2", "체력 고갈")));
+            Assert.That(events[change.AfterIndex].Inning, Is.EqualTo(10));
+            Assert.That(events[change.AfterIndex].HalfInning, Is.EqualTo(HalfInning.Top), "10회초 마지막 투구 뒤(이닝 교대)");
+            Assert.That(events.Where(e => e.HalfInning == HalfInning.Bottom && e.Inning <= 9).Select(e => e.PitcherId).Distinct(), Is.EqualTo(new[] { "away_sp" }));
+            Assert.That(events.Where(e => e.HalfInning == HalfInning.Bottom && e.Inning >= 10).Select(e => e.PitcherId).Distinct(), Is.EqualTo(new[] { "away_rp2" }));
+            Assert.That(_controller.CpuPitching.UsedPitchers, Is.EqualTo(new[] { "away_sp" }));
+            Assert.That(_controller.MyPitching.CurrentPitcherId, Is.EqualTo("home_sp"), "내 투수는 자동으로 바꾸지 않는다");
+
+            // 12회까지 늘어난 스코어보드도 화면에 맞는다.
+            Assert.That(root.Q("linescore").Children().First().Query<Label>().ToList().Select(l => l.text), Has.Member("12"), "12회 칸");
+            var issues = LayoutChecker.Check(Screen);
+            Assert.That(issues, Is.Empty, string.Join("\n", issues));
+
+            // 10회말 첫 투구: 투수 카드 = 새 CPU 투수, 중계 로그에 교체 기록
+            int firstRelief = events.Select((e, i) => (e, i)).First(x => x.e.PitcherId == "away_rp2").i;
+            _controller.Playback.SeekTo(firstRelief);
+            yield return null;
+            var roster = _controller.Roster;
+            Assert.That(Text(root, "pitcher-name"), Is.EqualTo(roster.GetPlayer("away_rp2").Name));
+            Assert.That(root.Q("log").Children().OfType<Label>().Select(l => l.text),
+                Has.Member($"상대 투수 교체 · {roster.GetPlayer("away_sp").Name} → {roster.GetPlayer("away_rp2").Name} (체력 고갈)"));
+            _controller.Playback.SeekTo(firstRelief - 1);
+            yield return null;
+            Assert.That(root.Q("log").Children().OfType<Label>().Select(l => l.text), Has.None.StartsWith("상대 투수 교체"),
+                "교체 전(10회초 마지막 투구)에는 아직 안 보인다");
+        }
+
+        [UnityTest]
+        public IEnumerator 같은_난수면_풀_이닝_경기도_같은_경로가_나온다()
+        {
+            var runs = new List<string>();
+            for (int round = 0; round < 2; round++)
+            {
+                _controller.LoadFullGame(Data.Matchup.Default);
+                _controller.TacticRandom = new SeededRandom(20261016);
+                yield return PlayToDecisionEnd();
+                int guard = 0;
+                while (_controller.CurrentBranch != null && ++guard < 400)
+                {
+                    var tactic = _controller.CurrentBranch.Offers(TacticKind.SwingAway) && guard % 3 == 0 ? TacticKind.SwingAway : TacticKind.Default;
+                    Assert.That(_controller.ChooseTactic(tactic), Is.True);
+                    _controller.Playback.Pause();
+                    _controller.Playback.SkipToEnd();
+                }
+                Assert.That(_controller.GameOver, Is.True);
+                runs.Add(string.Join("|", _controller.Events.Select(e => $"{e.Inning}{e.HalfInning}{e.PitcherId}{e.BatterId}{e.Result}{e.RunsScored}")) +
+                         _controller.FinalScore());
+            }
+            Assert.That(runs[1], Is.EqualTo(runs[0]));
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator 이닝_종료는_작전_대기에서_남은_타석을_기본_진행으로_처리하고_다음_반_이닝에서_멈춘다()
+        {
+            _controller.LoadFullGame(Data.Matchup.Default);
+            _controller.TacticRandom = AllStrikeouts();
+            _controller.Playback.SetSpeed(4);
+            yield return PlayToDecisionEnd();
+            var inningEnd = _doc.rootVisualElement.Q<Button>("ctl-inning-end");
+            Assert.That(inningEnd.enabledSelf, Is.True, "작전 대기 중에도 [이닝 종료] 가능");
+
+            Submit(inningEnd);
+            yield return null;
+            Assert.That(_controller.Decisions.Count, Is.EqualTo(3), "1회초 세 타석");
+            Assert.That(_controller.Decisions.All(d => d.Tactic == TacticKind.Default), Is.True);
+            var shown = _controller.Events[_controller.Playback.Index];
+            Assert.That((shown.Inning, shown.HalfInning, shown.OutsAfter), Is.EqualTo((1, HalfInning.Top, 3)), "1회초 마지막 투구로 이동");
+            yield return WaitForDecision();
+            var next = _controller.Events[_controller.CurrentBranch.AfterIndex];
+            Assert.That((next.Inning, next.HalfInning, next.BatterId), Is.EqualTo((1, HalfInning.Bottom, "home_b1")), "1회말 내 공격 선두");
+            Assert.That(_controller.AwaitingDefenseDecision, Is.False);
+            Assert.That(_doc.rootVisualElement.Q<Button>("tactic-swing").enabledSelf, Is.True, "공격에는 강공");
         }
     }
 }

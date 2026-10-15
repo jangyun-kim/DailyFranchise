@@ -25,6 +25,7 @@ namespace DailyFranchise.App
     {
         VisualElement _root;
         Button _start;
+        Button _mode;
         SeasonManager _manager;
         readonly LineupSelection _selection = new LineupSelection();
         /// <summary>지금 그린 라인업 카드. 선수 DB가 없으면 null (교체 불가).</summary>
@@ -38,7 +39,10 @@ namespace DailyFranchise.App
             _root = GetComponent<UIDocument>().rootVisualElement;
             _start = _root.Q<Button>("start-game");
             _start.clicked += OnStartClicked;
+            _mode = _root.Q<Button>("game-mode");
+            _mode.clicked += OnModeClicked;
             _manager = SeasonManager.EnsureExists();
+            _manager.ModeChanged += Render;
             _manager.DatabaseReady += OnDatabaseReady;
             _manager.LineupChanged += OnLineupChanged;
             _selection.Clear();
@@ -48,16 +52,21 @@ namespace DailyFranchise.App
         void OnDisable()
         {
             if (_start != null) _start.clicked -= OnStartClicked;
+            if (_mode != null) _mode.clicked -= OnModeClicked;
             if (_manager != null)
             {
+                _manager.ModeChanged -= Render;
                 _manager.DatabaseReady -= OnDatabaseReady;
                 _manager.LineupChanged -= OnLineupChanged;
             }
             _start = null;
+            _mode = null;
             _manager = null;
         }
 
         void OnDatabaseReady() => Render();
+
+        void OnModeClicked() => _manager?.ToggleFullInningMode();
 
         void OnLineupChanged()
         {
@@ -114,6 +123,8 @@ namespace DailyFranchise.App
                 : $"경기 {next.Number} · {next.Date} · {next.MatchupText} · {next.Stadium}";
             _start.text = next == null ? "시즌 종료" : !_manager.IsDatabaseReady ? "선수 데이터 불러오는 중…" : "다음 경기 시작";
             _start.SetEnabled(next != null && season.InProgress == null && _manager.IsDatabaseReady);
+            _mode.text = _manager.FullInningMode ? "진행: 풀 이닝 (1회부터)" : "진행: 퀵 시뮬 (8회부터)";
+            _mode.EnableInClassList("btn--active", _manager.FullInningMode);
         }
 
         void RenderRoster(SeasonState season)

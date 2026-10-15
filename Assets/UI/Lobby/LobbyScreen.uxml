@@ -99,6 +99,7 @@
                 <ui:Label class="section-title" text="다음 경기" />
                 <ui:Label name="next-game" class="next-game" text="—" />
             </ui:VisualElement>
+            <ui:Button name="game-mode" class="btn btn--mode" text="진행: 퀵 시뮬 (8회부터)" />
             <ui:Button name="start-game" class="btn btn--primary" text="다음 경기 시작" />
         </ui:VisualElement>
     </ui:VisualElement>

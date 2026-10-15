@@ -4,6 +4,17 @@ using System.Linq;
 
 namespace DailyFranchise.Sim.Fixtures
 {
+    /// <summary>타석이 끝난 뒤 경기 흐름 (<see cref="PlayByPlayGenerator.StepAfter"/>).</summary>
+    public enum GameFlowStep
+    {
+        /// <summary>같은 반 이닝 다음 타자.</summary>
+        ContinueHalf,
+        /// <summary>공수 교대: 다음 반 이닝 첫 타자.</summary>
+        NextHalf,
+        /// <summary>경기 끝 (끝내기·말 공격 생략·9회 이후 승패 결정·12회 무승부).</summary>
+        GameOver,
+    }
+
     /// <summary>다음 타자의 작전 전 구간(초구 스트라이크 → 볼, 1-1)과 그 타석의 작전 분기점.</summary>
     public sealed class PlateAppearanceSegment
     {
@@ -35,7 +46,9 @@ namespace DailyFranchise.Sim.Fixtures
     /// - <see cref="StartHalf"/>: 새 반 이닝 첫 타석 (0아웃·주자 없음). 내 구단 수비(userBatting = false)면 작전은 기본 진행만.
     /// - <see cref="Next"/>의 pitcherId: 다음 타석을 던질 투수 (교체 반영). null이면 직전 투구의 투수.
     /// - <see cref="Relieve"/>: 1-1 작전 대기 중 투수를 바꾸면 남은 투구(결정구)를 새 투수로 다시 만든다. 이미 던진 2구는 그대로.
-    /// - 경기 끝 규칙: <see cref="FinalInning"/>회 이후 말 공격은 홈이 앞서면 하지 않고, 하다가 홈이 앞서면 끝내기로 멈춘다.
+    /// - 경기 끝 규칙 (Phase 20, <see cref="GameEndsAfterHalf"/>·<see cref="HomeWinsInBottom"/>):
+    ///   9회초가 끝났을 때 홈이 앞서면 종료, 아니면 9회말 진행. 9회말 이후 말 공격 중 홈이 앞서는 순간 끝내기 종료.
+    ///   9회 이후 말이 끝났을 때 점수가 다르면 종료, 같으면 연장 (<see cref="MaxInnings"/>회말까지, 그래도 같으면 무승부).
     /// </summary>
     public sealed class PlayByPlayGenerator
     {
@@ -48,6 +61,8 @@ namespace DailyFranchise.Sim.Fixtures
         public const double DefaultBatterHeightCm = 180;
         /// <summary>정규 이닝 마지막 회.</summary>
         public const int FinalInning = 9;
+        /// <summary>연장 포함 마지막 회 (KBO 12회). 이 회 말까지 같으면 무승부.</summary>
+        public const int MaxInnings = 12;
 
         /// <summary>기본 진행 출루 중 볼넷 몫. 나머지는 안타이며 종류는 <see cref="HitDistributor"/>가 나눈다.</summary>
         public const double WalkShare = 0.20;
@@ -163,9 +178,39 @@ namespace DailyFranchise.Sim.Fixtures
         public static (int inning, HalfInning half) NextHalf(int inning, HalfInning half) =>
             half == HalfInning.Top ? (inning, HalfInning.Bottom) : (inning + 1, HalfInning.Top);
 
-        /// <summary><see cref="FinalInning"/>회 이후 말 공격에서 홈이 앞선다 (말 공격 생략 또는 끝내기).</summary>
+        /// <summary><see cref="FinalInning"/>회 이후 말 공격에서 홈이 앞선다 (끝내기: 타석이 끝나는 즉시 경기 종료).</summary>
         public static bool HomeWinsInBottom(int inning, HalfInning half, int awayScore, int homeScore) =>
             inning >= FinalInning && half == HalfInning.Bottom && homeScore > awayScore;
+
+        /// <summary>
+        /// 타석이 끝난 직후의 경기 흐름. 순수 함수 (난수 없음).
+        /// 1) 9회 이후 말에 홈이 앞서면 끝내기 → <see cref="GameFlowStep.GameOver"/>.
+        /// 2) 3아웃 전이고 반 이닝을 이어 갈 수 있으면 → <see cref="GameFlowStep.ContinueHalf"/>.
+        ///    이어 갈 수 없으면(타석 수 한도 등, <paramref name="halfCanContinue"/> = false) 반 이닝을 끝낸 것으로 본다 (무한 루프 방지).
+        /// 3) 반 이닝 끝: <see cref="GameEndsAfterHalf"/>면 <see cref="GameFlowStep.GameOver"/>, 아니면 <see cref="GameFlowStep.NextHalf"/>.
+        /// 회는 <see cref="MaxInnings"/>를 넘지 않는다 (12회말이 끝나면 점수와 관계없이 끝).
+        /// </summary>
+        public static GameFlowStep StepAfter(PitchEvent last, int awayScore, int homeScore, bool halfCanContinue)
+        {
+            if (last == null) throw new ArgumentNullException(nameof(last));
+            if (HomeWinsInBottom(last.Inning, last.HalfInning, awayScore, homeScore)) return GameFlowStep.GameOver;
+            if (last.OutsAfter < 3 && halfCanContinue) return GameFlowStep.ContinueHalf;
+            if (GameEndsAfterHalf(last.Inning, last.HalfInning, awayScore, homeScore)) return GameFlowStep.GameOver;
+            return NextHalf(last.Inning, last.HalfInning).inning > MaxInnings ? GameFlowStep.GameOver : GameFlowStep.NextHalf;
+        }
+
+        /// <summary>
+        /// 이 반 이닝이 3아웃으로 끝난 뒤 경기가 끝나는가.
+        /// - 9회 전: 아니다.
+        /// - 9회 이후 초: 홈이 앞서면 끝 (말 공격 생략). 지거나 같으면 말 공격.
+        /// - 9회 이후 말: 점수가 다르면 끝. 같으면 연장, 단 <see cref="MaxInnings"/>회말이면 무승부로 끝.
+        /// </summary>
+        public static bool GameEndsAfterHalf(int inning, HalfInning half, int awayScore, int homeScore)
+        {
+            if (inning < FinalInning) return false;
+            if (half == HalfInning.Top) return homeScore > awayScore;
+            return awayScore != homeScore || inning >= MaxInnings;
+        }
 
         PlateAppearanceSegment Segment(AtBat pa, int startIndex, bool userBatting)
         {

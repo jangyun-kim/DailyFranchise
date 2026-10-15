@@ -182,9 +182,11 @@ namespace DailyFranchise.Sim.Tests
             Assert.That(new MatchupCalculator(players, new[] { new FixedModifier(p => -5) }).HitProbability("b", "p", Empty), Is.EqualTo(0));
             Assert.That(new MatchupCalculator(players, new[] { new FixedModifier(p => double.NaN) }).HitProbability("b", "p", Empty), Is.EqualTo(0));
 
-            // 기본 보정은 플래툰 → 득점권 클러치 (Phase 17). 두 선수 모두 우(기본값) → 우투 vs 우타 −3%, 득점권 기록 없음 → +5%
+            // 기본 보정은 플래툰 → 득점권 클러치 (Phase 17) → 투수 체력 (Phase 20, 투수 상태를 모르면 작동하지 않는다).
+            // 두 선수 모두 우(기본값) → 우투 vs 우타 −3%, 득점권 기록 없음 → +5%
             var defaults = new MatchupCalculator(players);
-            Assert.That(defaults.Modifiers.Select(m => m.GetType()), Is.EqualTo(new[] { typeof(PlatoonModifier), typeof(ClutchModifier) }));
+            Assert.That(defaults.Modifiers.Select(m => m.GetType()),
+                Is.EqualTo(new[] { typeof(PlatoonModifier), typeof(ClutchModifier), typeof(StaminaModifier) }));
             Assert.That(defaults.HitProbability("b", "p", Corners), Is.EqualTo(raw * 0.97 * 1.05).Within(Eps));
             Assert.That(defaults.HitProbability("b", "p", new MatchupSituation(2, new BaseState("r1", null, null))), Is.EqualTo(raw * 0.97).Within(Eps), "1루만은 득점권 아님");
             // 이전 일괄 득점권 보정도 그대로 끼울 수 있다.

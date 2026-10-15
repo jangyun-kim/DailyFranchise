@@ -71,6 +71,16 @@ namespace DailyFranchise.Sim
             return n;
         }
 
+        /// <summary>events[0..throughIndex]에서 해당 투수가 마운드에 있을 때 상대가 올린 득점 (자책 구분 없음).</summary>
+        public static int RunsAllowedBy(IReadOnlyList<PitchEvent> events, string pitcherId, int throughIndex)
+        {
+            if (events == null) throw new ArgumentNullException(nameof(events));
+            int runs = 0;
+            for (int i = 0; i <= throughIndex && i < events.Count; i++)
+                if (events[i].PitcherId == pitcherId) runs += events[i].RunsScored;
+            return runs;
+        }
+
         public override string ToString() => $"{PitcherId} {PitchCount}구 체력 {StaminaPercent}% ({Level})";
     }
 
@@ -82,11 +92,10 @@ namespace DailyFranchise.Sim
     }
 
     /// <summary>
-    /// 체력 저하 보정: 지친 투수는 안타(출루)를 더 허용한다.
+    /// 체력 저하 보정: 지친 투수는 안타(출루)를 더 허용한다. 단계별로 점진적으로 커진다.
+    /// - 체력 30% 미만(<see cref="FatigueLevel.Tired"/>): <see cref="TiredPenalty"/> (기본 +5%), 툴팁 "체력 저하".
     /// - 한계 투구 수 도달(<see cref="FatigueLevel.Exhausted"/>, 선발 100구·구원 30구): <see cref="ExhaustedPenalty"/>
     ///   (기본 +10%), 툴팁 "체력 고갈: 피안타율 급증".
-    /// - 체력 30% 미만(<see cref="FatigueLevel.Tired"/>): <see cref="TiredPenalty"/>. 기본 0 — 화면에 "저하" 경고만 띄우고
-    ///   확률은 바꾸지 않는다 (8회 승부처의 상대 선발은 대개 80~90구라, 기본값을 두면 Phase 17까지의 확률이 모두 바뀐다).
     /// 투수 상태를 모르면(<see cref="MatchupContext.PitcherState"/> null) 보정하지 않는다.
     /// </summary>
     public sealed class StaminaModifier : IDescribedMatchupModifier
@@ -97,7 +106,7 @@ namespace DailyFranchise.Sim
         public readonly double TiredPenalty;
         public readonly double ExhaustedPenalty;
 
-        public StaminaModifier(double tiredPenalty = 0, double exhaustedPenalty = 0.10)
+        public StaminaModifier(double tiredPenalty = 0.05, double exhaustedPenalty = 0.10)
         {
             foreach (var v in new[] { tiredPenalty, exhaustedPenalty })
                 if (double.IsNaN(v) || v <= -1) throw new ArgumentOutOfRangeException(nameof(tiredPenalty), v, "보정은 −100% 초과");

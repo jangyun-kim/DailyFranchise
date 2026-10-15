@@ -86,6 +86,9 @@ namespace DailyFranchise.UI.Data
             AddPitcher("home_sp", "오준혁", TeamSide.Home, "선발", "우투", "시즌 9승 7패 · 평균자책 3.62", "오늘 5이닝 · 1실점", 78, 81);
 
             AddPitcher("away_rp1", "백건우", TeamSide.Away, "셋업", "우투", "시즌 22홀드 · 평균자책 2.97", "오늘 구원 등판", 0, 96);
+            // CPU 투수 교체(Phase 20)용 상대 불펜.
+            AddPitcher("away_rp2", "마동휘", TeamSide.Away, "마무리", "우투", "시즌 31세이브 · 평균자책 2.18", "불펜 대기", 0, 100);
+            AddPitcher("away_rp3", "선우겸", TeamSide.Away, "롱릴리프", "좌투", "시즌 5승 · 평균자책 4.35", "불펜 대기", 0, 100);
             AddBatter("away_b1", "김라온", "CF", "우투좌타", "타율 .305 · 27도루", 4, 2, null, 85, TeamSide.Away);
             AddBatter("away_b4", "배무진", "1B", "우투우타", "타율 .291 · 21홈런", 2, 1, "1볼넷", 77, TeamSide.Away);
             AddBatter("away_b5", "탁성호", "LF", "좌투좌타", "타율 .268 · 15홈런", 2, 0, null, 73, TeamSide.Away);
@@ -96,6 +99,31 @@ namespace DailyFranchise.UI.Data
             AddBatter("away_b7", "길현채", "C", "우투우타", "타율 .241 · 5홈런", 3, 1, null, 70, TeamSide.Away);
             AddBatter("away_b8", "편주완", "2B", "우투좌타", "타율 .269 · 2홈런", 3, 0, null, 82, TeamSide.Away);
             AddBatter("away_b9", "모건희", "DH", "우투우타", "타율 .255 · 13홈런", 3, 1, null, 75, TeamSide.Away);
+        }
+
+        /// <summary>상대(away_ 자리) 불펜 투수 자리 ID (대기 순서). CPU 투수 교체 후보.</summary>
+        public static readonly IReadOnlyList<string> OpponentBullpen = new[] { "away_rp1", "away_rp2", "away_rp3" };
+
+        /// <summary>
+        /// 1회부터 하는 풀 이닝 경기용 (Phase 20). 스코어보드 기초값은 비어 있고(모든 득점은 장면 안에서),
+        /// 선수의 오늘 기록·투구 수는 0에서 시작한다. 장면 ID 규칙(home_ = 내 구단)은 같다.
+        /// </summary>
+        public static DummyScenarioData ForFullGame(Matchup matchup = null)
+        {
+            var empty = new TeamBoxSeed { RunsByInning = new int[0] };
+            var data = new DummyScenarioData((empty, new TeamBoxSeed { RunsByInning = new int[0] }), matchup);
+            foreach (var p in data._players.Values)
+            {
+                p.PitchesBeforeScene = 0;
+                if (p.TodayAtBats.HasValue)
+                {
+                    p.TodayAtBats = 0;
+                    p.TodayHits = 0;
+                    p.TodayExtra = null;
+                }
+                if (p.TodayLine != null) p.TodayLine = p.Id.EndsWith("_sp", System.StringComparison.Ordinal) ? "오늘 선발" : "불펜 대기";
+            }
+            return data;
         }
 
         public TeamSide MyTeam => _matchup.MySide;

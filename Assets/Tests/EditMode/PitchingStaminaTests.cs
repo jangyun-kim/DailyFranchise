@@ -76,7 +76,7 @@ namespace DailyFranchise.Sim.Tests
         }
 
         [Test]
-        public void 고갈은_10퍼센트_피안타_보정이고_툴팁에_보이며_저하는_경고만이다()
+        public void 체력_저하는_5퍼센트_고갈은_10퍼센트_피안타_보정이고_툴팁에_보인다()
         {
             var players = new Lookup(Batter, Pitcher("away_sp"));
             var counts = new Counts();
@@ -84,8 +84,8 @@ namespace DailyFranchise.Sim.Tests
             var plain = new MatchupCalculator(players);
             Assert.That(calc.Modifiers.Select(m => m.GetType()),
                 Is.EqualTo(new[] { typeof(PlatoonModifier), typeof(ClutchModifier), typeof(StaminaModifier) }));
-            Assert.That(plain.Modifiers.Select(m => m.GetType()), Is.EqualTo(new[] { typeof(PlatoonModifier), typeof(ClutchModifier) }),
-                "투수 상태 공급자가 없으면 이전과 같은 보정");
+            Assert.That(plain.Modifiers.Select(m => m.GetType()), Is.EqualTo(calc.Modifiers.Select(m => m.GetType())),
+                "기본 보정 목록은 같다 (공급자가 없으면 체력 보정은 작동하지 않을 뿐)");
 
             double baseline = plain.HitProbability("away_b1", "away_sp", Empty);
             Assert.That(calc.HitProbability("away_b1", "away_sp", Empty), Is.EqualTo(baseline).Within(Eps), "상태를 모르면 보정 없음");
@@ -94,18 +94,16 @@ namespace DailyFranchise.Sim.Tests
             Assert.That(calc.HitProbability("away_b1", "away_sp", Empty), Is.EqualTo(baseline).Within(Eps), "체력 40%");
             Assert.That(calc.Adjustments(calc.ContextFor("away_b1", "away_sp", Empty)).Select(a => a.Label), Has.None.Contains("체력"));
 
-            counts.Pitches["away_sp"] = 85;
-            Assert.That(calc.PitcherStateOf("away_sp").Level, Is.EqualTo(FatigueLevel.Tired));
-            Assert.That(calc.HitProbability("away_b1", "away_sp", Empty), Is.EqualTo(baseline).Within(Eps), "체력 15% → 경고만, 확률 그대로");
-            Assert.That(calc.Adjustments(calc.ContextFor("away_b1", "away_sp", Empty)).Select(a => a.Label), Has.None.Contains("체력"));
+            counts.Pitches["away_sp"] = 70;
+            Assert.That(calc.HitProbability("away_b1", "away_sp", Empty), Is.EqualTo(baseline).Within(Eps), "70구 = 체력 30% → 아직 보정 없음");
 
-            // 저하 단계 보정도 끼울 수 있다 (기본 0).
-            var tiredCalc = new MatchupCalculator(players, new IMatchupModifier[] { new StaminaModifier(tiredPenalty: 0.05) }, counts);
-            var tiredContext = tiredCalc.ContextFor("away_b1", "away_sp", Empty);
-            Assert.That(tiredCalc.Adjustments(tiredContext).Single().Text, Is.EqualTo("체력 저하 +5%"));
+            counts.Pitches["away_sp"] = 71;
+            Assert.That(calc.PitcherStateOf("away_sp").Level, Is.EqualTo(FatigueLevel.Tired));
+            Assert.That(calc.HitProbability("away_b1", "away_sp", Empty), Is.EqualTo(baseline * 1.05).Within(Eps), "체력 29% → +5%");
+            Assert.That(calc.Adjustments(calc.ContextFor("away_b1", "away_sp", Empty)).Last().Text, Is.EqualTo("체력 저하 +5%"));
 
             counts.Pitches["away_sp"] = 99;
-            Assert.That(calc.HitProbability("away_b1", "away_sp", Empty), Is.EqualTo(baseline).Within(Eps), "99구까지는 그대로");
+            Assert.That(calc.HitProbability("away_b1", "away_sp", Empty), Is.EqualTo(baseline * 1.05).Within(Eps), "99구까지는 저하 단계");
 
             counts.Pitches["away_sp"] = 100;
             Assert.That(calc.HitProbability("away_b1", "away_sp", Empty), Is.EqualTo(baseline * 1.10).Within(Eps), "고갈 → +10%");

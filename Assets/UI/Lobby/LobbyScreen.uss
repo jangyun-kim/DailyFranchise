@@ -339,3 +339,17 @@ Label {
 .unity-button.btn--primary:disabled {
     opacity: 0.45;
 }
+
+/* 진행 방식 토글 (퀵 시뮬 8회~ / 풀 이닝 1회~) */
+.unity-button.btn--mode {
+    width: 240px;
+    height: 60px;
+    margin: 0 12px 0 0;
+    font-size: 16px;
+}
+
+.unity-button.btn--mode.btn--active {
+    border-color: var(--accent);
+    color: var(--accent);
+    -unity-font-style: bold;
+}

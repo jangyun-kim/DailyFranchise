@@ -193,7 +193,7 @@ namespace DailyFranchise.Sim
     /// 2) 투수 허용률  P = (피안타율 + 리그 타율 × 평균자책 / 리그 평균자책) / 2
     /// 3) 타석 확률    H = 상황 보정( (B + P) / 2 ), [0, 1]. 기본 보정은 플래툰(<see cref="PlatoonModifier"/>) →
     ///    득점권 클러치(<see cref="ClutchModifier"/>) → 투수 체력(<see cref="StaminaModifier"/>) 순으로 곱한다.
-    ///    체력 보정은 투수 상태 공급자(<see cref="IPitcherStateSource"/>)를 넘겼을 때만 작동한다.
+    ///    체력 보정은 투수 상태 공급자(<see cref="IPitcherStateSource"/>)를 넘겼을 때만 작동한다 (없으면 확률 그대로).
     /// 4) 작전 성공률: 리그 평균 대결(상황 보정 없음)의 확률 H₀ 대비 비율 r = H / H₀ 로 장면 기본 성공률을 늘리고 줄인다.
     ///    강공 = 기본 × r,  스퀴즈(컨택 위주라 덜 민감) = 기본 × (1 + 0.5 × (r − 1)),  [5%, 95%]로 자른다.
     /// 타자·투수 둘 다 데이터가 없으면 계산하지 않고 장면 기본 성공률을 그대로 쓴다. 한쪽만 없으면 그쪽은 리그 평균.
@@ -218,24 +218,20 @@ namespace DailyFranchise.Sim
         readonly List<IMatchupModifier> _modifiers;
 
         /// <param name="players">선수 ID → 데이터. null이면 모든 선수가 데이터 없음.</param>
-        /// <param name="modifiers">
-        /// 상황 보정 목록. null이면 <see cref="DefaultModifiers"/> (투수 상태 공급자가 있으면 체력 보정까지), 빈 목록이면 보정 없음.
-        /// </param>
+        /// <param name="modifiers">상황 보정 목록. null이면 <see cref="DefaultModifiers"/>, 빈 목록이면 보정 없음.</param>
         /// <param name="pitcherStates">투수 ID → 지금 체력. null이면 체력 보정 없음 (이전과 같은 확률).</param>
         public MatchupCalculator(IPlayerLookup players, IEnumerable<IMatchupModifier> modifiers = null,
             IPitcherStateSource pitcherStates = null)
         {
             _players = players;
             _pitcherStates = pitcherStates;
-            _modifiers = (modifiers ?? DefaultModifiers(withStamina: pitcherStates != null)).ToList();
+            _modifiers = (modifiers ?? DefaultModifiers()).ToList();
             if (_modifiers.Any(m => m == null)) throw new ArgumentException("보정에 null이 있다.", nameof(modifiers));
         }
 
-        /// <summary>기본 보정: 플래툰 → 득점권 클러치 (→ 투수 체력, withStamina일 때).</summary>
-        public static IEnumerable<IMatchupModifier> DefaultModifiers(bool withStamina = false) =>
-            withStamina
-                ? new IMatchupModifier[] { new PlatoonModifier(), new ClutchModifier(), new StaminaModifier() }
-                : new IMatchupModifier[] { new PlatoonModifier(), new ClutchModifier() };
+        /// <summary>기본 보정: 플래툰 → 득점권 클러치 → 투수 체력 (체력은 투수 상태를 알 때만 작동).</summary>
+        public static IEnumerable<IMatchupModifier> DefaultModifiers() =>
+            new IMatchupModifier[] { new PlatoonModifier(), new ClutchModifier(), new StaminaModifier() };
 
         public const string AverageBatterId = "league-batter";
         public const string AveragePitcherId = "league-pitcher";

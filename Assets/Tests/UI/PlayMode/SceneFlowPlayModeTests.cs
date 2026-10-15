@@ -451,10 +451,13 @@ namespace DailyFranchise.UI.Tests
                 var issues = LayoutChecker.Check(root.Q("screen"));
                 Assert.That(issues, Is.Empty, $"[{tactic} 설명]\n" + string.Join("\n", issues));
             }
-            Assert.That(root.Q<Label>("tactic-desc").text, Does.EndWith("성공 확률 51% · 실패 49%"), "Phase 17: 좌투 vs 좌타 -5%, 클러치 +7%");
+            // Phase 17 기대값 51%에서 Phase 20 체력 저하(염태준 89구, 체력 11% → 피안타 +5%)를 더해 53%.
+            Assert.That(root.Q<Label>("tactic-desc").text, Does.EndWith("성공 확률 53% · 실패 47%"),
+                "좌투 vs 좌타 -5%, 클러치 +7%, 체력 저하 +5%");
+            Assert.That(root.Q<Label>("tactic-desc").text, Does.Contain("· 체력 저하 +5%").And.Contain("투수 · 염태준 89구 · 체력 11% (저하)"));
             game.PreviewTactic(null);
 
-            // 난수 0.6: 고정 60%였다면 실패지만, 계산된 약 60.4%(표시 60%)로는 성공.
+            // 난수 0.6: 고정 60%였다면 실패지만, 계산된 성공률(Phase 17 약 60.4%, 체력 저하 반영 후 더 높음)로는 성공.
             Assert.That(squeeze, Is.GreaterThan(0.6));
             game.TacticRandom = new ScriptedRandom(0.6);
             Assert.That(game.ChooseTactic(TacticKind.SqueezeBunt), Is.True);
@@ -646,7 +649,7 @@ namespace DailyFranchise.UI.Tests
             int guard = 0;
             while (game.CurrentBranch != null)
             {
-                Assert.That(++guard, Is.LessThanOrEqualTo(2 * PlayByPlayGenerator.MaxPlateAppearancesPerHalf));
+                Assert.That(++guard, Is.LessThanOrEqualTo(2 * PlayByPlayGenerator.MaxInnings * PlayByPlayGenerator.MaxPlateAppearancesPerHalf));
                 Assert.That(game.ChooseTactic(game.AwaitingDefenseDecision ? TacticKind.Default : TacticKind.SwingAway), Is.True);
                 game.Playback.Pause();
                 game.Playback.SkipToEnd();
@@ -732,7 +735,7 @@ namespace DailyFranchise.UI.Tests
             guard = 0;
             while (game.CurrentBranch != null)
             {
-                Assert.That(++guard, Is.LessThanOrEqualTo(PlayByPlayGenerator.MaxPlateAppearancesPerHalf));
+                Assert.That(++guard, Is.LessThanOrEqualTo(2 * PlayByPlayGenerator.MaxInnings * PlayByPlayGenerator.MaxPlateAppearancesPerHalf));
                 Assert.That(game.ChooseTactic(TacticKind.Default), Is.True);
                 game.Playback.Pause();
                 game.Playback.SkipToEnd();
@@ -749,6 +752,63 @@ namespace DailyFranchise.UI.Tests
             Assert.That(after.Starters.Select(p => p.Id), Is.EqualTo(starters));
             Assert.That(after.Bullpen.Select(p => (p.Id, p.Role, p.Order, p.Position)), Is.EqualTo(bullpen));
             Assert.That(manager.Database.GetRoster(manager.Season.MyTeam).StartingPitcher.Id, Is.EqualTo(starters[0]));
+        }
+
+        [UnityTest]
+        public IEnumerator 로비에서_풀_이닝을_고르면_1회부터_DB_선수단으로_끝까지_진행하고_결과가_반영된다()
+        {
+            var manager = SeasonManager.Instance;
+            var mode = LobbyRoot().Q<Button>("game-mode");
+            Assert.That(manager.FullInningMode, Is.False, "기본은 퀵 시뮬");
+            Assert.That(mode.text, Is.EqualTo("진행: 퀵 시뮬 (8회부터)"));
+            Submit(mode);
+            yield return null;
+            Assert.That(manager.FullInningMode, Is.True);
+            Assert.That(LobbyRoot().Q<Button>("game-mode").text, Is.EqualTo("진행: 풀 이닝 (1회부터)"));
+
+            var scheduled = manager.Season.NextGame;
+            string opponent = scheduled.HomeTeam == manager.Season.MyTeam ? scheduled.AwayTeam : scheduled.HomeTeam;
+            Submit(LobbyRoot().Q<Button>("start-game"));
+            yield return WaitForScene(SeasonManager.GameScene);
+            var game = Object.FindAnyObjectByType<GameScreenController>();
+            game.TacticRandom = new ScriptedRandom(0.99, 0.1); // 모든 타석 삼진 → 0 : 0, 12회 무승부
+            game.Playback.Pause();
+            game.Playback.SkipToEnd();
+            yield return null;
+            var root = game.GetComponent<UIDocument>().rootVisualElement;
+
+            Assert.That(game.IsFullGame, Is.True);
+            Assert.That(game.Generated, Is.Null, "퀵 시뮬을 쓰지 않는다");
+            var first = game.Events[game.CurrentBranch.AfterIndex];
+            Assert.That((first.Inning, first.HalfInning), Is.EqualTo((1, HalfInning.Top)));
+            bool myHome = game.Matchup.MySide == Data.TeamSide.Home;
+            var homeStarter = myHome ? manager.MyRoster.StartingPitcher : manager.Database.GetRoster(opponent).StartingPitcher;
+            Assert.That(root.Q<Label>("pitcher-name").text, Is.EqualTo(homeStarter.Name), "1회초는 홈 선발");
+
+            int guard = 0;
+            while (game.CurrentBranch != null)
+            {
+                Assert.That(++guard, Is.LessThanOrEqualTo(2 * PlayByPlayGenerator.MaxInnings * PlayByPlayGenerator.MaxPlateAppearancesPerHalf));
+                Assert.That(game.ChooseTactic(TacticKind.Default), Is.True);
+                game.Playback.Pause();
+                game.Playback.SkipToEnd();
+            }
+            yield return null;
+            Assert.That(game.FinalScore(), Is.EqualTo(new GameScore(0, 0)));
+            var last = game.Events[game.Events.Count - 1];
+            Assert.That((last.Inning, last.HalfInning), Is.EqualTo((PlayByPlayGenerator.MaxInnings, HalfInning.Bottom)));
+
+            // CPU 선발이 108구로 고갈되자 상대 DB 불펜 투수로 바뀐다.
+            var cpu = game.PitchingChanges.Single(c => c.ByCpu);
+            var opponentBullpen = manager.Database.GetRoster(opponent).Bullpen.Select(p => p.Name).ToArray();
+            Assert.That(cpu.Reason, Is.EqualTo("체력 고갈"));
+            Assert.That(opponentBullpen, Has.Member(game.Roster.GetPlayer(cpu.To).Name));
+
+            Submit(root.Q<Button>("ctl-game-end"));
+            yield return WaitForScene(SeasonManager.LobbyScene);
+            Assert.That(manager.LastScore, Is.EqualTo(new GameScore(0, 0)));
+            Assert.That(manager.Season.MyStanding.Draws, Is.EqualTo(1), "무승부 반영");
+            Assert.That(manager.FullInningMode, Is.True, "진행 방식은 실행 중 유지");
         }
     }
 }

@@ -36,6 +36,23 @@ namespace DailyFranchise.App
         public bool UseGeneratedScenario { get; set; } = true;
 
         /// <summary>
+        /// true면 시즌 경기를 1회부터 Play-by-Play로 직접 진행한다 (<see cref="GameScreenController.LoadFullGame"/>, Phase 20).
+        /// false(기본)면 <see cref="UseGeneratedScenario"/>를 따른다 (1~7회 퀵 시뮬레이션 뒤 8회 승부처부터).
+        /// 로비의 진행 방식 버튼으로 바꾼다. 저장하지 않는다 (실행마다 기본값).
+        /// </summary>
+        public bool FullInningMode { get; set; }
+
+        /// <summary>진행 방식이 바뀌었다 (로비 버튼 갱신용).</summary>
+        public event Action ModeChanged;
+
+        /// <summary>진행 방식을 바꾼다: 퀵 시뮬(8회~) ↔ 풀 이닝(1회~).</summary>
+        public void ToggleFullInningMode()
+        {
+            FullInningMode = !FullInningMode;
+            ModeChanged?.Invoke();
+        }
+
+        /// <summary>
         /// 퀵 시뮬레이션·승부처 상황 생성 난수. 시즌 동안 이어 쓰므로 경기마다 다른 경기가 나온다. 테스트는 고정 Seed를 넣는다.
         /// </summary>
         public IRandomSource ScenarioRandom { get; set; } = SeededRandom.FromClock();
@@ -189,7 +206,8 @@ namespace DailyFranchise.App
             if (Database != null && !Database.IsEmpty)
                 _game.RosterSourceLabel = $"{MasterDatabase.RosterFileName} ({Database.Season})";
             var matchup = MatchupOf(Season.InProgress);
-            if (UseGeneratedScenario) _game.LoadGeneratedScenario(matchup, ScenarioRandom);
+            if (FullInningMode) _game.LoadFullGame(matchup);
+            else if (UseGeneratedScenario) _game.LoadGeneratedScenario(matchup, ScenarioRandom);
             else _game.LoadScenario(SeasonGameScenario, matchup);
         }
 
