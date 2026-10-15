@@ -10,7 +10,8 @@ namespace DailyFranchise.App.Data
 {
     /// <summary>
     /// 런타임 마스터 데이터(구단·선수·시즌)를 메모리에 들고 있는다. 만든 뒤에는 읽기 전용이다.
-    /// 데이터는 Resources/Database 의 CSV(Teams.csv, SampleRoster.csv)에서 읽는다.
+    /// 데이터는 Resources/Database 의 CSV(Teams.csv, SampleRoster_Master.csv)에서 읽는다.
+    /// 선수 CSV는 기존 소문자 열 형식과 파이썬 마스터 CSV 형식(Year, Pos., Back Num., wRC+ …)을 모두 받는다.
     /// - 동기: <see cref="LoadFromResources"/> (테스트·즉시 필요할 때)
     /// - 비동기: <see cref="LoadFromResourcesAsync"/> 코루틴 (에셋은 ResourceRequest, 파싱은 작업 스레드)
     /// - 문자열: <see cref="FromCsv"/> (파서 검증용)
@@ -19,9 +20,9 @@ namespace DailyFranchise.App.Data
     public sealed class MasterDatabase : IPlayerLookup
     {
         public const string TeamsResource = "Database/Teams";
-        public const string RosterResource = "Database/SampleRoster";
+        public const string RosterResource = "Database/SampleRoster_Master";
         /// <summary>화면 출처 표기용 선수 데이터 파일 이름.</summary>
-        public const string RosterFileName = "SampleRoster.csv";
+        public const string RosterFileName = "SampleRoster_Master.csv";
 
         readonly List<TeamData> _teams;
         readonly List<PlayerData> _players;
@@ -76,36 +77,26 @@ namespace DailyFranchise.App.Data
             int? season = null;
             foreach (var row in CsvReader.Parse(rosterCsv))
             {
-                int rowSeason = row.Int("season");
+                int rowSeason = row.Int(Col(row, "season", "Year"));
                 if (season.HasValue && season != rowSeason)
                     throw new FormatException($"{row.Line}행: 시즌 {rowSeason}이 앞 행의 {season}과 다르다.");
                 season = rowSeason;
 
                 var p = new PlayerData
                 {
-                    Id = row.Required("id"),
                     Name = row.Required("name"),
                     Team = row.Required("team"),
-                    Position = row.Required("position"),
+                    Position = row.Required(Col(row, "position", "Pos.")),
                     Throws = ParseHand(row, "throws"),
                     Bats = ParseHand(row, "bats"),
-                    Role = ParseRole(row),
-                    Order = row.Int("order"),
                     Memo = row.Optional("memo"),
-                    BattingAverage = row.Double("avg"),
-                    OnBasePercentage = row.Double("obp"),
-                    HomeRuns = row.Int("hr"),
-                    Ops = row.Double("ops"),
-                    StolenBases = row.Int("sb"),
-                    ScoringPositionAverage = row.Double("risp"),
-                    Era = row.Double("era"),
-                    OpponentAverage = row.Double("baa"),
-                    Wins = row.Int("w"),
-                    Losses = row.Int("l"),
-                    Saves = row.Int("sv"),
-                    Holds = row.Int("hld"),
-                    HomeRunsPer9 = row.Double("hr9"),
+                    Year = rowSeason,
                 };
+                p.Id = row.Optional("id") ?? $"{p.Team}-{rowSeason}-{p.Name}";
+                p.Role = ParseRole(row, p.Position);
+                p.Order = row.Has("order") ? row.Int("order")
+                    : players.Count(x => x.Team == p.Team && x.Role == p.Role) + 1;
+                ReadStats(row, p);
                 if (teams.All(t => t.Name != p.Team)) throw new FormatException($"{row.Line}행: 모르는 구단 '{p.Team}'");
                 if (players.Any(x => x.Id == p.Id)) throw new FormatException($"{row.Line}행: 선수 ID 중복 '{p.Id}'");
                 if (p.Role == RosterRole.Lineup)
@@ -174,10 +165,99 @@ namespace DailyFranchise.App.Data
             }
         }
 
-        /// <summary>R/L/S 또는 우/좌/양.</summary>
+        /// <summary>
+        /// 기록 열을 읽는다. 열 이름은 기존 로스터 형식(소문자)과 마스터 CSV 형식(KBO 표기)을 모두 받는다 (대소문자 무시).
+        /// - 확률 계산이 쓰는 기존 기록(avg·obp·hr·ops·sb·era·baa·w·l·sv·hld·risp·hr9): 엄격 — 숫자가 아니면 FormatException
+        ///   (엉뚱한 값이 0으로 바뀌어 확률을 조용히 비트는 것보다, 읽기 실패 → 더미 선수단 폴백이 낫다).
+        /// - 표시 전용 확장 기록: 관대 — 열이 없거나 빈 칸·"-"·변환 실패면 0 (<see cref="CsvRow.SafeInt"/>).
+        /// 마스터 CSV는 R·H·HR·BB·SO 열을 타자·투수가 함께 쓰므로 투수 행이면 허용 기록으로 읽는다.
+        /// </summary>
+        static void ReadStats(CsvRow row, PlayerData p)
+        {
+            p.Age = row.SafeInt("age");
+            p.Number = row.SafeInt("Back Num.", "number", "back_num");
+            p.Games = row.SafeInt("G");
+            p.War = row.SafeDouble("WAR");
+
+            // 확률 계산용 (엄격)
+            p.BattingAverage = row.Double("avg");
+            p.OnBasePercentage = row.Double("obp");
+            p.Ops = row.Double("ops");
+            p.StolenBases = row.Int("sb");
+            p.ScoringPositionAverage = row.Double("risp");
+            p.Era = row.Double("era");
+            p.OpponentAverage = row.Double("baa");
+            p.Wins = row.Int("w");
+            p.Losses = row.Int("l");
+            p.Saves = row.Int(Col(row, "sv", "S"));
+            p.Holds = row.Int(Col(row, "hld", "HD"));
+            p.HomeRunsPer9 = row.Double("hr9");
+
+            // 타자 확장
+            p.PlateAppearances = row.SafeInt("PA");
+            p.EffectivePlateAppearances = row.SafeDouble("ePA");
+            p.AtBats = row.SafeInt("AB");
+            p.Doubles = row.SafeInt("2B");
+            p.Triples = row.SafeInt("3B");
+            p.TotalBases = row.SafeInt("TB");
+            p.RunsBattedIn = row.SafeInt("RBI");
+            p.CaughtStealing = row.SafeInt("CS");
+            p.HitByPitch = row.SafeInt("HP", "HBP");
+            p.IntentionalWalks = row.SafeInt("IB", "IBB");
+            p.GroundIntoDoublePlays = row.SafeInt("GDP");
+            p.SacrificeHits = row.SafeInt("SH", "SAC");
+            p.SacrificeFlies = row.SafeInt("SF");
+            p.RecordedSlugging = row.SafeDouble("SLG");
+            p.RunsPerEffectivePa = row.SafeDouble("R/ePA");
+            p.WrcPlus = row.SafeDouble("wRC+");
+            p.OffensiveWar = row.SafeDouble("oWAR");
+            p.DefensiveWar = row.SafeDouble("dWAR");
+
+            // 투수 확장
+            p.GamesStarted = row.SafeInt("GS");
+            p.ReliefGames = row.SafeInt("GR");
+            p.GamesFinished = row.SafeInt("GF");
+            p.CompleteGames = row.SafeInt("CG");
+            p.Shutouts = row.SafeInt("SHO");
+            p.InningsPitched = row.SafeDouble("IP");
+            p.EarnedRuns = row.SafeInt("ER");
+            p.BattersFaced = row.SafeInt("TBF");
+            p.ReachedOnError = row.SafeInt("ROE");
+            p.Balks = row.SafeInt("BK");
+            p.WildPitches = row.SafeInt("WP");
+            p.RunsPer9 = row.SafeDouble("RA9");
+            p.ReplacementRunsAllowed = row.SafeDouble("rRA");
+            p.ReplacementRunsPer9 = row.SafeDouble("rRA9");
+            p.Fip = row.SafeDouble("FIP");
+            p.Whip = row.SafeDouble("WHIP");
+
+            // 타자·투수 공용 열
+            if (p.IsPitcher)
+            {
+                p.RunsAllowed = row.SafeInt("R");
+                p.HitsAllowed = row.SafeInt("H");
+                p.HomeRunsAllowed = row.SafeInt("hr");
+                p.WalksAllowed = row.SafeInt("BB");
+                p.PitcherStrikeouts = row.SafeInt("SO");
+            }
+            else
+            {
+                p.Runs = row.SafeInt("R");
+                p.Hits = row.SafeInt("H");
+                p.HomeRuns = row.Int("hr");
+                p.Walks = row.SafeInt("BB");
+                p.Strikeouts = row.SafeInt("SO");
+            }
+        }
+
+        /// <summary>후보 중 헤더에 있는 열 이름. 하나도 없으면 첫 후보 (읽기 쪽에서 '열 없음' 처리).</summary>
+        static string Col(CsvRow row, params string[] candidates) => row.Column(candidates) ?? candidates[0];
+
+        /// <summary>R/L/S 또는 우/좌/양. 열이 없거나 빈 칸이면 우(R) — 투타 정보가 없는 마스터 CSV 대응.</summary>
         static Hand ParseHand(CsvRow row, string column)
         {
-            var v = row.Required(column);
+            var v = row.Optional(column);
+            if (v == null) return Hand.Right;
             switch (v.ToUpperInvariant())
             {
                 case "R": case "우": return Hand.Right;
@@ -187,9 +267,25 @@ namespace DailyFranchise.App.Data
             }
         }
 
-        static RosterRole ParseRole(CsvRow row)
+        /// <summary>투수로 보는 포지션 표기 (role 열이 없을 때 추정용).</summary>
+        static readonly HashSet<string> PitcherPositions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { "투수", "P", "SP", "RP", "선발", "중계", "셋업", "마무리" };
+
+        /// <summary>
+        /// role 열 값. 열이 없거나 빈 칸이면 추정한다 (마스터 CSV 대응): 투수 포지션이거나 타석 없이 이닝만 있으면 투수 —
+        /// 선발 등판이 절반 이상이면 starter, 아니면 bullpen. 그 외 야수는 타순이 정해지지 않았으므로 bench.
+        /// </summary>
+        static RosterRole ParseRole(CsvRow row, string position)
         {
-            var v = row.Required("role");
+            var v = row.Optional("role");
+            if (v == null)
+            {
+                bool pitcher = PitcherPositions.Contains(position)
+                               || (row.SafeInt("PA") == 0 && row.SafeDouble("IP") > 0);
+                if (!pitcher) return RosterRole.Bench;
+                int starts = row.SafeInt("GS");
+                return starts > 0 && starts * 2 >= row.SafeInt("G") ? RosterRole.Starter : RosterRole.Bullpen;
+            }
             switch (v.ToLowerInvariant())
             {
                 case "lineup": return RosterRole.Lineup;

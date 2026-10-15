@@ -58,6 +58,34 @@ namespace DailyFranchise.App.Data
                 throw new FormatException($"{Line}행: '{column}' 값 '{v}'은 숫자가 아니다.");
             return d;
         }
+
+        /// <summary>후보 열 이름 중 헤더에 있는 첫 이름 (별칭 대응, 예: "Back Num." / "number"). 없으면 null.</summary>
+        public string Column(params string[] candidates)
+        {
+            foreach (var c in candidates)
+                if (Has(c)) return c;
+            return null;
+        }
+
+        /// <summary>
+        /// 크래시 없는 정수 읽기 (표시 전용 기록용). 후보 열 중 첫 열을 읽고, 열이 없거나 빈 칸·"-"·변환 실패면 0.
+        /// "476.0"처럼 소수 표기된 정수는 반올림해 받는다.
+        /// </summary>
+        public int SafeInt(params string[] candidates)
+        {
+            double d = SafeDouble(candidates);
+            return d >= int.MaxValue ? int.MaxValue : d <= int.MinValue ? int.MinValue : (int)Math.Round(d);
+        }
+
+        /// <summary>크래시 없는 실수 읽기 (표시 전용 기록용). 열이 없거나 빈 칸·"-"·변환 실패·NaN/∞면 0.</summary>
+        public double SafeDouble(params string[] candidates)
+        {
+            var column = Column(candidates);
+            var v = column == null ? null : Optional(column);
+            if (v == null) return 0;
+            return double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out double d)
+                   && !double.IsNaN(d) && !double.IsInfinity(d) ? d : 0;
+        }
     }
 
     /// <summary>

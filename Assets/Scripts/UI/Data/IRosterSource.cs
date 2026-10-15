@@ -24,6 +24,12 @@ namespace DailyFranchise.UI.Data
         /// <summary>투타 (예: "좌투", "우타").</summary>
         public string Handedness;
         public string SeasonLine;
+        /// <summary>등번호·나이 (예: "No.24 · 29세"). 둘 다 없으면 null (더미 선수 포함).</summary>
+        public string Profile;
+        /// <summary>카드 핵심 지표 칩. 타자 wRC+·WAR, 투수 WHIP·FIP. 외부 데이터가 없으면 null.</summary>
+        public IReadOnlyList<KeyStat> KeyStats;
+        /// <summary>투수: 승·패·세이브·홀드 전체 (예: "9승 7패 · 0세이브 · 0홀드"). 타자·더미는 null.</summary>
+        public string RecordLine;
         /// <summary>투수: 오늘 기록 문구. 타자는 TodayAtBats/TodayHits로 구성하므로 null.</summary>
         public string TodayLine;
         /// <summary>타자: 장면 시작 전까지 오늘 타수. 투수·벤치 대기 선수는 null.</summary>
@@ -36,6 +42,22 @@ namespace DailyFranchise.UI.Data
         public int PitchesBeforeScene;
         /// <summary>체력(투수) 또는 컨디션(타자) %. 없으면 null.</summary>
         public int? Fitness;
+    }
+
+    /// <summary>카드에 칩으로 표시할 지표 하나 (예: "wRC+" / "142").</summary>
+    public readonly struct KeyStat
+    {
+        public readonly string Label;
+        /// <summary>표시 문자열. 기록이 없으면 "—".</summary>
+        public readonly string Value;
+
+        public KeyStat(string label, string value)
+        {
+            Label = label;
+            Value = value;
+        }
+
+        public override string ToString() => $"{Label} {Value}";
     }
 
     public sealed class RosterEntry

@@ -68,6 +68,8 @@ namespace DailyFranchise.UI
         Label _runner1, _runner2, _runner3, _playResult, _playType, _playRuns, _playOuts;
         Label _pitcherName, _pitcherTeam, _pitcherSeason, _pitcherLine1, _pitcherLine2, _pitcherFitness;
         Label _batterName, _batterTeam, _batterSeason, _batterLine1, _batterLine2, _batterFitness;
+        Label _pitcherProfile, _pitcherRecord, _batterProfile;
+        VisualElement _pitcherStats, _batterStats;
         VisualElement _lineup, _bench, _bullpen;
         VisualElement _log;
         Label _featuredName, _featuredLine, _position;
@@ -411,6 +413,11 @@ namespace DailyFranchise.UI
             _batterLine1 = root.Q<Label>("batter-line1");
             _batterLine2 = root.Q<Label>("batter-line2");
             _batterFitness = root.Q<Label>("batter-fitness");
+            _pitcherProfile = root.Q<Label>("pitcher-profile");
+            _pitcherRecord = root.Q<Label>("pitcher-record");
+            _pitcherStats = root.Q("pitcher-stats");
+            _batterProfile = root.Q<Label>("batter-profile");
+            _batterStats = root.Q("batter-stats");
 
             _lineup = root.Q("lineup");
             _bench = root.Q("bench");
@@ -652,12 +659,17 @@ namespace DailyFranchise.UI
             _pitcherName.text = pitcher.Name;
             _pitcherTeam.text = $"{_roster.GetTeam(pitcher.Side).ShortName} · {pitcher.Handedness} · {pitcher.Position}";
             _pitcherSeason.text = pitcher.SeasonLine;
+            _pitcherProfile.text = pitcher.Profile ?? "";
+            SetOptional(_pitcherRecord, pitcher.RecordLine);
+            RenderKeyStats(_pitcherStats, pitcher.KeyStats);
             _pitcherLine1.text = $"{pitcher.TodayLine} · {pitcher.PitchesBeforeScene + s.PitcherPitchesInScene}구";
             _pitcherLine2.text = e == null ? "직전 구종 —" : $"직전 구종 {e.PitchType} · {e.VelocityKmh:0} km/h";
             _pitcherFitness.text = pitcher.Fitness.HasValue ? $"체력 {pitcher.Fitness}%" : "체력 —";
             _batterName.text = batter.Name;
             _batterTeam.text = $"{_roster.GetTeam(batter.Side).ShortName} · {batter.Handedness} · {batter.Position}";
             _batterSeason.text = batter.SeasonLine;
+            _batterProfile.text = batter.Profile ?? "";
+            RenderKeyStats(_batterStats, batter.KeyStats);
             string batterToday = TodayBatting(batter, st.Index);
             _batterLine1.text = s.PitchNumberInPlateAppearance == 0
                 ? $"{batterToday} · 타석 대기"
@@ -863,6 +875,30 @@ namespace DailyFranchise.UI
             if (!p.TodayAtBats.HasValue) return p.TodayLine ?? "오늘 기록 —";
             var (ab, h) = TodayTotals(p, index);
             return PitchPresentation.TodayBattingText(ab, h, p.TodayExtra);
+        }
+
+        /// <summary>
+        /// 카드 지표 칩을 그린다. 같은 목록(선수별 캐시)이면 다시 만들지 않는다. 목록이 없으면(더미 선수) 칩 줄을 숨긴다.
+        /// </summary>
+        static void RenderKeyStats(VisualElement container, IReadOnlyList<KeyStat> stats)
+        {
+            if (stats != null && ReferenceEquals(container.userData, stats)) return;
+            container.userData = stats;
+            container.Clear();
+            container.style.display = stats == null || stats.Count == 0 ? DisplayStyle.None : DisplayStyle.Flex;
+            if (stats == null) return;
+            foreach (var stat in stats)
+            {
+                var chip = new VisualElement();
+                chip.AddToClassList("stat-chip");
+                var label = new Label(stat.Label);
+                label.AddToClassList("stat-chip__label");
+                var value = new Label(stat.Value);
+                value.AddToClassList("stat-chip__value");
+                chip.Add(label);
+                chip.Add(value);
+                container.Add(chip);
+            }
         }
 
         static void SetOptional(Label label, string text)

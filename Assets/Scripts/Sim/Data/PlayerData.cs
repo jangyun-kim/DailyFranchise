@@ -44,6 +44,17 @@ namespace DailyFranchise.Sim.Data
         /// <summary>짧은 특징 메모 (예: "장타", "주력 상"). 없으면 null.</summary>
         public string Memo;
 
+        // 기본 정보 (마스터 CSV). 0이면 기록 없음.
+        /// <summary>기록 연도 (CSV Year/season).</summary>
+        public int Year;
+        public int Age;
+        /// <summary>등번호 (CSV Back Num.).</summary>
+        public int Number;
+
+        // 공통 시즌 기록. 마스터 CSV는 타자·투수가 G·WAR 열을 함께 쓴다.
+        public int Games;
+        public double War;
+
         // 타자 시즌 기록
         public double BattingAverage;
         /// <summary>출루율. 0이면 기록 없음 (확률 계산은 타율로 추정).</summary>
@@ -57,6 +68,34 @@ namespace DailyFranchise.Sim.Data
         /// <summary>장타율 = OPS − 출루율. 둘 중 하나라도 없으면 0 (기록 없음).</summary>
         public double SluggingPercentage => Ops > 0 && OnBasePercentage > 0 ? Ops - OnBasePercentage : 0;
 
+        // 타자 확장 기록 (표시 전용, 확률 계산에는 아직 쓰지 않는다)
+        public int PlateAppearances;
+        /// <summary>유효 타석 (CSV ePA).</summary>
+        public double EffectivePlateAppearances;
+        public int AtBats;
+        public int Runs;
+        public int Hits;
+        public int Doubles;
+        public int Triples;
+        public int TotalBases;
+        public int RunsBattedIn;
+        public int CaughtStealing;
+        public int Walks;
+        public int HitByPitch;
+        public int IntentionalWalks;
+        public int Strikeouts;
+        public int GroundIntoDoublePlays;
+        public int SacrificeHits;
+        public int SacrificeFlies;
+        /// <summary>CSV SLG 열 원값 (표시용). 확률 계산은 <see cref="SluggingPercentage"/>를 쓴다.</summary>
+        public double RecordedSlugging;
+        /// <summary>유효 타석당 득점 기여 (CSV R/ePA).</summary>
+        public double RunsPerEffectivePa;
+        /// <summary>조정 득점 창출력 (CSV wRC+). 0이면 기록 없음.</summary>
+        public double WrcPlus;
+        public double OffensiveWar;
+        public double DefensiveWar;
+
         // 투수 시즌 기록
         public double Era;
         /// <summary>피안타율. 0이면 기록 없음 (확률 계산은 평균자책으로 추정).</summary>
@@ -68,7 +107,49 @@ namespace DailyFranchise.Sim.Data
         /// <summary>9이닝당 피홈런. 0이면 기록 없음 (타구 분배는 리그 평균).</summary>
         public double HomeRunsPer9;
 
+        // 투수 확장 기록 (표시 전용). R·H·HR·BB·SO 열은 투수 행이면 아래 허용 기록으로 읽는다.
+        public int GamesStarted;
+        /// <summary>구원 등판 (CSV GR).</summary>
+        public int ReliefGames;
+        /// <summary>경기 마무리 (CSV GF).</summary>
+        public int GamesFinished;
+        public int CompleteGames;
+        public int Shutouts;
+        /// <summary>이닝. CSV 표기 그대로 (예: 152.1 = 152⅓이닝).</summary>
+        public double InningsPitched;
+        public int EarnedRuns;
+        public int RunsAllowed;
+        public int HitsAllowed;
+        public int HomeRunsAllowed;
+        public int WalksAllowed;
+        public int PitcherStrikeouts;
+        /// <summary>상대 타자 수 (CSV TBF).</summary>
+        public int BattersFaced;
+        /// <summary>실책 출루 허용 (CSV ROE).</summary>
+        public int ReachedOnError;
+        public int Balks;
+        public int WildPitches;
+        /// <summary>9이닝당 실점.</summary>
+        public double RunsPer9;
+        /// <summary>대체 수준 대비 실점 (CSV rRA).</summary>
+        public double ReplacementRunsAllowed;
+        public double ReplacementRunsPer9;
+        /// <summary>수비 무관 평균자책. 0이면 기록 없음.</summary>
+        public double Fip;
+        /// <summary>이닝당 출루 허용률. 0이면 기록 없음.</summary>
+        public double Whip;
+
         public bool IsPitcher => Role == RosterRole.Starter || Role == RosterRole.Bullpen;
+
+        /// <summary>모든 기록을 그대로 두고 역할·순서·위치만 바꾼 사본 (라인업 카드 적용용).</summary>
+        public PlayerData CloneAs(RosterRole role, int order, string position)
+        {
+            var c = (PlayerData)MemberwiseClone();
+            c.Role = role;
+            c.Order = order;
+            c.Position = position;
+            return c;
+        }
     }
 
     /// <summary>선수 ID로 선수 데이터를 찾는다. 확률 계산기(<see cref="DailyFranchise.Sim.MatchupCalculator"/>)가 DB 구현을 모르게 하는 경계.</summary>

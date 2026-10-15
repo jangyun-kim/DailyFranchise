@@ -488,6 +488,73 @@ Label {
     -unity-text-align: middle-left;
 }
 
+/* 이름 + 등번호·나이: 이름이 길면 이름만 줄어들고 프로필은 끝까지 보인다. */
+.player-card__name-row {
+    height: 34px;
+    flex-direction: row;
+    align-items: flex-end;
+    overflow: hidden;
+}
+
+.player-card__name-row .player-card__name {
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.player-card__profile {
+    flex-shrink: 0;
+    height: 28px;
+    margin-left: 10px;
+    font-size: 13px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+/* 핵심 지표 칩 줄 (타자 wRC+·WAR / 투수 WHIP·FIP). 칩 수가 고정이라 줄바꿈 없이 한 줄. */
+.player-card__stats {
+    height: 26px;
+    margin-bottom: 6px;
+    flex-direction: row;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.stat-chip {
+    flex-direction: row;
+    flex-shrink: 0;
+    align-items: center;
+    height: 26px;
+    margin-right: 6px;
+    padding: 0 8px;
+    background-color: var(--panel-2);
+    border-width: 1px;
+    border-color: var(--line);
+    border-radius: 4px;
+}
+
+.stat-chip__label {
+    margin-right: 6px;
+    font-size: 12px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+.stat-chip__value {
+    font-size: 15px;
+    -unity-font-style: bold;
+    color: var(--gold);
+    -unity-text-align: middle-left;
+}
+
+.player-card__record {
+    height: 22px;
+    margin-bottom: 2px;
+    font-size: 14px;
+    -unity-text-align: middle-left;
+}
+
 .player-card__meta {
     height: 24px;
     font-size: 15px;

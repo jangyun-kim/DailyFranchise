@@ -184,6 +184,11 @@ namespace DailyFranchise.UI.Tests
         static string[] StandingRowTexts(VisualElement root, int index) =>
             root.Q("standings").ElementAt(index).Query<Label>().ToList().Select(l => l.text).ToArray();
 
+        /// <summary>카드 지표 칩 "라벨 값" 목록.</summary>
+        static string[] ChipTexts(VisualElement root, string container) =>
+            root.Q(container).Query(className: "stat-chip").ToList()
+                .Select(c => string.Join(" ", c.Query<Label>().ToList().Select(l => l.text))).ToArray();
+
         [UnityTest]
         public IEnumerator 스퀴즈_실패로_진_경기는_패로_기록되고_로비_순위표가_갱신된다()
         {
@@ -378,6 +383,31 @@ namespace DailyFranchise.UI.Tests
             Assert.That(root.Q<Label>("pitcher-name").text, Is.EqualTo("염태준"), "상대 선발: 강민혁 → 염태준");
             Assert.That(root.Q<Label>("featured-name").text, Does.StartWith("성지환"));
             Assert.That(root.Q<Label>("roster-source").text, Is.EqualTo($"표시 데이터: {MasterDatabase.RosterFileName} (2026)"));
+
+            // Phase 18: 카드 확장 지표 (등번호·나이, 타자 wRC+·WAR, 투수 WHIP·FIP·승패세홀)
+            var batter = db.FindPlayer("WV003");
+            var pitcher = db.FindPlayer("BW010");
+            Assert.That(root.Q<Label>("batter-profile").text, Is.EqualTo($"No.{batter.Number} · {batter.Age}세"));
+            Assert.That(ChipTexts(root, "batter-stats"), Is.EqualTo(new[] { $"wRC+ {batter.WrcPlus:0}", $"WAR {batter.War:0.00}" }));
+            Assert.That(ChipTexts(root, "pitcher-stats"), Is.EqualTo(new[] { $"WHIP {pitcher.Whip:0.00}", $"FIP {pitcher.Fip:0.00}" }));
+            Assert.That(root.Q<Label>("pitcher-record").text,
+                Is.EqualTo($"{pitcher.Wins}승 {pitcher.Losses}패 · {pitcher.Saves}세이브 · {pitcher.Holds}홀드"));
+
+            // 1920×1080 렌더 타깃에서 새 칩·전적 줄이 카드 밖으로 나가거나 잘리지 않는다.
+            var doc = game.GetComponent<UIDocument>();
+            var rt = new RenderTexture(1920, 1080, 24);
+            rt.Create();
+            var panelCopy = Object.Instantiate(doc.panelSettings);
+            panelCopy.targetTexture = rt;
+            doc.panelSettings = panelCopy;
+            yield return null;
+            yield return null;
+            var layout = LayoutChecker.Check(doc.rootVisualElement.Q("screen"));
+            rt.Release();
+            Object.Destroy(rt);
+            Object.Destroy(panelCopy);
+            Assert.That(layout, Is.Empty, string.Join("\n", layout));
+            root = doc.rootVisualElement;
 
             var texts = root.Query<Label>().ToList().Select(l => l.text).ToList();
             foreach (var dummyName in new[] { "최도윤", "강민혁", "윤재민", "한지후" })

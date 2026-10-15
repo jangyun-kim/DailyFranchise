@@ -80,6 +80,9 @@ namespace DailyFranchise.UI.Data
                 Position = data.Position,
                 Handedness = HandednessText(data),
                 SeasonLine = SeasonLineText(data),
+                Profile = ProfileText(data),
+                KeyStats = KeyStatsOf(data),
+                RecordLine = data.IsPitcher ? RecordLineText(data) : null,
                 TodayLine = scene.TodayLine,
                 TodayAtBats = scene.TodayAtBats,
                 TodayHits = scene.TodayHits,
@@ -143,6 +146,33 @@ namespace DailyFranchise.UI.Data
 
             string Rate(double v) => v.ToString(v < 1 ? ".000" : "0.000", inv);
         }
+
+        /// <summary>"No.24 · 29세". 0은 기록 없음으로 보고 뺀다. 둘 다 없으면 null.</summary>
+        public static string ProfileText(PlayerData p)
+        {
+            var parts = new List<string>();
+            if (p.Number > 0) parts.Add($"No.{p.Number}");
+            if (p.Age > 0) parts.Add($"{p.Age}세");
+            return parts.Count > 0 ? string.Join(" · ", parts) : null;
+        }
+
+        /// <summary>
+        /// 카드 핵심 지표. 타자: wRC+(정수)·WAR(소수 둘째), 투수: WHIP·FIP(소수 둘째).
+        /// CSV 폴백 값 0은 기록 없음으로 보고 "—" (칩 개수는 항상 같아 카드 높이가 흔들리지 않는다).
+        /// </summary>
+        public static IReadOnlyList<KeyStat> KeyStatsOf(PlayerData p)
+        {
+            var inv = CultureInfo.InvariantCulture;
+            return p.IsPitcher
+                ? new[] { new KeyStat("WHIP", Fixed(p.Whip)), new KeyStat("FIP", Fixed(p.Fip)) }
+                : new[] { new KeyStat("wRC+", p.WrcPlus == 0 ? "—" : Math.Round(p.WrcPlus).ToString("0", inv)), new KeyStat("WAR", Fixed(p.War)) };
+
+            string Fixed(double v) => v == 0 ? "—" : v.ToString("0.00", inv);
+        }
+
+        /// <summary>투수 승·패·세이브·홀드 전체: "9승 7패 · 0세이브 · 0홀드".</summary>
+        public static string RecordLineText(PlayerData p) =>
+            $"{p.Wins}승 {p.Losses}패 · {p.Saves}세이브 · {p.Holds}홀드";
 
         /// <summary>
         /// 벤치 메모: 대타는 "좌/장타", 그 외는 메모 그대로. 메모가 없으면(예: 라인업에서 빠진 선발 타자) "좌타"처럼 타석만.

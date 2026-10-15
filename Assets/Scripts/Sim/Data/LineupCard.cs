@@ -144,14 +144,6 @@ namespace DailyFranchise.Sim.Data
             return new TeamRoster(roster.Team, lineup, bench, roster.Starters, roster.Bullpen);
         }
 
-        static PlayerData Copy(PlayerData p, RosterRole role, int order, string position) => new PlayerData
-        {
-            Id = p.Id, Name = p.Name, Team = p.Team, Position = position, Throws = p.Throws, Bats = p.Bats,
-            Role = role, Order = order, Memo = p.Memo,
-            BattingAverage = p.BattingAverage, OnBasePercentage = p.OnBasePercentage, HomeRuns = p.HomeRuns,
-            Ops = p.Ops, StolenBases = p.StolenBases, ScoringPositionAverage = p.ScoringPositionAverage,
-            Era = p.Era, OpponentAverage = p.OpponentAverage, Wins = p.Wins, Losses = p.Losses, Saves = p.Saves, Holds = p.Holds,
-            HomeRunsPer9 = p.HomeRunsPer9,
-        };
+        static PlayerData Copy(PlayerData p, RosterRole role, int order, string position) => p.CloneAs(role, order, position);
     }
 }

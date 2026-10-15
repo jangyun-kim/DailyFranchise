@@ -88,9 +88,14 @@
                     <ui:VisualElement class="panel matchup">
                         <ui:VisualElement class="player-card">
                             <ui:Label class="player-card__role" text="투수" />
-                            <ui:Label name="pitcher-name" class="player-card__name" text="—" />
+                            <ui:VisualElement class="player-card__name-row">
+                                <ui:Label name="pitcher-name" class="player-card__name" text="—" />
+                                <ui:Label name="pitcher-profile" class="player-card__profile" text="" />
+                            </ui:VisualElement>
                             <ui:Label name="pitcher-team" class="player-card__meta" text="—" />
                             <ui:Label name="pitcher-season" class="player-card__season" text="—" />
+                            <ui:VisualElement name="pitcher-stats" class="player-card__stats" />
+                            <ui:Label name="pitcher-record" class="player-card__record" text="—" />
                             <ui:Label name="pitcher-line1" class="info-line" text="—" />
                             <ui:Label name="pitcher-line2" class="info-line" text="—" />
                             <ui:Label name="pitcher-fitness" class="info-line info-line--muted" text="—" />
@@ -98,9 +103,13 @@
                         <ui:Label class="vs" text="VS" />
                         <ui:VisualElement class="player-card">
                             <ui:Label class="player-card__role" text="타자" />
-                            <ui:Label name="batter-name" class="player-card__name" text="—" />
+                            <ui:VisualElement class="player-card__name-row">
+                                <ui:Label name="batter-name" class="player-card__name" text="—" />
+                                <ui:Label name="batter-profile" class="player-card__profile" text="" />
+                            </ui:VisualElement>
                             <ui:Label name="batter-team" class="player-card__meta" text="—" />
                             <ui:Label name="batter-season" class="player-card__season" text="—" />
+                            <ui:VisualElement name="batter-stats" class="player-card__stats" />
                             <ui:Label name="batter-line1" class="info-line" text="—" />
                             <ui:Label name="batter-line2" class="info-line" text="—" />
                             <ui:Label name="batter-fitness" class="info-line info-line--muted" text="—" />
