@@ -1,4 +1,5 @@
 using DailyFranchise.Sim;
+using DailyFranchise.Sim.Data;
 using DailyFranchise.UI.Data;
 
 namespace DailyFranchise.UI
@@ -11,11 +12,14 @@ namespace DailyFranchise.UI
     {
         public readonly GameScore Score;
         public readonly TeamSide MyTeamSide;
+        /// <summary>두 구단 선수 출장 기록 (컨디션 갱신용, Phase 22). 선수 DB가 없는 경기(더미)면 null.</summary>
+        public readonly GameParticipation Participation;
 
-        public GameResult(GameScore score, TeamSide myTeamSide)
+        public GameResult(GameScore score, TeamSide myTeamSide, GameParticipation participation = null)
         {
             Score = score;
             MyTeamSide = myTeamSide;
+            Participation = participation;
         }
 
         public int MyRuns => MyTeamSide == TeamSide.Home ? Score.Home : Score.Away;

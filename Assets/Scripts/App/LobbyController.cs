@@ -22,6 +22,8 @@ namespace DailyFranchise.App
     /// 순위표는 SeasonState가 정렬한 순서(승률 → 다승 → 무승부 → 잔여 경기)대로 그리고, 직전 경기일 대비 순위 변동을 함께 보인다.
     /// 헤더 프런트 오피스(Phase 21): 구단 예산·팬 만족도 게이지(80% 이상 초록, 30% 미만 빨강)·시즌 진행도와
     /// 직전 경기 재정 변화, 왼쪽 위에 현실 날짜(<see cref="Clock"/>).
+    /// 선수 컨디션(Phase 22): 라인업·벤치 행마다 컨디션 점·글자(5 파랑 · 4/3 초록 · 2 노랑 · 1 빨강), 그 아래 선발 로테이션
+    /// (직전 선발 다음 순번 중 컨디션 보통 이상인 투수가 "오늘 선발", <see cref="RotationPicker"/>).
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class LobbyController : MonoBehaviour
@@ -142,6 +144,7 @@ namespace DailyFranchise.App
             if (mine != null && _card != null)
             {
                 RenderDatabaseRoster(mine);
+                RenderRotation(mine, season);
                 Q<Label>("roster-source").text = $"표시 데이터: {MasterDatabase.RosterFileName} ({db.Season})";
                 RenderSelection();
                 return;
@@ -150,6 +153,8 @@ namespace DailyFranchise.App
             // 선수 DB가 없거나 아직 읽는 중이면 경기 화면과 같은 더미 선수 데이터를 쓴다 (교체 불가).
             _card = null;
             _selection.Clear();
+            Q("rotation").Clear();
+            SetVisible(Q("rotation-title"), false);
             var roster = new DummyScenarioData();
             FillDummy(Q("roster"), roster, roster.GetLineup(roster.MyTeam));
             FillDummy(Q("bench"), roster, roster.GetBench(roster.MyTeam));
@@ -167,9 +172,52 @@ namespace DailyFranchise.App
                     Cell(entry.Order?.ToString() ?? "", "col-order"),
                     Cell(entry.Role, "col-pos"),
                     Cell(p.Name, "col-name"),
+                    Cell("", "col-cond"),
                     Cell(p.Handedness, "col-hand")));
             }
         }
+
+        /// <summary>선발 로테이션: 로테이션 순서대로, 컨디션과 오늘 선발 표시.</summary>
+        void RenderRotation(TeamRoster roster, SeasonState season)
+        {
+            var container = Q("rotation");
+            container.Clear();
+            SetVisible(Q("rotation-title"), roster.Starters.Count > 0);
+            var today = RotationPicker.Pick(roster, season, season.LastStarterOf(roster.Team));
+            foreach (var p in roster.Starters)
+            {
+                bool isToday = ReferenceEquals(p, today);
+                var row = Row("lobby-row",
+                    Cell(p.Order.ToString(CultureInfo.InvariantCulture), "col-order"),
+                    Cell(p.Name, "col-name"),
+                    ConditionCell(season.ConditionOf(p.Id)),
+                    Cell(isToday ? "오늘 선발" : "ERA " + p.Era.ToString("0.00", CultureInfo.InvariantCulture), "col-hand"));
+                row.name = $"rotation-{p.Order}";
+                row.userData = p.Id;
+                row.AddToClassList("lobby-row--compact");
+                row.EnableInClassList("lobby-row--today", isToday);
+                container.Add(row);
+            }
+        }
+
+        /// <summary>컨디션 점 + 글자 ("최상"). 클래스 cond--1 ~ cond--5로 색을 바꾼다.</summary>
+        static VisualElement ConditionCell(int condition)
+        {
+            int c = PlayerCondition.Clamp(condition);
+            var cell = new VisualElement { userData = c };
+            cell.AddToClassList("col-cond");
+            cell.AddToClassList("cond--" + c);
+            var dot = new VisualElement();
+            dot.AddToClassList("cond-dot");
+            var text = new Label(PlayerCondition.Label(c));
+            text.AddToClassList("cond-text");
+            cell.Add(dot);
+            cell.Add(text);
+            return cell;
+        }
+
+        static void SetVisible(VisualElement element, bool visible) =>
+            element.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
 
         void RenderDatabaseRoster(TeamRoster roster)
         {
@@ -190,6 +238,7 @@ namespace DailyFranchise.App
                 Cell(order, "col-order"),
                 Cell(p.Position, "col-pos"),
                 Cell(p.Name, "col-name"),
+                ConditionCell(_manager.Season.ConditionOf(p.Id)),
                 Cell(ScenarioRosterSource.HandednessText(p), "col-hand"));
             row.name = spot.IsBench ? $"bench-{spot.Index + 1}" : $"lineup-{spot.Index + 1}";
             row.userData = spot;

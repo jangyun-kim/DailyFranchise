@@ -126,6 +126,11 @@ namespace DailyFranchise.UI
         public Matchup Matchup => _matchup;
         /// <summary>지금 이름표를 공급하는 선수 데이터 (더미 또는 선수단 주입).</summary>
         public IRosterSource Roster => _roster;
+        /// <summary>
+        /// 선수 컨디션 (Phase 22). 바깥(시즌 흐름)이 경기를 불러오기 전에 넣는다. null이면 컨디션 보정·표시 없음.
+        /// </summary>
+        public IConditionSource Conditions { get; set; }
+
         /// <summary>대진에 선수단이 실려 있을 때 화면 하단 출처 표기. 바깥(시즌 흐름)이 정한다.</summary>
         public string RosterSourceLabel { get; set; } = "선수 데이터";
         /// <summary>현재 장면의 원정·홈 시작 점수와 이벤트 (원정 경기면 뒤집은 사본).</summary>
@@ -233,7 +238,7 @@ namespace DailyFranchise.UI
         public void RequestExit()
         {
             var handler = ExitRequested;
-            if (handler != null) handler(new GameResult(FinalScore(), _roster.MyTeam));
+            if (handler != null) handler(new GameResult(FinalScore(), _roster.MyTeam, Participation()));
             else _playback.SkipToEnd();
         }
 
@@ -244,11 +249,54 @@ namespace DailyFranchise.UI
         /// </summary>
         public GameScore FinalScore()
         {
-            var path = _events;
-            if (_fixture.Branch != null && _decisions.Count == 0)
-                path = _fixture.Branch.PathFor(_events, TacticKind.Default);
+            var path = FinalPath();
             var end = ScreenState.Build(path, _fixture.AwayScoreBefore, _fixture.HomeScoreBefore, path.Count - 1);
             return new GameScore(end.AwayScore, end.HomeScore);
+        }
+
+        /// <summary>경기 끝으로 보는 경로 (<see cref="FinalScore"/>와 같은 기준).</summary>
+        IReadOnlyList<PitchEvent> FinalPath() =>
+            _fixture.Branch != null && _decisions.Count == 0 ? _fixture.Branch.PathFor(_events, TacticKind.Default) : _events;
+
+        /// <summary>
+        /// 두 구단 선수의 출장 기록 (선수 DB ID, 컨디션 갱신용). 선수단이 실리지 않은 더미 경기면 null.
+        /// - 대상: 두 구단 선수단 전원 (출장하지 않은 선수는 휴식).
+        /// - 타자: 장면에서 타석을 마친 타자. 퀵 시뮬·고정 장면은 1~7회를 건너뛰므로 두 팀 선발 라인업 전원을 출장으로 본다.
+        /// - 투수: 장면 시작 전 투구 수 + 장면에서 던진 공 (선발은 퀵 시뮬 이닝 투구 포함).
+        /// </summary>
+        public GameParticipation Participation()
+        {
+            if (!(_roster is ScenarioRosterSource source) || _events == null) return null;
+            var game = new GameParticipation();
+            foreach (var side in new[] { TeamSide.Away, TeamSide.Home })
+            {
+                var roster = _matchup.RosterOf(side);
+                if (roster == null) continue;
+                foreach (var p in roster.Lineup.Concat(roster.Bench).Concat(roster.Starters).Concat(roster.Bullpen))
+                    game.AddRosterPlayer(p.Id);
+                game.SetStartingPitcher(roster.Team, roster.StartingPitcher?.Id);
+            }
+
+            var path = FinalPath();
+            if (!_fullGame)
+                foreach (var prefix in new[] { "home_b", "away_b" })
+                    for (int order = 1; order <= BattingOrder.Size; order++)
+                        game.AddBatter(source.Resolve(prefix + order)?.Id);
+            foreach (var e in path)
+                if (e.Outcome != PlateAppearanceOutcome.None) game.AddBatter(source.Resolve(e.BatterId)?.Id);
+
+            foreach (var id in path.Select(e => e.PitcherId).Concat(new[] { MyStarterId, CpuStarterId }).Distinct())
+                game.AddPitches(source.Resolve(id)?.Id, _roster.GetPlayer(id).PitchesBeforeScene + path.Count(e => e.PitcherId == id));
+            return game;
+        }
+
+        /// <summary>장면 선수의 오늘 컨디션 문구 ("컨디션 좋음 (4/5)"). 선수 데이터나 컨디션을 모르면 null.</summary>
+        string ConditionText(string sceneId)
+        {
+            var data = Conditions == null ? null : (_roster as ScenarioRosterSource)?.Resolve(sceneId);
+            if (data == null) return null;
+            int c = PlayerCondition.Clamp(Conditions.ConditionOf(data.Id));
+            return $"컨디션 {PlayerCondition.Label(c)} ({c}/5)";
         }
 
         void OnEnable()
@@ -378,7 +426,7 @@ namespace DailyFranchise.UI
                 _roster = data;
                 _scoreboard = data;
             }
-            _calculator = new MatchupCalculator(_roster as IPlayerLookup, pitcherStates: this);
+            _calculator = new MatchupCalculator(_roster as IPlayerLookup, pitcherStates: this, conditions: Conditions);
             _myPitching = BuildMyPitching();
             _cpu = new CpuRosterManager(BuildCpuPitching());
 
@@ -1079,7 +1127,8 @@ namespace DailyFranchise.UI
                 ? $"{batterToday} · 타석 대기"
                 : $"{batterToday} · 이번 타석 {s.PitchNumberInPlateAppearance}구째";
             _batterLine2.text = $"존 높이 {s.Zone.BottomCm:0.0}–{s.Zone.TopCm:0.0} cm";
-            _batterFitness.text = batter.Fitness.HasValue ? $"컨디션 {batter.Fitness}%" : "컨디션 —";
+            _batterFitness.text = ConditionText(s.BatterId)
+                                  ?? (batter.Fitness.HasValue ? $"컨디션 {batter.Fitness}%" : "컨디션 —");
 
             // 라인업: 오늘 안타-타수 갱신, 현재 타자·주자 표시
             foreach (var row in _lineup.Children())

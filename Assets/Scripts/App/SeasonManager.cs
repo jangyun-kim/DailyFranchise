@@ -74,6 +74,12 @@ namespace DailyFranchise.App
         public IRandomSource LeagueRandom { get; set; } = SeededRandom.FromClock();
 
         /// <summary>
+        /// 경기 뒤 선수 컨디션 하락 판정 난수 (Phase 22). 타 구단 경기 난수·경기 화면 난수와 분리해, 컨디션 판정이
+        /// 순위·경기 결과의 결정론을 흔들지 않게 한다. 테스트는 고정 Seed를 넣는다.
+        /// </summary>
+        public IRandomSource ConditionRandom { get; set; } = SeededRandom.FromClock();
+
+        /// <summary>
         /// 저장 파일 경로 재지정. null이면 <see cref="SaveManager.DefaultPath"/>.
         /// SeasonManager가 만들어지기 전에 정해야 한다 (테스트가 실제 저장 파일을 건드리지 않게 할 때 쓴다).
         /// </summary>
@@ -206,6 +212,7 @@ namespace DailyFranchise.App
             if (Database != null && !Database.IsEmpty)
                 _game.RosterSourceLabel = $"{MasterDatabase.RosterFileName} ({Database.Season})";
             var matchup = MatchupOf(Season.InProgress);
+            _game.Conditions = Season;
             if (FullInningMode) _game.LoadFullGame(matchup);
             else if (UseGeneratedScenario) _game.LoadGeneratedScenario(matchup, ScenarioRandom);
             else _game.LoadScenario(SeasonGameScenario, matchup);
@@ -222,8 +229,14 @@ namespace DailyFranchise.App
                 RosterOf(game.AwayTeam), RosterOf(game.HomeTeam));
         }
 
-        /// <summary>내 구단은 라인업을 적용한 선수단, 상대는 DB 선수단.</summary>
-        TeamRoster RosterOf(string team) => team == Season.MyTeam ? MyRoster : Database?.GetRoster(team);
+        /// <summary>
+        /// 경기에 나서는 선수단: 내 구단은 라인업을 적용한 선수단, 상대는 DB 선수단. 두 쪽 모두 오늘 선발은
+        /// 직전 선발 다음 순번 중 컨디션이 보통 이상인 투수(<see cref="RotationPicker"/>)다. 원본 선수단은 바꾸지 않는다.
+        /// </summary>
+        public TeamRoster GameRosterOf(string team) =>
+            RotationPicker.Apply(team == Season.MyTeam ? MyRoster : Database?.GetRoster(team), Season, Season.LastStarterOf(team));
+
+        TeamRoster RosterOf(string team) => GameRosterOf(team);
 
         TeamInfo TeamInfoOf(string team)
         {
@@ -244,7 +257,7 @@ namespace DailyFranchise.App
             ExitsHandled++;
             DetachGame();
             // 경기 화면은 일정의 원정·홈대로 그리지만, 내 구단 득점 기준으로 다시 맞춰 반영한다.
-            if (Season.InProgress != null) AdvanceSeason(Season.ScheduleScore(result.MyRuns, result.OpponentRuns));
+            if (Season.InProgress != null) AdvanceSeason(Season.ScheduleScore(result.MyRuns, result.OpponentRuns), result.Participation);
             Load(LobbyScene);
         }
 
@@ -254,11 +267,12 @@ namespace DailyFranchise.App
         /// 씬 전환은 하지 않는다. 진행 중인 경기가 없으면 null.
         /// </summary>
         /// <param name="finalScore">일정의 원정 : 홈 기준 최종 점수.</param>
-        public PostGameReport AdvanceSeason(GameScore finalScore)
+        /// <param name="participation">출장 기록. 있으면 두 구단 선수 컨디션을 바꾼다 (<see cref="ConditionRandom"/>).</param>
+        public PostGameReport AdvanceSeason(GameScore finalScore, GameParticipation participation = null)
         {
             if (Season.InProgress == null) return null;
             LastScore = finalScore;
-            LastReport = PostGameProcessor.Process(Season, finalScore, LeagueRandom, Saves);
+            LastReport = PostGameProcessor.Process(Season, finalScore, LeagueRandom, Saves, participation, ConditionRandom);
             return LastReport;
         }
 

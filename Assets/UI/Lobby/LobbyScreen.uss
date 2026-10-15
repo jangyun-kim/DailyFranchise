@@ -448,3 +448,50 @@ Label {
     color: var(--muted);
     -unity-text-align: middle-left;
 }
+
+/* ───────── 선수 컨디션 (Phase 22): 5 파랑 · 4/3 초록 · 2 노랑 · 1 빨강 ───────── */
+.col-cond {
+    width: 62px;
+    flex-direction: row;
+    align-items: center;
+}
+
+.cond-dot {
+    width: 10px;
+    height: 10px;
+    margin-right: 5px;
+    border-radius: 5px;
+    background-color: var(--muted);
+}
+
+.cond-text {
+    font-size: 13px;
+    -unity-text-align: middle-left;
+}
+
+.cond--5 .cond-dot { background-color: #4C9BE8; }
+.cond--5 .cond-text { color: #4C9BE8; }
+.cond--4 .cond-dot, .cond--3 .cond-dot { background-color: #3FB950; }
+.cond--4 .cond-text, .cond--3 .cond-text { color: #3FB950; }
+.cond--2 .cond-dot { background-color: #E3B341; }
+.cond--2 .cond-text { color: #E3B341; }
+.cond--1 .cond-dot { background-color: #E5534B; }
+.cond--1 .cond-text { color: #E5534B; -unity-font-style: bold; }
+
+/* 선발 로테이션: 좁은 행 */
+.rotation-title {
+    margin-top: 10px;
+}
+
+.lobby-row.lobby-row--compact {
+    height: 26px;
+}
+
+.lobby-row--compact > Label {
+    font-size: 14px;
+}
+
+.lobby-row--today > Label {
+    color: var(--accent);
+    -unity-font-style: bold;
+}

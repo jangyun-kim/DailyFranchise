@@ -26,7 +26,7 @@ namespace DailyFranchise.UI.Tests
             Assert.That(db.IsEmpty, Is.False);
             Assert.That(db.Season, Is.EqualTo(2026));
             Assert.That(db.Teams, Has.Count.EqualTo(10));
-            Assert.That(db.Players.Count, Is.InRange(20, 30), "샘플 20~30행");
+            Assert.That(db.Players.Count, Is.EqualTo(35), "샘플 27행 + Phase 22 선발 로테이션 4명 × 2구단");
             Assert.That(db.Players.Select(p => p.Team).Distinct().Count(), Is.EqualTo(2), "2개 구단 분량");
             Assert.That(db.Players.Select(p => p.Id), Is.Unique);
 

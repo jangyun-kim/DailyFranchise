@@ -49,6 +49,8 @@
                 <ui:VisualElement name="roster" />
                 <ui:Label name="bench-title" class="section-title bench-title" text="벤치" />
                 <ui:VisualElement name="bench" />
+                <ui:Label name="rotation-title" class="section-title rotation-title" text="선발 로테이션 · 컨디션이 좋은 투수부터 등판" />
+                <ui:VisualElement name="rotation" />
                 <ui:Label name="lineup-hint" class="lineup-hint" text="" />
                 <ui:Label name="roster-source" class="footnote" text="" />
             </ui:VisualElement>

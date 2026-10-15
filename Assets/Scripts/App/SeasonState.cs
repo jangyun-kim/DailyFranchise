@@ -142,7 +142,7 @@ namespace DailyFranchise.App
     /// 시즌 진행 상태. 씬과 무관한 순수 C#이며 SeasonManager가 씬 전환 동안 들고 있는다.
     /// 경기가 끝나면 내 경기 점수와 같은 날 타 구단 경기 결과(난수)를 성적에 반영하고 순위를 다시 매긴다.
     /// </summary>
-    public sealed class SeasonState
+    public sealed class SeasonState : IConditionSource
     {
         readonly List<ScheduledGame> _schedule;
         readonly List<StandingRow> _standings;
@@ -199,6 +199,47 @@ namespace DailyFranchise.App
             int budget = Budget, fan = FanApproval;
             SetFinance((long)Budget + change.BudgetDelta, (long)FanApproval + change.FanDelta);
             return new FinanceChange(Budget - budget, FanApproval - fan);
+        }
+
+        readonly Dictionary<string, int> _conditions = new Dictionary<string, int>();
+
+        /// <summary>
+        /// 선수 컨디션 (선수 DB ID → 1~5, Phase 22). 기록이 없는 선수는 보통(3). 시즌과 함께 저장된다.
+        /// </summary>
+        public IReadOnlyDictionary<string, int> Conditions => _conditions;
+
+        /// <summary>선수 컨디션. 기록이 없으면 <see cref="PlayerCondition.Default"/>(보통).</summary>
+        public int ConditionOf(string playerId) =>
+            playerId != null && _conditions.TryGetValue(playerId, out int c) ? c : PlayerCondition.Default;
+
+        /// <summary>선수 컨디션을 1~5로 맞춰 정한다 (불러오기·테스트용).</summary>
+        public void SetCondition(string playerId, int condition)
+        {
+            if (string.IsNullOrEmpty(playerId)) throw new ArgumentException("선수 ID가 비어 있다.", nameof(playerId));
+            _conditions[playerId] = PlayerCondition.Clamp(condition);
+        }
+
+        readonly Dictionary<string, string> _lastStarters = new Dictionary<string, string>();
+
+        /// <summary>구단별 직전 경기 선발 투수 ID (선발 로테이션 순번, <see cref="RotationPicker"/>). 시즌과 함께 저장된다.</summary>
+        public IReadOnlyDictionary<string, string> LastStarters => _lastStarters;
+
+        /// <summary>구단의 직전 선발. 모르면 null (로테이션 1번부터).</summary>
+        public string LastStarterOf(string team) =>
+            team != null && _lastStarters.TryGetValue(team, out var id) ? id : null;
+
+        public void SetLastStarter(string team, string playerId)
+        {
+            if (string.IsNullOrEmpty(team) || string.IsNullOrEmpty(playerId)) return;
+            _lastStarters[team] = playerId;
+        }
+
+        /// <summary>경기 출장 기록으로 컨디션을 바꾸고(<see cref="ConditionRules"/>) 두 구단의 선발 순번을 남긴다.</summary>
+        public List<ConditionChange> ApplyConditions(GameParticipation game, IRandomSource random)
+        {
+            var changes = ConditionRules.Apply(_conditions, game, random);
+            foreach (var kv in game.StartingPitchers) SetLastStarter(kv.Key, kv.Value);
+            return changes;
         }
 
         /// <summary>예산·팬 만족도를 범위 안으로 맞춰 정한다 (불러오기·테스트용).</summary>
@@ -389,6 +430,10 @@ namespace DailyFranchise.App
                 HasFinance = true,
                 Budget = Budget,
                 FanApproval = FanApproval,
+                Conditions = _conditions.OrderBy(kv => kv.Key, StringComparer.Ordinal)
+                    .Select(kv => new ConditionData { Id = kv.Key, Value = kv.Value }).ToList(),
+                LastStarters = _lastStarters.OrderBy(kv => kv.Key, StringComparer.Ordinal)
+                    .Select(kv => new LastStarterData { Team = kv.Key, PlayerId = kv.Value }).ToList(),
             };
         }
 
@@ -457,6 +502,15 @@ namespace DailyFranchise.App
             // 재정 필드가 없는 이전 저장 파일(Phase 20 이전)은 기본값(₩5,000,000 · 50%)으로 시작한다.
             // 범위를 벗어난 값은 손상으로 보지 않고 범위 안으로 맞춘다.
             if (data.HasFinance) season.SetFinance(data.Budget, data.FanApproval);
+            // 컨디션 목록이 없는 이전 저장 파일(Phase 21 이전)은 전원 보통(3)에서 시작한다 (기록 없음 = 보통).
+            // ID가 빈 항목은 건너뛰고, 범위 밖 값은 1~5로 맞춘다.
+            if (data.Conditions != null)
+                foreach (var c in data.Conditions)
+                    if (c != null && !string.IsNullOrEmpty(c.Id)) season.SetCondition(c.Id, c.Value);
+            // 선발 순번이 없는 이전 저장 파일은 로테이션 1번부터.
+            if (data.LastStarters != null)
+                foreach (var l in data.LastStarters)
+                    if (l != null) season.SetLastStarter(l.Team, l.PlayerId);
             return season;
         }
 

@@ -37,6 +37,55 @@ namespace DailyFranchise.Sim
         public MatchupSituation Situation;
         /// <summary>투수의 지금 체력. 모르면 null (체력 보정 없음).</summary>
         public PitcherState PitcherState;
+        /// <summary>타자·투수의 오늘 컨디션 (1~5). 0이면 모름 (컨디션 보정 없음).</summary>
+        public int BatterCondition;
+        public int PitcherCondition;
+    }
+
+    /// <summary>컨디션 보정이 보는 쪽.</summary>
+    public enum ConditionSide
+    {
+        Batter,
+        Pitcher,
+    }
+
+    /// <summary>
+    /// 컨디션 보정 (Phase 22). 한쪽 선수의 오늘 컨디션(<see cref="PlayerCondition"/>)으로 안타(출루) 확률을 상대 보정한다.
+    /// - 타자: 최상(5) +4%, 위험(1) −8%.
+    /// - 투수: 최상(5)이면 타자 안타 확률 −4%, 위험(1)이면 +8% (투수가 강하면 타자에게 불리).
+    /// 2~4단계와 모르는 컨디션(0)은 보정 없음. 툴팁 예: "타자 컨디션 최상 +4%", "투수 컨디션 위험 +8%".
+    /// </summary>
+    public sealed class ConditionModifier : IDescribedMatchupModifier
+    {
+        public const double ExcellentBonus = 0.04;
+        public const double ExhaustedPenalty = 0.08;
+
+        public ConditionModifier(ConditionSide side)
+        {
+            Side = side;
+        }
+
+        public ConditionSide Side { get; }
+
+        int ConditionIn(MatchupContext context) =>
+            context == null ? 0 : Side == ConditionSide.Batter ? context.BatterCondition : context.PitcherCondition;
+
+        /// <summary>타자 안타 확률 기준 상대 보정.</summary>
+        public double RelativeBonus(MatchupContext context)
+        {
+            double playerEffect = ConditionIn(context) == PlayerCondition.Excellent ? ExcellentBonus
+                : ConditionIn(context) == PlayerCondition.Exhausted ? -ExhaustedPenalty : 0;
+            return Side == ConditionSide.Batter ? playerEffect : -playerEffect;
+        }
+
+        public double Adjust(double probability, MatchupContext context) => probability * (1 + RelativeBonus(context));
+
+        public string Label(MatchupContext context)
+        {
+            int c = ConditionIn(context);
+            if (c != PlayerCondition.Excellent && c != PlayerCondition.Exhausted) return null;
+            return $"{(Side == ConditionSide.Batter ? "타자" : "투수")} 컨디션 {PlayerCondition.Label(c)}";
+        }
     }
 
     /// <summary>
@@ -192,7 +241,8 @@ namespace DailyFranchise.Sim
     /// 1) 타자 안타력  B = (2 × 타율 + 출루율) / 3
     /// 2) 투수 허용률  P = (피안타율 + 리그 타율 × 평균자책 / 리그 평균자책) / 2
     /// 3) 타석 확률    H = 상황 보정( (B + P) / 2 ), [0, 1]. 기본 보정은 플래툰(<see cref="PlatoonModifier"/>) →
-    ///    득점권 클러치(<see cref="ClutchModifier"/>) → 투수 체력(<see cref="StaminaModifier"/>) 순으로 곱한다.
+    ///    득점권 클러치(<see cref="ClutchModifier"/>) → 투수 체력(<see cref="StaminaModifier"/>) →
+    ///    타자·투수 컨디션(<see cref="ConditionModifier"/>) 순으로 곱한다.
     ///    체력 보정은 투수 상태 공급자(<see cref="IPitcherStateSource"/>)를 넘겼을 때만 작동한다 (없으면 확률 그대로).
     /// 4) 작전 성공률: 리그 평균 대결(상황 보정 없음)의 확률 H₀ 대비 비율 r = H / H₀ 로 장면 기본 성공률을 늘리고 줄인다.
     ///    강공 = 기본 × r,  스퀴즈(컨택 위주라 덜 민감) = 기본 × (1 + 0.5 × (r − 1)),  [5%, 95%]로 자른다.
@@ -215,23 +265,33 @@ namespace DailyFranchise.Sim
 
         readonly IPlayerLookup _players;
         readonly IPitcherStateSource _pitcherStates;
+        readonly IConditionSource _conditions;
         readonly List<IMatchupModifier> _modifiers;
 
         /// <param name="players">선수 ID → 데이터. null이면 모든 선수가 데이터 없음.</param>
         /// <param name="modifiers">상황 보정 목록. null이면 <see cref="DefaultModifiers"/>, 빈 목록이면 보정 없음.</param>
         /// <param name="pitcherStates">투수 ID → 지금 체력. null이면 체력 보정 없음 (이전과 같은 확률).</param>
+        /// <param name="conditions">선수 DB ID → 오늘 컨디션. null이면 컨디션 보정 없음.</param>
         public MatchupCalculator(IPlayerLookup players, IEnumerable<IMatchupModifier> modifiers = null,
-            IPitcherStateSource pitcherStates = null)
+            IPitcherStateSource pitcherStates = null, IConditionSource conditions = null)
         {
             _players = players;
             _pitcherStates = pitcherStates;
+            _conditions = conditions;
             _modifiers = (modifiers ?? DefaultModifiers()).ToList();
             if (_modifiers.Any(m => m == null)) throw new ArgumentException("보정에 null이 있다.", nameof(modifiers));
         }
 
-        /// <summary>기본 보정: 플래툰 → 득점권 클러치 → 투수 체력 (체력은 투수 상태를 알 때만 작동).</summary>
+        /// <summary>
+        /// 기본 보정: 플래툰 → 득점권 클러치 → 투수 체력 → 타자 컨디션 → 투수 컨디션
+        /// (체력·컨디션은 공급자를 넘겨 상태를 알 때만 작동).
+        /// </summary>
         public static IEnumerable<IMatchupModifier> DefaultModifiers() =>
-            new IMatchupModifier[] { new PlatoonModifier(), new ClutchModifier(), new StaminaModifier() };
+            new IMatchupModifier[]
+            {
+                new PlatoonModifier(), new ClutchModifier(), new StaminaModifier(),
+                new ConditionModifier(ConditionSide.Batter), new ConditionModifier(ConditionSide.Pitcher),
+            };
 
         public const string AverageBatterId = "league-batter";
         public const string AveragePitcherId = "league-pitcher";
@@ -294,8 +354,14 @@ namespace DailyFranchise.Sim
                 Pitcher = pitcher ?? AveragePitcher,
                 Situation = situation,
                 PitcherState = _pitcherStates?.StateOf(pitcherId),
+                BatterCondition = ConditionOf(batter),
+                PitcherCondition = ConditionOf(pitcher),
             };
         }
+
+        /// <summary>선수 DB ID 기준 컨디션. 공급자가 없거나 데이터 없는 선수(리그 평균)면 0.</summary>
+        int ConditionOf(PlayerData player) =>
+            _conditions == null || player == null || IsLeagueAverage(player) ? 0 : PlayerCondition.Clamp(_conditions.ConditionOf(player.Id));
 
         /// <summary>투수의 지금 체력 (공급자가 없거나 모르면 null).</summary>
         public PitcherState PitcherStateOf(string pitcherId) => _pitcherStates?.StateOf(pitcherId);

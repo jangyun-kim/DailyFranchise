@@ -35,6 +35,29 @@ namespace DailyFranchise.App
         public bool HasFinance;
         public int Budget;
         public int FanApproval;
+
+        /// <summary>
+        /// 선수 컨디션 (Phase 22). 기록된 선수만 담고, 없는 선수는 보통(3). 이 필드가 없는 이전 저장 파일은 빈 목록(전원 보통).
+        /// JsonUtility가 Dictionary를 다루지 못해 목록으로 저장한다.
+        /// </summary>
+        public List<ConditionData> Conditions = new List<ConditionData>();
+
+        /// <summary>구단별 직전 선발 (선발 로테이션 순번, Phase 22). 없는 이전 저장 파일은 1번부터.</summary>
+        public List<LastStarterData> LastStarters = new List<LastStarterData>();
+    }
+
+    [Serializable]
+    public sealed class LastStarterData
+    {
+        public string Team;
+        public string PlayerId;
+    }
+
+    [Serializable]
+    public sealed class ConditionData
+    {
+        public string Id;
+        public int Value;
     }
 
     [Serializable]

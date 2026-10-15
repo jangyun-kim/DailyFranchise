@@ -588,7 +588,8 @@ namespace DailyFranchise.UI.Tests
             {
                 var scheduled = manager.Season.NextGame;
                 string opponent = scheduled.HomeTeam == manager.Season.MyTeam ? scheduled.AwayTeam : scheduled.HomeTeam;
-                var expected = FixtureGenerator.Generate(manager.Database.GetRoster(opponent), manager.MyRoster, expectRandom);
+                // Phase 22: 경기에는 선발 로테이션을 적용한 선수단이 나간다.
+                var expected = FixtureGenerator.Generate(manager.GameRosterOf(opponent), manager.GameRosterOf(manager.Season.MyTeam), expectRandom);
 
                 Submit(LobbyRoot().Q<Button>("start-game"));
                 yield return WaitForScene(SeasonManager.GameScene);
@@ -891,6 +892,91 @@ namespace DailyFranchise.UI.Tests
                 Assert.That(root.Q<Label>("fo-fan").ClassListContains(cls.Replace("fill", "percent")), Is.True);
                 Assert.That(root.Q<Label>("fo-budget").text, Is.EqualTo("₩ 1,234,567"));
             }
+        }
+
+        static string[] ConditionClasses(VisualElement container) =>
+            container.Query(className: "col-cond").ToList()
+                .Select(c => c.GetClasses().FirstOrDefault(n => n.StartsWith("cond--")) ?? "").ToArray();
+
+        IEnumerator PlayDefaultGameAndReturn()
+        {
+            Submit(LobbyRoot().Q<Button>("start-game"));
+            yield return WaitForScene(SeasonManager.GameScene);
+            var game = Object.FindAnyObjectByType<GameScreenController>();
+            game.Playback.Pause();
+            game.Playback.SkipToEnd();
+            Assert.That(game.ChooseTactic(TacticKind.Default), Is.True);
+            game.Playback.Pause();
+            game.Playback.SkipToEnd();
+            yield return null;
+            Submit(game.GetComponent<UIDocument>().rootVisualElement.Q<Button>("ctl-game-end"));
+            yield return WaitForScene(SeasonManager.LobbyScene);
+        }
+
+        [UnityTest]
+        public IEnumerator 로비에_컨디션이_보이고_경기에_나선_선수는_지치며_쉬면_회복하고_선발은_로테이션이_돈다()
+        {
+            var manager = SeasonManager.Instance;
+            manager.UseGeneratedScenario = true;
+            manager.ScenarioRandom = new SeededRandom(20261017);
+            manager.ConditionRandom = new ScriptedRandom(0.0); // 출장 야수는 모두 하락 판정
+            var mine = manager.MyRoster;
+            var root = LobbyRoot();
+
+            Assert.That(ConditionClasses(root.Q("roster")), Is.EqualTo(Enumerable.Repeat("cond--3", 9)), "처음엔 전원 보통");
+            Assert.That(ConditionClasses(root.Q("bench")), Is.EqualTo(Enumerable.Repeat("cond--3", 3)));
+            Assert.That(root.Q("rotation").childCount, Is.EqualTo(5), "선발 5명");
+            Assert.That(root.Q("rotation-1").ClassListContains("lobby-row--today"), Is.True);
+            Assert.That(root.Q("rotation-1").Query<Label>().ToList().Select(l => l.text), Has.Member("오늘 선발"));
+            yield return CheckLobbyLayout("컨디션 첫 로비");
+
+            // 1경기 (부산 홈): 라인업 9명 출장 → 지침, 벤치 → 좋음, 선발 차은호(퀵 시뮬 78구+) → 위험
+            yield return PlayDefaultGameAndReturn();
+            root = LobbyRoot();
+            Assert.That(manager.LastReport.Conditions, Is.Not.Empty);
+            Assert.That(ConditionClasses(root.Q("roster")), Is.EqualTo(Enumerable.Repeat("cond--2", 9)));
+            Assert.That(root.Q("roster").Query<Label>(className: "cond-text").First().text, Is.EqualTo("지침"));
+            Assert.That(ConditionClasses(root.Q("bench")), Is.EqualTo(Enumerable.Repeat("cond--4", 3)));
+            Assert.That(manager.Season.ConditionOf(mine.StartingPitcher.Id), Is.EqualTo(PlayerCondition.Exhausted));
+            Assert.That(ConditionClasses(root.Q("rotation")), Is.EqualTo(new[] { "cond--1", "cond--4", "cond--4", "cond--4", "cond--4" }));
+            Assert.That(manager.Season.LastStarterOf(manager.Season.MyTeam), Is.EqualTo(mine.Starters[0].Id));
+            Assert.That(root.Q("rotation-2").ClassListContains("lobby-row--today"), Is.True, "다음 경기는 2번 선발");
+            yield return CheckLobbyLayout("컨디션 1경기 후");
+
+            // 지친 3번 타자를 벤치(좋음)와 바꾸고 2경기 → 벤치로 간 선수는 회복, 새로 나간 선수는 하락
+            string tired = mine.AtOrder(3).Id, fresh = mine.Bench[0].Id;
+            Assert.That(manager.SwapLineup(LineupSpot.Batting(3), LineupSpot.Bench(0)), Is.True);
+            Assert.That(manager.GameRosterOf(manager.Season.MyTeam).StartingPitcher.Id, Is.EqualTo(mine.Starters[1].Id));
+            yield return PlayDefaultGameAndReturn();
+            Assert.That(manager.Season.ConditionOf(tired), Is.EqualTo(PlayerCondition.Normal), "지침(2) + 휴식 1 → 보통");
+            Assert.That(manager.Season.ConditionOf(fresh), Is.EqualTo(PlayerCondition.Normal), "좋음(4) − 출장 1 → 보통");
+            Assert.That(manager.Season.LastStarterOf(manager.Season.MyTeam), Is.EqualTo(mine.Starters[1].Id), "2번 선발이 던졌다");
+            Assert.That(manager.Season.ConditionOf(mine.Starters[0].Id), Is.EqualTo(PlayerCondition.Tired), "1번 선발 휴식 회복");
+
+            // 재시작해도 컨디션·순번이 이어진다.
+            yield return RestartFromLobby();
+            Assert.That(SeasonManager.Instance.Season.ConditionOf(tired), Is.EqualTo(PlayerCondition.Normal));
+            Assert.That(LobbyRoot().Q("rotation-3").ClassListContains("lobby-row--today"), Is.True);
+        }
+
+        [UnityTest]
+        public IEnumerator 경기_화면_타자_카드와_툴팁에_컨디션이_보인다()
+        {
+            var manager = SeasonManager.Instance;
+            var batter = manager.MyRoster.AtOrder(3);
+            manager.Season.SetCondition(batter.Id, PlayerCondition.Excellent);
+            Submit(LobbyRoot().Q<Button>("start-game"));
+            yield return WaitForScene(SeasonManager.GameScene);
+            var game = Object.FindAnyObjectByType<GameScreenController>();
+            game.Playback.Pause();
+            game.Playback.SkipToEnd();
+            yield return null;
+            var root = game.GetComponent<UIDocument>().rootVisualElement;
+            Assert.That(root.Q<Label>("batter-name").text, Is.EqualTo(batter.Name));
+            Assert.That(root.Q<Label>("batter-fitness").text, Is.EqualTo("컨디션 최상 (5/5)"));
+            game.PreviewTactic(TacticKind.SwingAway);
+            yield return null;
+            Assert.That(root.Q<Label>("tactic-desc").text, Does.Contain("타자 컨디션 최상 +4%"));
         }
     }
 }

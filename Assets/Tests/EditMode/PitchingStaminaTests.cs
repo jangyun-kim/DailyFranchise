@@ -83,7 +83,7 @@ namespace DailyFranchise.Sim.Tests
             var calc = new MatchupCalculator(players, pitcherStates: counts);
             var plain = new MatchupCalculator(players);
             Assert.That(calc.Modifiers.Select(m => m.GetType()),
-                Is.EqualTo(new[] { typeof(PlatoonModifier), typeof(ClutchModifier), typeof(StaminaModifier) }));
+                Is.EqualTo(new[] { typeof(PlatoonModifier), typeof(ClutchModifier), typeof(StaminaModifier), typeof(ConditionModifier), typeof(ConditionModifier) }));
             Assert.That(plain.Modifiers.Select(m => m.GetType()), Is.EqualTo(calc.Modifiers.Select(m => m.GetType())),
                 "기본 보정 목록은 같다 (공급자가 없으면 체력 보정은 작동하지 않을 뿐)");
 
