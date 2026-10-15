@@ -110,20 +110,21 @@ namespace DailyFranchise.UI.Tests
         }
 
         [Test]
-        public void 순위는_승률_우선_다음_다승으로_정렬하고_둘_다_같으면_공동_순위()
+        public void 순위는_승률_다승_무승부_순으로_정렬하고_모두_같으면_공동_순위()
         {
             var standings = new List<StandingRow>
             {
-                new StandingRow { Team = "A", Wins = 10, Losses = 10 },          // .500, 10승
+                new StandingRow { Team = "A", Wins = 10, Losses = 10 },          // .500, 10승 0무
                 new StandingRow { Team = "B", Wins = 12, Losses = 8 },           // .600
                 new StandingRow { Team = "C", Wins = 15, Losses = 15, Draws = 2 }, // .500, 15승 → A보다 위
-                new StandingRow { Team = "D", Wins = 10, Losses = 10, Draws = 1 }, // A와 승률·다승 같음 → 공동
+                new StandingRow { Team = "D", Wins = 10, Losses = 10, Draws = 1 }, // A와 승률·다승 같고 무승부 많음 → A보다 위
+                new StandingRow { Team = "F", Wins = 10, Losses = 10 },          // A와 완전히 같음 → 공동
                 new StandingRow { Team = "E", Wins = 0, Losses = 0 },
             };
             var s = new SeasonState("t", "A", new List<ScheduledGame> { new ScheduledGame { Number = 1, AwayTeam = "A", HomeTeam = "B" } }, standings);
 
-            Assert.That(s.Standings.Select(r => r.Team), Is.EqualTo(new[] { "B", "C", "A", "D", "E" }));
-            Assert.That(s.Standings.Select(r => r.Rank), Is.EqualTo(new[] { 1, 2, 3, 3, 5 }));
+            Assert.That(s.Standings.Select(r => r.Team), Is.EqualTo(new[] { "B", "C", "D", "A", "F", "E" }));
+            Assert.That(s.Standings.Select(r => r.Rank), Is.EqualTo(new[] { 1, 2, 3, 4, 4, 6 }));
             // 승차: B 12-8 기준, C 15-15 → ((12-15) + (15-8)) / 2 = 2.0
             Assert.That(s.Standings[1].GamesBehind, Is.EqualTo("2.0"));
         }

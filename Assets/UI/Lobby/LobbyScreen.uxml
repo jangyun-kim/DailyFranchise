@@ -43,6 +43,7 @@
                 <ui:Label class="panel-title" text="리그 순위" />
                 <ui:VisualElement class="lobby-row lobby-row--head">
                     <ui:Label class="col-rank" text="순위" />
+                    <ui:Label class="col-move" text="" />
                     <ui:Label class="col-standing-team" text="팀" />
                     <ui:Label class="col-num" text="승" />
                     <ui:Label class="col-num" text="패" />
@@ -54,8 +55,12 @@
             </ui:VisualElement>
         </ui:VisualElement>
 
-        <!-- 하단 110px: 다음 경기 / 시작 버튼 -->
+        <!-- 하단 110px: 지난 경기 / 다음 경기 / 시작 버튼 -->
         <ui:VisualElement class="footer">
+            <ui:VisualElement class="footer__last">
+                <ui:Label class="section-title" text="지난 경기" />
+                <ui:Label name="last-result" class="last-result" text="—" />
+            </ui:VisualElement>
             <ui:VisualElement class="footer__next">
                 <ui:Label class="section-title" text="다음 경기" />
                 <ui:Label name="next-game" class="next-game" text="—" />

@@ -199,6 +199,10 @@ namespace DailyFranchise.UI.Tests
 
             var root = LobbyRoot();
             Assert.That(root.Q("game-1").Q<Label>(className: "col-status").text, Is.EqualTo("패 3:2"));
+            Assert.That(root.Q<Label>("last-result").text, Does.StartWith("경기 1 · 서울 블루윙스 vs 부산 웨이브스 · 패 3:2 · "));
+            Assert.That(SeasonManager.Instance.LastReport.MyOutcome, Is.EqualTo(GameOutcome.Loss));
+            Assert.That(SeasonManager.Instance.LastReport.Saved, Is.True, "로비 복귀 전에 저장");
+            Assert.That(root.Q<Label>("next-game").text, Does.StartWith("경기 2 · "), "일정 전진");
             Assert.That(root.Q<Label>("my-record").text, Does.StartWith($"{me.Rank}위 · {me.Wins}승 {me.Losses}패 {me.Draws}무 · 승률 {me.WinPctText}"));
 
             // 순위표 UI가 재정렬된 SeasonState와 행 단위로 일치하고, 승률 내림차순이다.
@@ -206,7 +210,7 @@ namespace DailyFranchise.UI.Tests
             {
                 var row = season.Standings[i];
                 Assert.That(StandingRowTexts(root, i),
-                    Is.EqualTo(new[] { row.Rank.ToString(), row.Team, row.Wins.ToString(), row.Losses.ToString(),
+                    Is.EqualTo(new[] { row.Rank.ToString(), row.RankChangeText, row.Team, row.Wins.ToString(), row.Losses.ToString(),
                         row.Draws.ToString(), row.WinPctText, row.GamesBehind }), $"{i + 1}번째 행");
                 if (i > 0) Assert.That(season.Standings[i - 1].WinPct, Is.GreaterThanOrEqualTo(row.WinPct));
             }

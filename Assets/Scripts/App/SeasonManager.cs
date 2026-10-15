@@ -16,7 +16,7 @@ namespace DailyFranchise.App
     /// - 로비: StartNextGame() 호출
     /// - 경기 화면: 일정표의 대진으로 시즌 경기 장면을 불러오고 (기본: 두 선수단 기록으로 1~7회를 퀵 시뮬레이션하고
     ///   8회말 승부처의 아웃·주자를 무작위로 정한 장면), GameScreenController.ExitRequested(최종 점수)를
-    ///   구독해 결과를 시즌 성적·순위에 반영·저장한 뒤 로비로 복귀
+    ///   구독해 <see cref="AdvanceSeason"/>으로 결과를 시즌 성적·순위에 반영하고 일정을 전진·저장한 뒤 로비로 복귀
     /// - 저장: 처음 만들어질 때(로비 최초 진입) 저장 파일이 있으면 이어서, 없으면 새 시즌. 매 경기 결과 반영 직후 저장.
     /// - 선수 DB: 처음 만들어질 때 <see cref="MasterDatabase"/>를 읽는다 (기본 비동기). 다 읽기 전에는 경기를 시작하지 않는다.
     ///   경기 시작 시 일정의 두 구단 선수단을 대진에 실어 경기 화면에 넘긴다.
@@ -47,6 +47,8 @@ namespace DailyFranchise.App
         public int ExitsHandled { get; private set; }
         /// <summary>마지막으로 반영한 경기 최종 점수 (일정의 원정 : 홈 기준).</summary>
         public GameScore? LastScore { get; private set; }
+        /// <summary>마지막 경기 종료 처리 결과. 이번 실행에서 아직 없으면 null.</summary>
+        public PostGameReport LastReport { get; private set; }
 
         /// <summary>
         /// 타 구단 경기 결과용 난수. 경기 화면의 작전 판정 난수(<see cref="GameScreenController.TacticRandom"/>)와 별개다.
@@ -223,15 +225,23 @@ namespace DailyFranchise.App
             if (_loading) return;
             ExitsHandled++;
             DetachGame();
-            if (Season.InProgress != null)
-            {
-                // 경기 화면은 일정의 원정·홈대로 그리지만, 내 구단 득점 기준으로 다시 맞춰 반영한다.
-                var score = Season.ScheduleScore(result.MyRuns, result.OpponentRuns);
-                LastScore = score;
-                Season.FinishCurrentGame(score, LeagueRandom);
-                Saves.Save(Season);
-            }
+            // 경기 화면은 일정의 원정·홈대로 그리지만, 내 구단 득점 기준으로 다시 맞춰 반영한다.
+            if (Season.InProgress != null) AdvanceSeason(Season.ScheduleScore(result.MyRuns, result.OpponentRuns));
             Load(LobbyScene);
+        }
+
+        /// <summary>
+        /// 진행 중인 경기를 최종 점수로 끝내고 시즌을 다음 경기로 전진한 뒤 바로 저장한다
+        /// (<see cref="PostGameProcessor"/>: 승/패/무 기록 → 타 구단 경기 난수 반영 → 순위 재정렬 → 일정 전진 → 저장).
+        /// 씬 전환은 하지 않는다. 진행 중인 경기가 없으면 null.
+        /// </summary>
+        /// <param name="finalScore">일정의 원정 : 홈 기준 최종 점수.</param>
+        public PostGameReport AdvanceSeason(GameScore finalScore)
+        {
+            if (Season.InProgress == null) return null;
+            LastScore = finalScore;
+            LastReport = PostGameProcessor.Process(Season, finalScore, LeagueRandom, Saves);
+            return LastReport;
         }
 
         void DetachGame()

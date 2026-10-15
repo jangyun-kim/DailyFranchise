@@ -215,6 +215,9 @@ Label {
 
 /* 순위 열 */
 .col-rank { width: 44px; padding-left: 6px; }
+.col-move { width: 30px; font-size: 13px; color: var(--muted); }
+.col-move--up { color: #E5534B; }
+.col-move--down { color: #4C9BE8; }
 .col-standing-team { flex-grow: 1; }
 .col-num { width: 40px; -unity-text-align: middle-right; }
 .col-pct { width: 64px; -unity-text-align: middle-right; }
@@ -229,6 +232,17 @@ Label {
     border-top-width: 1px;
     border-color: var(--line);
     background-color: var(--panel);
+}
+
+.footer__last {
+    width: 640px;
+    margin-right: 24px;
+}
+
+.last-result {
+    height: 32px;
+    font-size: 17px;
+    -unity-text-align: middle-left;
 }
 
 .footer__next {

@@ -15,6 +15,7 @@ namespace DailyFranchise.App
     /// 좌측 라인업은 Click-to-Swap으로 바꾼다: 첫 클릭으로 선수를 고르고(강조), 두 번째 클릭한 선수와 맞바꾼다.
     /// 바꾼 라인업은 SeasonManager가 시즌에 반영·저장하고, 여기서는 다시 그리기만 한다.
     /// 선택 상태 표시는 USS 클래스(lobby-row--selected / --swappable)로만 바꾼다.
+    /// 순위표는 SeasonState가 정렬한 순서(승률 → 다승 → 무승부 → 잔여 경기)대로 그리고, 직전 경기일 대비 순위 변동을 함께 보인다.
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class LobbyController : MonoBehaviour
@@ -98,6 +99,8 @@ namespace DailyFranchise.App
             RenderRoster(season);
             RenderSchedule(season);
             RenderStandings(season);
+
+            Q<Label>("last-result").text = LastResultText(season);
 
             var next = season.NextGame;
             Q<Label>("next-game").text = next == null
@@ -226,8 +229,12 @@ namespace DailyFranchise.App
             container.Clear();
             foreach (var s in season.Standings)
             {
+                var move = Cell(s.RankChangeText, "col-move");
+                move.EnableInClassList("col-move--up", s.RankChange > 0);
+                move.EnableInClassList("col-move--down", s.RankChange < 0);
                 var row = Row("lobby-row",
                     Cell(s.Rank.ToString(), "col-rank"),
+                    move,
                     Cell(s.Team, "col-standing-team"),
                     Cell(s.Wins.ToString(), "col-num"),
                     Cell(s.Losses.ToString(), "col-num"),
@@ -237,6 +244,20 @@ namespace DailyFranchise.App
                 row.EnableInClassList("lobby-row--mine", s.Team == season.MyTeam);
                 container.Add(row);
             }
+        }
+
+        /// <summary>
+        /// 하단 지난 경기 요약: 경기 번호·대진·내 구단 기준 결과와 그 경기로 바뀐 내 순위
+        /// (예: "경기 1 · 서울 블루윙스 vs 부산 웨이브스 · 승 2:3 · 3위 → 2위"). 아직 치른 경기가 없으면 "—".
+        /// </summary>
+        public static string LastResultText(SeasonState season)
+        {
+            var last = season.LastFinished;
+            if (last == null) return "—";
+            string text = $"경기 {last.Number} · {last.MatchupText} · {FinalText(season, last)}";
+            var me = season.MyStanding;
+            if (me == null || me.PreviousRank == 0) return text;
+            return me.PreviousRank == me.Rank ? $"{text} · {me.Rank}위 유지" : $"{text} · {me.PreviousRank}위 → {me.Rank}위";
         }
 
         /// <summary>종료 경기 상태 칸: 내 구단 기준 승/패/무 + 원정:홈 점수 (예: "패 3:2").</summary>

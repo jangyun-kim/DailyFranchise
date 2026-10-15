@@ -60,6 +60,16 @@ namespace DailyFranchise.App
         public int Draws;
         /// <summary>승차 표기 (1위는 "—").</summary>
         public string GamesBehind;
+        /// <summary>가장 최근 경기일 직전 순위. 0이면 아직 없다 (시즌 첫 경기 전·이전 저장 파일).</summary>
+        public int PreviousRank;
+
+        public int GamesPlayed => Wins + Losses + Draws;
+
+        /// <summary>직전 순위 대비 변동 (+면 상승). 직전 순위가 없으면 0.</summary>
+        public int RankChange => PreviousRank == 0 ? 0 : PreviousRank - Rank;
+
+        /// <summary>순위 변동 표기 (예: "+2", "-1"). 변동이 없거나 직전 순위가 없으면 "".</summary>
+        public string RankChangeText => RankChange > 0 ? "+" + RankChange : RankChange < 0 ? RankChange.ToString(CultureInfo.InvariantCulture) : "";
 
         /// <summary>KBO 승률 = 승 / (승 + 패). 무승부는 제외한다.</summary>
         public double WinPct => Wins + Losses == 0 ? 0 : (double)Wins / (Wins + Losses);
@@ -89,6 +99,12 @@ namespace DailyFranchise.App
 
         /// <summary>타 구단 경기 무승부 확률 (KBO는 연장 12회 무승부가 있다).</summary>
         public const double OtherGameDrawRate = 0.03;
+
+        /// <summary>KBO 팀당 정규시즌 경기 수. 순위 동률 판정의 잔여 경기 계산에 쓴다.</summary>
+        public const int GamesPerTeam = 144;
+
+        /// <summary>순위표 정렬 규칙 (승률 → 다승 → 무승부 → 잔여 경기).</summary>
+        public static readonly StandingComparer StandingOrder = new StandingComparer(GamesPerTeam);
 
         readonly List<GameRecord> _lastDay = new List<GameRecord>();
 
@@ -161,7 +177,8 @@ namespace DailyFranchise.App
 
         /// <summary>
         /// 진행 중인 경기를 최종 점수로 끝낸다. 내 경기와, 남은 구단끼리 짝지은 같은 날 타 구단 경기(난수)를
-        /// 성적에 반영한 뒤 순위를 다시 매긴다.
+        /// 성적에 반영한 뒤 순위를 다시 매기고 일정을 다음 경기로 전진한다. 반영 직전 순위는 각 팀의
+        /// <see cref="StandingRow.PreviousRank"/>에 남는다 (로비 순위 변동 표시용).
         /// </summary>
         /// <param name="score">내 경기 최종 점수 (일정의 원정 : 홈 기준).</param>
         /// <param name="random">타 구단 대진·결과용 난수. 테스트는 고정 Seed를 넣는다.</param>
@@ -174,6 +191,7 @@ namespace DailyFranchise.App
             _lastDay.Clear();
             _lastDay.Add(new GameRecord { AwayTeam = game.AwayTeam, HomeTeam = game.HomeTeam, Score = score });
             _lastDay.AddRange(SimulateOtherGames(game, random));
+            foreach (var row in _standings) row.PreviousRank = row.Rank;
             foreach (var r in _lastDay)
             {
                 StandingOf(r.AwayTeam)?.Apply(r.OutcomeFor(r.AwayTeam));
@@ -221,15 +239,12 @@ namespace DailyFranchise.App
         }
 
         /// <summary>
-        /// KBO 순위 규정 중 승률 → 다승까지 적용한다. 둘 다 같으면 같은 순위를 주고 기존 순서를 유지한다 (안정 정렬).
-        /// 승차는 1위 기준 ((1위 승 - 승) + (패 - 1위 패)) / 2.
+        /// <see cref="StandingOrder"/>(승률 → 다승 → 무승부 → 잔여 경기)로 정렬한다. 모두 같으면 같은 순위를 주고
+        /// 기존 순서를 유지한다 (안정 정렬). 승차는 1위 기준 ((1위 승 - 승) + (패 - 1위 패)) / 2.
         /// </summary>
         public void Rerank()
         {
-            var ordered = _standings
-                .OrderByDescending(r => r.WinPct)
-                .ThenByDescending(r => r.Wins)
-                .ToList();
+            var ordered = _standings.OrderBy(r => r, StandingOrder).ToList();
             _standings.Clear();
             _standings.AddRange(ordered);
             if (_standings.Count == 0) return;
@@ -239,7 +254,7 @@ namespace DailyFranchise.App
             {
                 var row = _standings[i];
                 var prev = i > 0 ? _standings[i - 1] : null;
-                row.Rank = prev != null && prev.WinPct == row.WinPct && prev.Wins == row.Wins ? prev.Rank : i + 1;
+                row.Rank = prev != null && StandingOrder.Compare(prev, row) == 0 ? prev.Rank : i + 1;
                 double gb = ((leader.Wins - row.Wins) + (row.Losses - leader.Losses)) / 2.0;
                 row.GamesBehind = i == 0 ? "—" : gb.ToString("0.0", CultureInfo.InvariantCulture);
             }
@@ -268,7 +283,7 @@ namespace DailyFranchise.App
                 }).ToList(),
                 Standings = _standings.Select(r => new StandingData
                 {
-                    Team = r.Team, Wins = r.Wins, Losses = r.Losses, Draws = r.Draws,
+                    Team = r.Team, Wins = r.Wins, Losses = r.Losses, Draws = r.Draws, PreviousRank = r.PreviousRank,
                 }).ToList(),
                 Lineup = MyLineup == null ? new LineupSaveData() : new LineupSaveData
                 {
@@ -301,7 +316,12 @@ namespace DailyFranchise.App
                 if (s == null || string.IsNullOrEmpty(s.Team) || !teams.Add(s.Team))
                     throw new FormatException($"순위표 팀이 비었거나 중복: {s?.Team}");
                 if (s.Wins < 0 || s.Losses < 0 || s.Draws < 0) throw new FormatException($"음수 성적: {s.Team}");
-                standings.Add(new StandingRow { Team = s.Team, Wins = s.Wins, Losses = s.Losses, Draws = s.Draws });
+                if (s.PreviousRank < 0 || s.PreviousRank > data.Standings.Count)
+                    throw new FormatException($"직전 순위가 범위를 벗어났다: {s.Team} {s.PreviousRank}");
+                standings.Add(new StandingRow
+                {
+                    Team = s.Team, Wins = s.Wins, Losses = s.Losses, Draws = s.Draws, PreviousRank = s.PreviousRank,
+                });
             }
             if (!teams.Contains(data.MyTeam)) throw new FormatException($"내 구단이 순위표에 없다: {data.MyTeam}");
 
