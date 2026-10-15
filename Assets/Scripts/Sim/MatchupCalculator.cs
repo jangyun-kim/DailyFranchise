@@ -35,6 +35,8 @@ namespace DailyFranchise.Sim
         public PlayerData Batter;
         public PlayerData Pitcher;
         public MatchupSituation Situation;
+        /// <summary>투수의 지금 체력. 모르면 null (체력 보정 없음).</summary>
+        public PitcherState PitcherState;
     }
 
     /// <summary>
@@ -190,7 +192,8 @@ namespace DailyFranchise.Sim
     /// 1) 타자 안타력  B = (2 × 타율 + 출루율) / 3
     /// 2) 투수 허용률  P = (피안타율 + 리그 타율 × 평균자책 / 리그 평균자책) / 2
     /// 3) 타석 확률    H = 상황 보정( (B + P) / 2 ), [0, 1]. 기본 보정은 플래툰(<see cref="PlatoonModifier"/>) →
-    ///    득점권 클러치(<see cref="ClutchModifier"/>) 순으로 곱한다.
+    ///    득점권 클러치(<see cref="ClutchModifier"/>) → 투수 체력(<see cref="StaminaModifier"/>) 순으로 곱한다.
+    ///    체력 보정은 투수 상태 공급자(<see cref="IPitcherStateSource"/>)를 넘겼을 때만 작동한다.
     /// 4) 작전 성공률: 리그 평균 대결(상황 보정 없음)의 확률 H₀ 대비 비율 r = H / H₀ 로 장면 기본 성공률을 늘리고 줄인다.
     ///    강공 = 기본 × r,  스퀴즈(컨택 위주라 덜 민감) = 기본 × (1 + 0.5 × (r − 1)),  [5%, 95%]로 자른다.
     /// 타자·투수 둘 다 데이터가 없으면 계산하지 않고 장면 기본 성공률을 그대로 쓴다. 한쪽만 없으면 그쪽은 리그 평균.
@@ -211,19 +214,28 @@ namespace DailyFranchise.Sim
         const double MaxEra = 27.0;
 
         readonly IPlayerLookup _players;
+        readonly IPitcherStateSource _pitcherStates;
         readonly List<IMatchupModifier> _modifiers;
 
         /// <param name="players">선수 ID → 데이터. null이면 모든 선수가 데이터 없음.</param>
-        /// <param name="modifiers">상황 보정 목록. null이면 <see cref="DefaultModifiers"/>, 빈 목록이면 보정 없음.</param>
-        public MatchupCalculator(IPlayerLookup players, IEnumerable<IMatchupModifier> modifiers = null)
+        /// <param name="modifiers">
+        /// 상황 보정 목록. null이면 <see cref="DefaultModifiers"/> (투수 상태 공급자가 있으면 체력 보정까지), 빈 목록이면 보정 없음.
+        /// </param>
+        /// <param name="pitcherStates">투수 ID → 지금 체력. null이면 체력 보정 없음 (이전과 같은 확률).</param>
+        public MatchupCalculator(IPlayerLookup players, IEnumerable<IMatchupModifier> modifiers = null,
+            IPitcherStateSource pitcherStates = null)
         {
             _players = players;
-            _modifiers = (modifiers ?? DefaultModifiers()).ToList();
+            _pitcherStates = pitcherStates;
+            _modifiers = (modifiers ?? DefaultModifiers(withStamina: pitcherStates != null)).ToList();
             if (_modifiers.Any(m => m == null)) throw new ArgumentException("보정에 null이 있다.", nameof(modifiers));
         }
 
-        public static IEnumerable<IMatchupModifier> DefaultModifiers() =>
-            new IMatchupModifier[] { new PlatoonModifier(), new ClutchModifier() };
+        /// <summary>기본 보정: 플래툰 → 득점권 클러치 (→ 투수 체력, withStamina일 때).</summary>
+        public static IEnumerable<IMatchupModifier> DefaultModifiers(bool withStamina = false) =>
+            withStamina
+                ? new IMatchupModifier[] { new PlatoonModifier(), new ClutchModifier(), new StaminaModifier() }
+                : new IMatchupModifier[] { new PlatoonModifier(), new ClutchModifier() };
 
         public const string AverageBatterId = "league-batter";
         public const string AveragePitcherId = "league-pitcher";
@@ -285,13 +297,21 @@ namespace DailyFranchise.Sim
                 Batter = batter ?? AverageBatter,
                 Pitcher = pitcher ?? AveragePitcher,
                 Situation = situation,
+                PitcherState = _pitcherStates?.StateOf(pitcherId),
             };
         }
+
+        /// <summary>투수의 지금 체력 (공급자가 없거나 모르면 null).</summary>
+        public PitcherState PitcherStateOf(string pitcherId) => _pitcherStates?.StateOf(pitcherId);
 
         /// <summary>타석 안타(출루) 확률 H. 둘 다 데이터가 없으면 리그 평균 대결로 계산한다.</summary>
         public double HitProbability(string batterId, string pitcherId, MatchupSituation situation) =>
             HitProbability(ContextFor(batterId, pitcherId, situation)
-                           ?? new MatchupContext { Batter = AverageBatter, Pitcher = AveragePitcher, Situation = situation });
+                           ?? new MatchupContext
+                           {
+                               Batter = AverageBatter, Pitcher = AveragePitcher, Situation = situation,
+                               PitcherState = _pitcherStates?.StateOf(pitcherId),
+                           });
 
         public double HitProbability(MatchupContext context)
         {

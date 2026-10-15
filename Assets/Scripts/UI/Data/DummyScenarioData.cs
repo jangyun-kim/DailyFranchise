@@ -89,6 +89,13 @@ namespace DailyFranchise.UI.Data
             AddBatter("away_b1", "김라온", "CF", "우투좌타", "타율 .305 · 27도루", 4, 2, null, 85, TeamSide.Away);
             AddBatter("away_b4", "배무진", "1B", "우투우타", "타율 .291 · 21홈런", 2, 1, "1볼넷", 77, TeamSide.Away);
             AddBatter("away_b5", "탁성호", "LF", "좌투좌타", "타율 .268 · 15홈런", 2, 0, null, 73, TeamSide.Away);
+            // 9회초 수비 이닝(Phase 19)에서 상대 타순이 한 바퀴 돌 수 있도록 나머지 자리도 채운다.
+            AddBatter("away_b2", "노시후", "SS", "우투우타", "타율 .276 · 8홈런", 3, 1, null, 80, TeamSide.Away);
+            AddBatter("away_b3", "주태양", "RF", "좌투좌타", "타율 .309 · 19홈런", 3, 1, null, 76, TeamSide.Away);
+            AddBatter("away_b6", "석도원", "3B", "우투우타", "타율 .262 · 11홈런", 3, 0, null, 74, TeamSide.Away);
+            AddBatter("away_b7", "길현채", "C", "우투우타", "타율 .241 · 5홈런", 3, 1, null, 70, TeamSide.Away);
+            AddBatter("away_b8", "편주완", "2B", "우투좌타", "타율 .269 · 2홈런", 3, 0, null, 82, TeamSide.Away);
+            AddBatter("away_b9", "모건희", "DH", "우투우타", "타율 .255 · 13홈런", 3, 1, null, 75, TeamSide.Away);
         }
 
         public TeamSide MyTeam => _matchup.MySide;

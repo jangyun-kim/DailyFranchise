@@ -71,6 +71,32 @@ namespace DailyFranchise.UI
             return "보정 · " + string.Join(" · ", adjustments.Select(a => a.Text));
         }
 
+        /// <summary>수비 이닝 [기본 진행] 설명 (내 투수가 상대 타자와 승부).</summary>
+        public const string DefenseDetail = "기본 진행 · 지금 투수로 승부합니다.\n위험: 체력이 떨어질수록 피안타가 늘어납니다";
+
+        /// <summary>[투수 교체] 설명.</summary>
+        public const string PitchingChangeDetail = "투수 교체 · 불펜에서 구원 투수를 올립니다.\n강판된 투수는 이 경기에 다시 나올 수 없습니다";
+
+        /// <summary>수비 이닝 확률 줄: "출루 허용 확률 31%".</summary>
+        public static string AllowedOdds(double hitProbability) =>
+            $"출루 허용 확률 {(int)System.Math.Round(hitProbability * 100, System.MidpointRounding.AwayFromZero)}%";
+
+        /// <summary>
+        /// 투수 상태 줄: "투수 · 염태준 91구 · 체력 9% (저하)". 고갈이면 "(고갈)", 충분하면 괄호 없음. 상태를 모르면 null.
+        /// </summary>
+        public static string PitcherLine(string pitcherName, PitcherState state)
+        {
+            if (state == null) return null;
+            return $"투수 · {pitcherName} {state.PitchCount}구 · {StaminaText(state)}";
+        }
+
+        /// <summary>"체력 9% (저하)" / "체력 0% (고갈)" / "체력 72%".</summary>
+        public static string StaminaText(PitcherState state)
+        {
+            string tag = state.Level == FatigueLevel.Exhausted ? " (고갈)" : state.Level == FatigueLevel.Tired ? " (저하)" : "";
+            return $"체력 {state.StaminaPercent}%{tag}";
+        }
+
         /// <summary>작전 결과 한 단어. 기본 진행은 판정이 없으므로 "개입 없음".</summary>
         public static string OutcomeText(TacticKind t, TacticOutcome outcome) =>
             t == TacticKind.Default ? "개입 없음" : outcome == TacticOutcome.Success ? "성공" : "실패";

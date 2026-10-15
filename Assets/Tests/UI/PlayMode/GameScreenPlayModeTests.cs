@@ -860,7 +860,7 @@ namespace DailyFranchise.UI.Tests
         }
 
         [UnityTest]
-        public IEnumerator 퀵_시뮬_순환은_3아웃에서_멈추고_경기_종료로_이어진다()
+        public IEnumerator 퀵_시뮬_순환은_공격_3아웃_뒤_9회초_수비까지_돌고_경기_종료로_이어진다()
         {
             var root = _doc.rootVisualElement;
             _controller.LoadGeneratedScenario(Data.Matchup.Default, new SeededRandom(7));
@@ -869,12 +869,14 @@ namespace DailyFranchise.UI.Tests
             _controller.Playback.SkipToEnd();
             yield return null;
 
+            // Phase 19: 공격(강공) 3아웃 뒤 9회초 수비(기본 진행만)로 이어진다.
             int guard = 0;
             while (_controller.CurrentBranch != null)
             {
-                Assert.That(++guard, Is.LessThanOrEqualTo(PlayByPlayGenerator.MaxPlateAppearancesPerHalf), "순환이 끝나지 않음");
+                Assert.That(++guard, Is.LessThanOrEqualTo(2 * PlayByPlayGenerator.MaxPlateAppearancesPerHalf), "순환이 끝나지 않음");
                 Assert.That(_controller.Playback.AwaitingDecision, Is.True);
-                Assert.That(_controller.ChooseTactic(TacticKind.SwingAway), Is.True);
+                var tactic = _controller.AwaitingDefenseDecision ? TacticKind.Default : TacticKind.SwingAway;
+                Assert.That(_controller.ChooseTactic(tactic), Is.True);
                 _controller.Playback.Pause();
                 _controller.Playback.SkipToEnd();
                 yield return null;
@@ -883,12 +885,16 @@ namespace DailyFranchise.UI.Tests
 
             var last = _controller.Events[_controller.Events.Count - 1];
             Assert.That(last.OutsAfter, Is.EqualTo(3));
+            Assert.That((last.Inning, last.HalfInning), Is.EqualTo((9, HalfInning.Top)), "9회초 수비로 끝남");
+            Assert.That(_controller.DefenseStarted, Is.True);
             Assert.That(_controller.Playback.IsAtEnd, Is.True);
             Assert.That(_controller.Playback.AwaitingDecision, Is.False);
             Assert.That(_controller.InningEndAwaitingExit, Is.True);
-            Assert.That(_controller.Decisions.Count, Is.InRange(1, 3));
-            Assert.That(Text(root, "status-inning"), Is.EqualTo("8회말 · 3아웃 · 이닝 종료"));
-            Assert.That(Text(root, "headline-main"), Is.EqualTo("8회말 종료 · 공수교대 · 경기 종료 대기"));
+            var offense = _controller.Decisions.Count(d => _controller.Events[d.AfterIndex].Inning == 8);
+            Assert.That(offense, Is.InRange(1, 3), "8회말 공격 작전");
+            Assert.That(_controller.Decisions.Count - offense, Is.EqualTo(3), "0.99 → 9회초 세 타자 범타");
+            Assert.That(Text(root, "status-inning"), Is.EqualTo("9회초 · 3아웃 · 이닝 종료"));
+            Assert.That(Text(root, "headline-main"), Is.EqualTo("9회초 종료 · 경기 종료 대기"));
             Assert.That(root.Q<Button>("tactic-default").enabledSelf, Is.False);
             Assert.That(root.Q<Button>("tactic-swing").enabledSelf, Is.False);
             // 씬 단독 실행(로비 흐름 없음)이라 [경기 종료]는 기존처럼 꺼진다. 로비 복귀는 SceneFlow 테스트에서 확인.
@@ -923,6 +929,132 @@ namespace DailyFranchise.UI.Tests
             Assert.That(_controller.Playback.IsAtEnd, Is.True);
             Assert.That(_controller.Events.Count, Is.EqualTo(Fixture8thBottom.Create().Events.Count), "각본 8구 그대로");
             Assert.That(_controller.InningEndAwaitingExit, Is.False);
+        }
+
+        /// <summary>퀵 시뮬 경기를 공격 강공 실패(0.99)로 넘겨 9회초 수비 첫 작전 대기까지 간다.</summary>
+        IEnumerator ReachDefense()
+        {
+            _controller.LoadGeneratedScenario(Data.Matchup.Default, new SeededRandom(7));
+            _controller.TacticRandom = new ScriptedRandom(0.99);
+            _controller.Playback.Pause();
+            _controller.Playback.SkipToEnd();
+            yield return null;
+            int guard = 0;
+            while (!_controller.AwaitingDefenseDecision)
+            {
+                Assert.That(++guard, Is.LessThanOrEqualTo(PlayByPlayGenerator.MaxPlateAppearancesPerHalf), "수비 이닝에 닿지 않음");
+                Assert.That(_controller.Playback.AwaitingDecision, Is.True);
+                Assert.That(_controller.CanChangePitcher, Is.False, "공격 중에는 투수 교체 불가");
+                Assert.That(_doc.rootVisualElement.Q<Button>("tactic-pitching").enabledSelf, Is.False);
+                Assert.That(_controller.ChooseTactic(TacticKind.SwingAway), Is.True);
+                _controller.Playback.Pause();
+                _controller.Playback.SkipToEnd();
+                yield return null;
+            }
+            yield return null;
+        }
+
+        static string[] BullpenNames(VisualElement root) =>
+            root.Q("bullpen-list").Query<Label>(className: "bullpen-row__name").ToList().Select(l => l.text.Split(' ')[0]).ToArray();
+
+        [UnityTest]
+        public IEnumerator 수비_이닝에서_투수_교체로_불펜_투수를_올리면_투수_카드가_바로_바뀐다()
+        {
+            var root = _doc.rootVisualElement;
+            yield return ReachDefense();
+            var roster = _controller.Roster;
+            var decision = _controller.Events[_controller.CurrentBranch.AfterIndex];
+            Assert.That((decision.Inning, decision.HalfInning), Is.EqualTo((9, HalfInning.Top)));
+            Assert.That(decision.PitcherId, Is.EqualTo(GameScreenController.MyStarterId));
+            Assert.That(decision.BatterId, Is.EqualTo(BattingOrder.IdFor("away_b1", _controller.Generated.AwayNinthLeadoffOrder)));
+            Assert.That(Text(root, "headline-main"), Does.Contain("9회초 · 수비").And.Contain("작전 선택 대기"));
+            Assert.That(Text(root, "pitcher-name"), Is.EqualTo(roster.GetPlayer("home_sp").Name));
+            Assert.That(Text(root, "pitcher-fitness"), Does.StartWith("체력 ").And.Contain("(저하)"), "더미 선발 78구 + 장면 2구");
+            Assert.That(root.Q<Button>("tactic-default").enabledSelf, Is.True);
+            Assert.That(root.Q<Button>("tactic-swing").enabledSelf, Is.False, "수비에는 강공 없음");
+            Assert.That(root.Q<Button>("tactic-squeeze").enabledSelf, Is.False);
+            Assert.That(root.Q<Button>("tactic-pinch").enabledSelf, Is.False, "대타는 범위 밖");
+            Assert.That(root.Q<Button>("tactic-pitching").enabledSelf, Is.True);
+
+            // 툴팁: 지금 투수의 투구 수·체력과 출루 허용 확률
+            _controller.PreviewTactic(TacticKind.Default);
+            yield return null;
+            var state = _controller.StateOf("home_sp");
+            Assert.That(state.PitchCount, Is.EqualTo(roster.GetPlayer("home_sp").PitchesBeforeScene + 2));
+            Assert.That(Text(root, "tactic-desc"), Does.StartWith(TacticText.DefenseDetail)
+                .And.Contain($"투수 · {roster.GetPlayer("home_sp").Name} {state.PitchCount}구 · {TacticText.StaminaText(state)}")
+                .And.Contain("출루 허용 확률"));
+            _controller.PreviewTactic(null);
+
+            // [투수 교체] → 불펜 모달: 투수만 (대타·대주자 야수 없음)
+            Submit(root.Q<Button>("tactic-pitching"));
+            yield return null;
+            Assert.That(_controller.BullpenOpen, Is.True);
+            Assert.That(root.Q("bullpen-modal").resolvedStyle.display, Is.EqualTo(DisplayStyle.Flex));
+            var bullpen = roster.GetBullpen(roster.MyTeam).Select(e => roster.GetPlayer(e.PlayerId).Name).ToArray();
+            var bench = roster.GetBench(roster.MyTeam).Select(e => roster.GetPlayer(e.PlayerId).Name).ToArray();
+            Assert.That(BullpenNames(root), Is.EqualTo(bullpen));
+            Assert.That(BullpenNames(root).Intersect(bench), Is.Empty, "야수는 목록에 없다");
+            Assert.That(Text(root, "bullpen-current"), Does.Contain(roster.GetPlayer("home_sp").Name));
+            var issues = LayoutChecker.Check(Screen);
+            Assert.That(issues, Is.Empty, "[불펜 모달]\n" + string.Join("\n", issues));
+
+            // 취소하면 그대로
+            Submit(root.Q<Button>("bullpen-cancel"));
+            yield return null;
+            Assert.That(_controller.BullpenOpen, Is.False);
+            Assert.That(_controller.MyPitching.CurrentPitcherId, Is.EqualTo("home_sp"));
+
+            // 다시 열어 마무리(home_rp1)를 고른다 → 투수 카드 즉시 교체, 선발 강판
+            Submit(root.Q<Button>("tactic-pitching"));
+            yield return null;
+            Submit(root.Q<Button>("bullpen-pick-home_rp1"));
+            yield return null;
+            Assert.That(_controller.BullpenOpen, Is.False);
+            Assert.That(_controller.MyPitching.CurrentPitcherId, Is.EqualTo("home_rp1"));
+            Assert.That(_controller.MyPitching.UsedPitchers, Is.EqualTo(new[] { "home_sp" }));
+            Assert.That(Text(root, "pitcher-name"), Is.EqualTo(roster.GetPlayer("home_rp1").Name), "투수 카드 즉시 리렌더링");
+            Assert.That(Text(root, "pitcher-fitness"), Is.EqualTo("체력 100%"));
+            Assert.That(_controller.Playback.AwaitingDecision, Is.True, "교체 후에도 작전 대기");
+            Assert.That(root.Q("log").Children().OfType<Label>().Select(l => l.text),
+                Has.Member($"투수 교체 · {roster.GetPlayer("home_sp").Name} → {roster.GetPlayer("home_rp1").Name}"));
+            var bullpenRow = root.Q("bullpen").Children().First(r => (string)r.userData == "home_rp1");
+            Assert.That(bullpenRow.Q<Label>(className: "roster-state").text, Is.EqualTo("등판 중"));
+
+            // 강판된 선발·야수·지금 투수는 올릴 수 없다
+            Assert.That(_controller.ChangePitcher("home_sp"), Is.False, "강판된 투수 재등판 불가");
+            Assert.That(_controller.ChangePitcher("home_ph1"), Is.False, "야수");
+            Assert.That(_controller.ChangePitcher("home_rp1"), Is.False, "지금 투수");
+            Submit(root.Q<Button>("tactic-pitching"));
+            yield return null;
+            Assert.That(BullpenNames(root), Is.EqualTo(bullpen.Skip(1)), "지금 투수는 목록에서 빠진다");
+            Submit(root.Q<Button>("bullpen-cancel"));
+            yield return null;
+
+            // 기본 진행: 남은 투구는 새 투수가 던진다
+            int at = _controller.CurrentBranch.AfterIndex;
+            Assert.That(_controller.ChooseTactic(TacticKind.Default), Is.True);
+            _controller.Playback.Pause();
+            _controller.Playback.SkipToEnd();
+            yield return null;
+            Assert.That(_controller.Events.Skip(at + 1).Select(e => e.PitcherId), Is.All.EqualTo("home_rp1"));
+            Assert.That(_controller.Events.Take(at + 1).Count(e => e.PitcherId == "home_rp1"), Is.Zero);
+            issues = LayoutChecker.Check(Screen);
+            Assert.That(issues, Is.Empty, string.Join("\n", issues));
+        }
+
+        [UnityTest]
+        public IEnumerator 처음으로_돌아가면_투수_교체도_초기화된다()
+        {
+            yield return ReachDefense();
+            Assert.That(_controller.ChangePitcher("home_rp2"), Is.True);
+            Assert.That(_controller.PitchingChanges, Has.Count.EqualTo(1));
+            Submit(_doc.rootVisualElement.Q<Button>("ctl-restart"));
+            yield return null;
+            Assert.That(_controller.PitchingChanges, Is.Empty);
+            Assert.That(_controller.MyPitching.CurrentPitcherId, Is.EqualTo("home_sp"));
+            Assert.That(_controller.MyPitching.UsedPitchers, Is.Empty);
+            Assert.That(_controller.DefenseStarted, Is.False);
         }
     }
 }

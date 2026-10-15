@@ -642,16 +642,18 @@ namespace DailyFranchise.UI.Tests
             game.Playback.SkipToEnd();
             yield return null;
 
+            // 공격 3아웃 뒤 수비 반 이닝(기본 진행만)까지 돌고 끝난다 (Phase 19).
             int guard = 0;
             while (game.CurrentBranch != null)
             {
-                Assert.That(++guard, Is.LessThanOrEqualTo(PlayByPlayGenerator.MaxPlateAppearancesPerHalf));
-                Assert.That(game.ChooseTactic(TacticKind.SwingAway), Is.True);
+                Assert.That(++guard, Is.LessThanOrEqualTo(2 * PlayByPlayGenerator.MaxPlateAppearancesPerHalf));
+                Assert.That(game.ChooseTactic(game.AwaitingDefenseDecision ? TacticKind.Default : TacticKind.SwingAway), Is.True);
                 game.Playback.Pause();
                 game.Playback.SkipToEnd();
                 yield return null;
             }
-            Assert.That(game.InningEndAwaitingExit, Is.True, "3아웃 · 경기 종료 대기");
+            Assert.That(game.InningEndAwaitingExit, Is.True, "수비 3아웃 · 경기 종료 대기");
+            Assert.That(game.DefenseStarted, Is.True);
             var final = game.FinalScore();
             var gameEnd = game.GetComponent<UIDocument>().rootVisualElement.Q<Button>("ctl-game-end");
             Assert.That(gameEnd.enabledSelf, Is.True);
@@ -680,6 +682,73 @@ namespace DailyFranchise.UI.Tests
             Assert.That(game.ScenarioId, Is.EqualTo(FixtureGenerator.ScenarioId));
             Assert.That(game.Generated, Is.Not.Null);
             Assert.That(game.Fixture.Branch, Is.Not.Null, "승부처 작전 분기 유지");
+        }
+
+        [UnityTest]
+        public IEnumerator 인게임_투수_교체는_DB_불펜으로_하고_로비_복귀_뒤_원본_선수단은_그대로다()
+        {
+            var manager = SeasonManager.Instance;
+            manager.UseGeneratedScenario = true;
+            manager.ScenarioRandom = new SeededRandom(20261017);
+            var before = manager.MyRoster;
+            var starters = before.Starters.Select(p => p.Id).ToArray();
+            var bullpen = before.Bullpen.Select(p => (p.Id, p.Role, p.Order, p.Position)).ToArray();
+
+            Submit(LobbyRoot().Q<Button>("start-game"));
+            yield return WaitForScene(SeasonManager.GameScene);
+            var game = Object.FindAnyObjectByType<GameScreenController>();
+            game.TacticRandom = new ScriptedRandom(0.99);
+            game.Playback.Pause();
+            game.Playback.SkipToEnd();
+            yield return null;
+            int guard = 0;
+            while (!game.AwaitingDefenseDecision)
+            {
+                Assert.That(++guard, Is.LessThanOrEqualTo(PlayByPlayGenerator.MaxPlateAppearancesPerHalf), "수비 이닝에 닿지 않음");
+                Assert.That(game.ChooseTactic(TacticKind.SwingAway), Is.True);
+                game.Playback.Pause();
+                game.Playback.SkipToEnd();
+                yield return null;
+            }
+            yield return null;
+            var root = game.GetComponent<UIDocument>().rootVisualElement;
+
+            Assert.That(root.Q<Label>("pitcher-name").text, Is.EqualTo(before.StartingPitcher.Name), "내 선발이 마운드에");
+            Assert.That(game.MyPitching.ReliefCandidates.Select(p => p.Name), Is.EqualTo(before.Bullpen.Select(p => p.Name)),
+                "불펜 후보 = DB 불펜 (벤치 야수 없음)");
+            Assert.That(game.MyPitching.Pool.Where(p => !p.IsPitcher).Select(p => p.Name), Is.EqualTo(before.Bench.Select(p => p.Name)),
+                "벤치 야수는 대기 명단에 있지만 후보가 아니다");
+
+            Assert.That(game.ChangePitcher("home_rp1"), Is.True);
+            yield return null;
+            var reliever = before.Bullpen[0];
+            Assert.That(root.Q<Label>("pitcher-name").text, Is.EqualTo(reliever.Name));
+            Assert.That(root.Q<Label>("pitcher-team").text, Does.Contain(reliever.Position));
+            game.PreviewTactic(TacticKind.Default);
+            yield return null;
+            Assert.That(root.Q<Label>("tactic-desc").text, Does.Contain($"투수 · {reliever.Name} 0구 · 체력 100%"));
+            game.PreviewTactic(null);
+
+            guard = 0;
+            while (game.CurrentBranch != null)
+            {
+                Assert.That(++guard, Is.LessThanOrEqualTo(PlayByPlayGenerator.MaxPlateAppearancesPerHalf));
+                Assert.That(game.ChooseTactic(TacticKind.Default), Is.True);
+                game.Playback.Pause();
+                game.Playback.SkipToEnd();
+                yield return null;
+            }
+            Assert.That(game.InningEndAwaitingExit, Is.True);
+            var final = game.FinalScore();
+            Submit(root.Q<Button>("ctl-game-end"));
+            yield return WaitForScene(SeasonManager.LobbyScene);
+            Assert.That(manager.LastScore, Is.EqualTo(final));
+
+            // 인게임 교체는 일회성: 선발 로테이션·불펜 구성은 그대로
+            var after = manager.MyRoster;
+            Assert.That(after.Starters.Select(p => p.Id), Is.EqualTo(starters));
+            Assert.That(after.Bullpen.Select(p => (p.Id, p.Role, p.Order, p.Position)), Is.EqualTo(bullpen));
+            Assert.That(manager.Database.GetRoster(manager.Season.MyTeam).StartingPitcher.Id, Is.EqualTo(starters[0]));
         }
     }
 }

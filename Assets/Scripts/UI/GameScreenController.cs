@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using DailyFranchise.Sim;
 using DailyFranchise.Sim.Data;
 using DailyFranchise.Sim.Fixtures;
@@ -12,11 +13,17 @@ namespace DailyFranchise.UI
     /// 1920×1080 경기 화면. ScenarioCatalog의 고정 장면 또는 퀵 시뮬레이션으로 만든 승부처 장면을 읽기 전용으로 재생하며,
     /// 이름·기록은 IRosterSource / IScoreboardSource에서 가져온다.
     /// 점수·H·아웃·주자·타자 기록은 필드 연출이 끝나는 순간에 반영한다 (StatsSync).
-    /// 퀵 시뮬레이션 경기는 Play-by-Play로 순환한다: 작전 타석이 끝나면 다음 타순 타자가 들어서 다시 작전을 기다리고, 3아웃이면 멈춘다.
+    /// 퀵 시뮬레이션 경기는 Play-by-Play로 순환한다: 작전 타석이 끝나면 다음 타순 타자가 들어서 다시 작전을 기다린다.
+    /// 내 구단 공격 반 이닝이 3아웃으로 끝나면 이어서 내 구단 수비 반 이닝(9회초, 원정 경기면 9회말)을 진행하고,
+    /// 수비 중 작전 대기에서는 [투수 교체]로 불펜 투수를 올릴 수 있다 (Phase 19). 수비 반 이닝이 끝나면 경기 종료 대기.
+    /// 투수 체력(<see cref="PitcherState"/>)은 실제 투구 수로 계산해 확률 보정(<see cref="StaminaModifier"/>)에 쓴다.
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
-    public sealed class GameScreenController : MonoBehaviour
+    public sealed class GameScreenController : MonoBehaviour, IPitcherStateSource
     {
+        /// <summary>내 구단 선발 투수의 장면 자리 ID (장면 ID의 home_ = 내 구단).</summary>
+        public const string MyStarterId = "home_sp";
+
         const int MinInnings = 9;
         const int MaxLogEntries = 5;
         const string Unknown = "–";
@@ -58,6 +65,17 @@ namespace DailyFranchise.UI
         string _scenarioId = ScenarioCatalog.EighthBottom;
         Matchup _matchup = Matchup.Default;
         GeneratedGame _generated;
+        /// <summary>내 구단 투수 운용 (경기 중 임시 사본). 장면을 불러올 때마다 새로 만든다.</summary>
+        InGameRoster _myPitching;
+        /// <summary>Play-by-Play가 내 구단 수비 반 이닝에 들어섰는지.</summary>
+        bool _defenseStarted;
+        /// <summary>투수 교체 기록: 교체한 작전 대기 투구 인덱스, 강판 투수, 등판 투수.</summary>
+        readonly List<(int afterIndex, string from, string to)> _pitchingChanges = new List<(int, string, string)>();
+        bool _previewPitching;
+        bool _bullpenOpen;
+        Button _pitchingButton;
+        VisualElement _bullpenModal, _bullpenList;
+        Label _bullpenCurrent;
 
         VisualElement _root;
         AbsZoneView _abs;
@@ -106,6 +124,41 @@ namespace DailyFranchise.UI
         public IReadOnlyList<TacticDecision> Decisions => _decisions;
         /// <summary>지금 작전을 기다리는(또는 기다릴) 분기점. 남은 분기점이 없으면 null.</summary>
         public BranchPoint CurrentBranch => _branch;
+
+        /// <summary>내 구단 투수 운용 상태 (지금 투수·강판 투수·교체 후보). 원본 선수단과 별개인 경기 중 사본.</summary>
+        public InGameRoster MyPitching => _myPitching;
+        /// <summary>이 경기의 투수 교체 기록.</summary>
+        public IReadOnlyList<(int afterIndex, string from, string to)> PitchingChanges => _pitchingChanges;
+        /// <summary>Play-by-Play가 내 구단 수비 반 이닝에 들어섰는지.</summary>
+        public bool DefenseStarted => _defenseStarted;
+        /// <summary>투수 교체 모달이 열려 있는지.</summary>
+        public bool BullpenOpen => _bullpenOpen;
+
+        /// <summary>내 구단이 이 반 이닝에 공격하는가 (초 = 원정 공격, 말 = 홈 공격).</summary>
+        public bool IsUserBatting(HalfInning half) => (half == HalfInning.Bottom) == (_roster.MyTeam == TeamSide.Home);
+
+        /// <summary>내 구단 수비 반 이닝에서 작전을 기다리는 중.</summary>
+        public bool AwaitingDefenseDecision => PlayByPlay && _branch != null && _playback.AwaitingDecision
+                                               && !IsUserBatting(_events[_branch.AfterIndex].HalfInning);
+
+        /// <summary>지금 투수를 바꿀 수 있는지: 수비 작전 대기 중이고 올릴 투수가 남아 있다.</summary>
+        public bool CanChangePitcher => AwaitingDefenseDecision && _myPitching.ReliefCandidates.Count > 0;
+
+        /// <summary>
+        /// 투수 체력 (<see cref="IPitcherStateSource"/>, 계산기용). 장면 시작 전 투구 수 + 장면에서 던진 공 수.
+        /// 작전 분기점이 있으면 그 투구까지, 없으면 지금 재생 위치까지 센다.
+        /// </summary>
+        public PitcherState StateOf(string pitcherId) =>
+            PitcherStateAt(pitcherId, _branch != null ? _branch.AfterIndex : _playback?.Index ?? ScreenState.BeforeFirstPitch);
+
+        /// <summary>events[0..throughIndex] 기준 투수 체력. 투수를 모르면 null.</summary>
+        public PitcherState PitcherStateAt(string pitcherId, int throughIndex)
+        {
+            if (pitcherId == null || _roster == null || _events == null) return null;
+            int before = _roster.GetPlayer(pitcherId).PitchesBeforeScene;
+            return new PitcherState(pitcherId, PitcherState.IsStarterSlot(pitcherId),
+                before + PitcherState.PitchesBy(_events, pitcherId, throughIndex));
+        }
 
         /// <summary>
         /// 인게임 Play-by-Play: 작전 타석이 끝나면 아웃·주자를 갱신한 상태에서 다음 타순 타자가 들어서고 다시 작전을 기다린다.
@@ -237,6 +290,10 @@ namespace DailyFranchise.UI
             _branch = _fixture.Branch;
             _decisions.Clear();
             _previewTactic = null;
+            _previewPitching = false;
+            _defenseStarted = false;
+            _pitchingChanges.Clear();
+            CloseBullpen();
             if (_matchup.HasRosters)
             {
                 var source = new ScenarioRosterSource(data, RosterSourceLabel);
@@ -248,7 +305,8 @@ namespace DailyFranchise.UI
                 _roster = data;
                 _scoreboard = data;
             }
-            _calculator = new MatchupCalculator(_roster as IPlayerLookup);
+            _calculator = new MatchupCalculator(_roster as IPlayerLookup, pitcherStates: this);
+            _myPitching = BuildMyPitching();
 
             _playback = new PitchPlayback(_events);
             _playback.SetSpeed(speed);
@@ -295,9 +353,10 @@ namespace DailyFranchise.UI
             BranchPoint next = null;
             if (PlayByPlay)
             {
-                // 각본의 후속 타자는 떼고, 갱신된 아웃·주자에서 다음 타순 타자가 들어선다. 3아웃이면 segment == null로 순환 종료.
+                // 각본의 후속 타자는 떼고, 갱신된 아웃·주자에서 다음 타순 타자가 들어선다.
+                // 공격 반 이닝이 3아웃이면 수비 반 이닝으로 넘어가고, 수비까지 끝나면 segment == null로 순환 종료.
                 path = PlayByPlayGenerator.UntilPlateAppearanceEnd(path, branch.AfterIndex + 1);
-                var segment = new PlayByPlayGenerator(_calculator, TacticRandom).Next(path);
+                var segment = NextSegment(new PlayByPlayGenerator(_calculator, TacticRandom), path);
                 if (segment != null)
                 {
                     path.AddRange(segment.Events);
@@ -313,6 +372,132 @@ namespace DailyFranchise.UI
             if (next != null) _playback.SetDecisionPoint(next.AfterIndex);
             _playback.Play();
             return true;
+        }
+
+        /// <summary>
+        /// 다음 타석 구간. 같은 반 이닝이 이어지면 다음 타자, 내 구단 공격이 3아웃으로 끝났으면 수비 반 이닝 첫 타자
+        /// (상대 선두 타자 vs 내 지금 투수). 수비 반 이닝이 끝났거나, 9회 이후 말 공격에서 홈이 앞서면(끝내기·말 공격 생략) null.
+        /// </summary>
+        PlateAppearanceSegment NextSegment(PlayByPlayGenerator generator, List<PitchEvent> path)
+        {
+            var last = path[path.Count - 1];
+            var score = ScreenState.Build(path, _fixture.AwayScoreBefore, _fixture.HomeScoreBefore, path.Count - 1);
+            if (PlayByPlayGenerator.HomeWinsInBottom(last.Inning, last.HalfInning, score.AwayScore, score.HomeScore)) return null;
+
+            bool userBatting = IsUserBatting(last.HalfInning);
+            var segment = generator.Next(path, userBatting ? null : _myPitching.CurrentPitcherId, userBatting);
+            if (segment != null || !userBatting || _defenseStarted || last.OutsAfter < 3) return segment;
+
+            var (inning, half) = PlayByPlayGenerator.NextHalf(last.Inning, last.HalfInning);
+            if (PlayByPlayGenerator.HomeWinsInBottom(inning, half, score.AwayScore, score.HomeScore)) return null;
+            _defenseStarted = true;
+            string leadoff = BattingOrder.IdFor("away_b1", _generated.AwayNinthLeadoffOrder);
+            return generator.StartHalf(path, inning, half, leadoff, _myPitching.CurrentPitcherId, userBatting: false);
+        }
+
+        /// <summary>
+        /// 내 구단 투수 운용 상태: 선발(home_sp)이 마운드에 있고, 벤치·불펜 자리의 선수 사본(ID = 장면 자리)을 대기 명단으로 둔다.
+        /// 선수단이 실려 있으면 그 선수 데이터를, 없으면 더미 표시 정보로 만든 선수를 쓴다. 원본 선수단은 건드리지 않는다.
+        /// </summary>
+        InGameRoster BuildMyPitching()
+        {
+            var my = _roster.MyTeam;
+            var pool = _roster.GetBench(my).Select(e => DataFor(e.PlayerId, RosterRole.Bench, e.Role))
+                .Concat(_roster.GetBullpen(my).Select(e => DataFor(e.PlayerId, RosterRole.Bullpen, e.Role)));
+            return new InGameRoster(MyStarterId, pool);
+
+            PlayerData DataFor(string sceneId, RosterRole role, string position)
+            {
+                var data = (_roster as ScenarioRosterSource)?.Resolve(sceneId);
+                var copy = data != null ? data.CloneAs(data.Role, data.Order, data.Position)
+                    : new PlayerData { Name = _roster.GetPlayer(sceneId).Name, Role = role, Position = position };
+                copy.Id = sceneId;
+                return copy;
+            }
+        }
+
+        /// <summary>
+        /// 투수 교체: 수비 작전 대기(1-1) 중 지금 투수를 강판하고 불펜 투수를 올린다. 이 타석의 남은 투구부터 새 투수가 던지고,
+        /// 투수 카드는 즉시 새 투수로 바뀐다. 강판된 투수는 재등판할 수 없다 (<see cref="InGameRoster"/>).
+        /// </summary>
+        /// <returns>바꿨으면 true. 수비 작전 대기가 아니거나 올릴 수 없는 선수(야수·강판·지금 투수)면 false.</returns>
+        public bool ChangePitcher(string pitcherId)
+        {
+            if (!CanChangePitcher || !_myPitching.CanBringIn(pitcherId)) return false;
+            string from = _myPitching.CurrentPitcherId;
+            var played = _events.Take(_branch.AfterIndex + 1).ToList();
+            _myPitching.BringIn(pitcherId);
+            _branch = new PlayByPlayGenerator(_calculator, TacticRandom).Relieve(played, pitcherId, userBatting: false);
+            _pitchingChanges.Add((_branch.AfterIndex, from, pitcherId));
+            _previewPitching = false;
+            CloseBullpen();
+            MarkBullpen();
+            Render();
+            RenderControls();
+            return true;
+        }
+
+        /// <summary>[투수 교체]: 불펜 모달을 연다. 교체할 수 없는 상황이면 무시.</summary>
+        public void OpenBullpen()
+        {
+            if (!CanChangePitcher) return;
+            _bullpenOpen = true;
+            _bullpenModal.style.display = DisplayStyle.Flex;
+            RenderBullpen();
+        }
+
+        public void CloseBullpen()
+        {
+            _bullpenOpen = false;
+            if (_bullpenModal != null) _bullpenModal.style.display = DisplayStyle.None;
+        }
+
+        /// <summary>모달 목록: 대기 명단의 투수만 (야수 제외). 강판된 투수는 꺼진 채 "재등판 불가"로 보인다.</summary>
+        void RenderBullpen()
+        {
+            int at = _branch.AfterIndex;
+            string current = _myPitching.CurrentPitcherId;
+            _bullpenCurrent.text = $"현재 투수 · {NameOf(current)} · {TacticText.StaminaText(PitcherStateAt(current, at))} · " +
+                                   $"{PitcherStateAt(current, at).PitchCount}구";
+            _bullpenList.Clear();
+            var pitchers = _myPitching.BullpenPitchers;
+            if (pitchers.Count == 0)
+            {
+                var empty = new Label("대기 중인 투수가 없습니다.");
+                empty.AddToClassList("bullpen-empty");
+                _bullpenList.Add(empty);
+            }
+            foreach (var p in pitchers)
+            {
+                string id = p.Id;
+                bool used = _myPitching.IsUsed(id);
+                var info = _roster.GetPlayer(id);
+                var row = new Button(() => ChangePitcher(id)) { name = "bullpen-pick-" + id, text = "" };
+                row.AddToClassList("btn");
+                row.AddToClassList("bullpen-row");
+                row.EnableInClassList("bullpen-row--used", used);
+                var name = new Label($"{info.Name} · {info.Position} · {info.Handedness}");
+                name.AddToClassList("bullpen-row__name");
+                var stats = new Label(used ? "강판 · 재등판 불가"
+                    : $"{info.SeasonLine} · {TacticText.StaminaText(PitcherStateAt(id, at))}");
+                stats.AddToClassList("bullpen-row__stats");
+                row.Add(name);
+                row.Add(stats);
+                row.SetEnabled(!used);
+                _bullpenList.Add(row);
+            }
+        }
+
+        /// <summary>좌측 불펜 칸: 등판 중·강판 표시.</summary>
+        void MarkBullpen()
+        {
+            foreach (var row in _bullpen.Children())
+            {
+                var id = row.userData as string;
+                var state = row.Q<Label>(className: "roster-state");
+                if (_myPitching.IsUsed(id)) state.text = "강판";
+                else if (id == _myPitching.CurrentPitcherId) state.text = "등판 중";
+            }
         }
 
         /// <summary>작전 버튼에 포인터를 올렸을 때 설명 미리보기. null이면 기본 안내.</summary>
@@ -454,7 +639,7 @@ namespace DailyFranchise.UI
             _gameEnd.clicked += RequestExit;
             _auto.clicked += () => _playback.TogglePlay();
 
-            // 감독 개입 버튼: 승부처에서만 켜진다. 대타·투수 교체는 이번 범위 밖이라 계속 비활성.
+            // 감독 개입 버튼: 승부처에서만 켜진다.
             _tactics = root.Q("tactics");
             _tacticsTitle = root.Q<Label>("tactics-title");
             _tacticDesc = root.Q<Label>("tactic-desc");
@@ -462,6 +647,16 @@ namespace DailyFranchise.UI
             BindTactic("tactic-default", TacticKind.Default);
             BindTactic("tactic-swing", TacticKind.SwingAway);
             BindTactic("tactic-squeeze", TacticKind.SqueezeBunt);
+
+            // 투수 교체: 수비 이닝 작전 대기에서만 켜진다. 대타는 아직 범위 밖이라 계속 비활성.
+            _pitchingButton = root.Q<Button>("tactic-pitching");
+            _pitchingButton.clicked += OpenBullpen;
+            _pitchingButton.RegisterCallback<PointerEnterEvent>(_ => { _previewPitching = true; RenderTactics(); });
+            _pitchingButton.RegisterCallback<PointerLeaveEvent>(_ => { _previewPitching = false; RenderTactics(); });
+            _bullpenModal = root.Q("bullpen-modal");
+            _bullpenList = root.Q("bullpen-list");
+            _bullpenCurrent = root.Q<Label>("bullpen-current");
+            root.Q<Button>("bullpen-cancel").clicked += CloseBullpen;
 
             // 디버그 전용 시나리오 탭
             _scenarioTabs.Clear();
@@ -495,8 +690,13 @@ namespace DailyFranchise.UI
             var branch = _branch;
             bool open = branch != null && _playback.AwaitingDecision;
             var chosen = ChosenTactic;
+            bool defense = open && AwaitingDefenseDecision;
             _tactics.EnableInClassList("tactics--open", open);
-            _tacticsTitle.text = open ? "감독 개입 · 작전을 선택하세요" : "감독 개입";
+            _tacticsTitle.text = defense ? "감독 개입 · 수비 · 승부 또는 투수 교체"
+                : open ? "감독 개입 · 작전을 선택하세요" : "감독 개입";
+            bool canChange = CanChangePitcher;
+            _pitchingButton.SetEnabled(canChange);
+            _pitchingButton.EnableInClassList("btn--tactic-available", canChange);
 
             foreach (var pair in _tacticButtons)
             {
@@ -506,28 +706,47 @@ namespace DailyFranchise.UI
                 pair.Value.EnableInClassList("btn--active", !open && chosen == pair.Key);
             }
 
-            if (open && _previewTactic.HasValue && branch.Offers(_previewTactic.Value))
+            var decision = open ? _events[branch.AfterIndex] : null;
+            // 수비 중 교체했으면 결정구는 새 투수가 던진다.
+            string moundId = defense ? _myPitching.CurrentPitcherId : decision?.PitcherId;
+            string pitcherLine = open ? TacticText.PitcherLine(NameOf(moundId), StateOf(moundId)) : null;
+
+            if (open && _previewPitching && canChange)
+            {
+                _tacticDesc.text = TacticText.PitchingChangeDetail + "\n" + pitcherLine;
+            }
+            else if (open && _previewTactic.HasValue && branch.Offers(_previewTactic.Value))
             {
                 var t = _previewTactic.Value;
-                var context = branch[t].IsGamble ? _calculator.DecisionContext(branch, _events) : null;
+                var situation = MatchupSituation.After(decision);
+                var context = defense ? _calculator.ContextFor(decision.BatterId, moundId, situation)
+                    : branch[t].IsGamble ? _calculator.DecisionContext(branch, _events) : null;
                 var basis = TacticText.Basis(context);
                 var adjustments = TacticText.Adjustments(_calculator.Adjustments(context));
-                _tacticDesc.text = TacticText.Detail(t) + "\n" + (basis != null ? basis + "\n" : "") +
-                                   (adjustments != null ? adjustments + "\n" : "") +
-                                   TacticText.Odds(branch[t], TacticSuccessRate(t));
+                string odds = defense
+                    ? TacticText.AllowedOdds(_calculator.HitProbability(decision.BatterId, moundId, situation))
+                    : TacticText.Odds(branch[t], TacticSuccessRate(t));
+                _tacticDesc.text = (defense ? TacticText.DefenseDetail : TacticText.Detail(t)) + "\n" +
+                                   (basis != null ? basis + "\n" : "") +
+                                   (pitcherLine != null ? pitcherLine + "\n" : "") +
+                                   (adjustments != null ? adjustments + "\n" : "") + odds;
             }
+            else if (defense)
+                _tacticDesc.text = "수비 이닝입니다. [기본 진행]으로 승부하거나 [투수 교체]로 불펜을 기용하세요.\n" + pitcherLine;
             else if (open)
                 _tacticDesc.text = "승부처입니다. 버튼에 포인터를 올리면 실행 조건, 성공 이득, 실패 위험, 성공 확률을 볼 수 있습니다.";
             else if (chosen.HasValue)
                 _tacticDesc.text = "선택한 작전 · " + TacticText.Detail(chosen.Value) + "\n" +
                                    (TacticRevealed ? TacticText.OutcomeLine(chosen.Value, TacticResult.Value) : "결과 대기 중");
             else
-                _tacticDesc.text = "승부처가 오면 작전을 고를 수 있습니다. 대타·투수 교체는 아직 지원하지 않습니다.";
+                _tacticDesc.text = "승부처가 오면 작전을 고를 수 있습니다. 투수 교체는 내 구단 수비 이닝에서 쓸 수 있습니다.";
         }
 
-        /// <summary>Play-by-Play 순환이 3아웃으로 끝나 화면이 마지막 투구에 와 있다 (다음은 [경기 종료]).</summary>
+        /// <summary>
+        /// Play-by-Play 순환이 끝나(수비 반 이닝 3아웃·끝내기·말 공격 생략) 화면이 마지막 투구에 와 있다 (다음은 [경기 종료]).
+        /// </summary>
         public bool InningEndAwaitingExit =>
-            PlayByPlay && _decisions.Count > 0 && _branch == null && _playback.IsAtEnd && _events[_events.Count - 1].OutsAfter >= 3;
+            PlayByPlay && _decisions.Count > 0 && _branch == null && _playback.IsAtEnd;
 
         /// <summary>작전 결과는 분기 직후 투구가 화면에 나온 뒤에 밝힌다.</summary>
         bool TacticRevealed => _decisions.Count > 0 && _playback.Index > LastDecision.Value.AfterIndex;
@@ -626,16 +845,21 @@ namespace DailyFranchise.UI
             _statusInning.text = inningOver
                 ? $"{half} · 3아웃 · 이닝 종료"
                 : $"{half} · {PitchPresentation.OutsText(st.Outs)} · {st.Runners}";
-            _statusCount.text = inningOver ? $"공수교대 · 다음 {NextHalfText(s)}"
+            _statusCount.text = InningEndAwaitingExit ? "경기 종료 대기 · [경기 종료]로 결과 반영"
+                : inningOver ? $"공수교대 · 다음 {NextHalfText(s)}"
                 : s.PlateAppearanceEnded ? $"타석 종료 · {PitchPresentation.ResultText(e)}  ·  O {st.Outs}"
                 : $"B {s.Count.Balls}  ·  S {s.Count.Strikes}  ·  O {st.Outs}";
             RenderLineScore(s, st);
 
             // 중앙 헤드라인 (투구 직전 상황 / 작전 대기 / 이닝 종료 시 공수교대)
-            _headlineMain.text = _playback.AwaitingDecision
+            _headlineMain.text = AwaitingDefenseDecision
+                ? $"{half} · 수비 · {PitchPresentation.OutsText(st.Outs)} {st.Runners} · 작전 선택 대기"
+                : _playback.AwaitingDecision
                 ? $"{half} · 승부처 · {PitchPresentation.OutsText(st.Outs)} {st.Runners} · 작전 선택 대기"
+                : InningEndAwaitingExit
+                ? (inningOver ? $"{half} 종료 · 경기 종료 대기" : $"{half} · 경기 종료 대기")
                 : inningOver
-                ? (InningEndAwaitingExit ? $"{half} 종료 · 공수교대 · 경기 종료 대기" : $"{half} 종료 · 공수교대")
+                ? $"{half} 종료 · 공수교대"
                 : $"{half} · {battingTeam.ShortName} 공격 · {PitchPresentation.OutsText(s.OutsBefore)} {s.RunnersBefore}";
             _headlineSub.text = $"{away.ShortName} {st.AwayScore} : {home.ShortName} {st.HomeScore} · " +
                                 ScoreSituation(away.ShortName, st.AwayScore, home.ShortName, st.HomeScore);
@@ -653,8 +877,12 @@ namespace DailyFranchise.UI
                 ? $"아웃 {e.OutsBefore} → {e.OutsAfter}{(e.OutsAfter >= 3 ? " · 이닝 종료" : "")}"
                 : null);
 
-            // 투수·타자
-            var pitcher = _roster.GetPlayer(s.PitcherId);
+            // 투수·타자. 작전 대기 중 투수를 바꿨으면 그 투구 시점부터 새 투수를 보인다.
+            string pitcherId = s.PitcherId;
+            if (_pitchingChanges.Count > 0 && s.Index == _pitchingChanges[_pitchingChanges.Count - 1].afterIndex)
+                pitcherId = _pitchingChanges[_pitchingChanges.Count - 1].to;
+            var pitcher = _roster.GetPlayer(pitcherId);
+            var pitcherState = PitcherStateAt(pitcherId, s.Index);
             var batter = _roster.GetPlayer(s.BatterId);
             _pitcherName.text = pitcher.Name;
             _pitcherTeam.text = $"{_roster.GetTeam(pitcher.Side).ShortName} · {pitcher.Handedness} · {pitcher.Position}";
@@ -662,9 +890,10 @@ namespace DailyFranchise.UI
             _pitcherProfile.text = pitcher.Profile ?? "";
             SetOptional(_pitcherRecord, pitcher.RecordLine);
             RenderKeyStats(_pitcherStats, pitcher.KeyStats);
-            _pitcherLine1.text = $"{pitcher.TodayLine} · {pitcher.PitchesBeforeScene + s.PitcherPitchesInScene}구";
+            _pitcherLine1.text = $"{pitcher.TodayLine} · {pitcherState.PitchCount}구";
             _pitcherLine2.text = e == null ? "직전 구종 —" : $"직전 구종 {e.PitchType} · {e.VelocityKmh:0} km/h";
-            _pitcherFitness.text = pitcher.Fitness.HasValue ? $"체력 {pitcher.Fitness}%" : "체력 —";
+            _pitcherFitness.text = TacticText.StaminaText(pitcherState);
+            _pitcherFitness.EnableInClassList("info-line--alert", pitcherState.Level != FatigueLevel.Fresh);
             _batterName.text = batter.Name;
             _batterTeam.text = $"{_roster.GetTeam(batter.Side).ShortName} · {batter.Handedness} · {batter.Position}";
             _batterSeason.text = batter.SeasonLine;
@@ -827,6 +1056,7 @@ namespace DailyFranchise.UI
             // 작전 선택 기록은 분기점 투구 바로 위(시간상 직후)에 끼우고, 투구와 같이 개수 제한에 포함한다.
             var decisionAt = new Dictionary<int, TacticDecision>();
             foreach (var d in _decisions) decisionAt[d.AfterIndex] = d;
+            var changesAt = _pitchingChanges.ToLookup(c => c.afterIndex);
             int budget = MaxLogEntries;
             for (int i = index; i >= 0 && budget > 0; i--)
             {
@@ -838,6 +1068,16 @@ namespace DailyFranchise.UI
                     _log.Add(note);
                     if (--budget == 0) break;
                 }
+                // 투수 교체는 작전 대기 중(분기점 투구 직후)에 일어나므로 그 투구가 보이면 함께 보인다.
+                foreach (var change in changesAt[i].Reverse())
+                {
+                    var note = new Label($"투수 교체 · {NameOf(change.from)} → {NameOf(change.to)}");
+                    note.AddToClassList("log-entry");
+                    note.AddToClassList("log-entry--tactic");
+                    _log.Add(note);
+                    budget--;
+                }
+                if (budget <= 0) break;
 
                 budget--;
                 var e = events[i];

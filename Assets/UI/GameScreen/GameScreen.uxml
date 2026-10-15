@@ -150,7 +150,7 @@
                         <ui:Button name="tactic-swing" class="btn btn--tactic" text="강공 지시" />
                         <ui:Button name="tactic-squeeze" class="btn btn--tactic" text="스퀴즈 번트" />
                         <ui:Button name="tactic-pinch" class="btn btn--tactic btn--inactive" text="대타 검토" />
-                        <ui:Button name="tactic-pitching" class="btn btn--tactic btn--inactive" text="투수 교체" />
+                        <ui:Button name="tactic-pitching" class="btn btn--tactic" text="투수 교체" />
                     </ui:VisualElement>
                     <ui:VisualElement class="tactics__desc">
                         <ui:Label class="section-title" text="선택 설명" />
@@ -180,6 +180,19 @@
                 <ui:Button name="ctl-inning-end" class="btn btn--control" text="이닝 종료" />
                 <ui:Button name="ctl-game-end" class="btn btn--control" text="경기 종료" />
                 <ui:Button name="ctl-auto" class="btn btn--control btn--auto" text="자동" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- 투수 교체 모달 (수비 이닝 작전 대기 중 [투수 교체]로 연다) -->
+        <ui:VisualElement name="bullpen-modal" class="modal" style="display: none;">
+            <ui:VisualElement class="panel modal__panel">
+                <ui:Label class="panel-title" text="투수 교체 · 불펜" />
+                <ui:Label name="bullpen-current" class="info-line info-line--muted" text="—" />
+                <ui:Label class="section-title" text="등판 가능한 투수 (강판된 투수는 재등판 불가)" />
+                <ui:VisualElement name="bullpen-list" class="modal__list" />
+                <ui:VisualElement class="modal__actions">
+                    <ui:Button name="bullpen-cancel" class="btn btn--control" text="취소" />
+                </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
     </ui:VisualElement>

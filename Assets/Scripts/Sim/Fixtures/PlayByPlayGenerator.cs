@@ -30,6 +30,12 @@ namespace DailyFranchise.Sim.Fixtures
     /// 난수 소비 수는 분배 방식과 무관하다: 기본 진행 = 출루 판정 1 + 결과 1, 강공 = 결과 1 (성공·실패 판정은 BranchPoint).
     ///
     /// 무한 순환 방지: 3아웃이면 즉시 멈추고, 한 반 이닝 타석 수가 <see cref="MaxPlateAppearancesPerHalf"/>에 닿아도 멈춘다.
+    ///
+    /// Phase 19 수비 이닝·투수 교체:
+    /// - <see cref="StartHalf"/>: 새 반 이닝 첫 타석 (0아웃·주자 없음). 내 구단 수비(userBatting = false)면 작전은 기본 진행만.
+    /// - <see cref="Next"/>의 pitcherId: 다음 타석을 던질 투수 (교체 반영). null이면 직전 투구의 투수.
+    /// - <see cref="Relieve"/>: 1-1 작전 대기 중 투수를 바꾸면 남은 투구(결정구)를 새 투수로 다시 만든다. 이미 던진 2구는 그대로.
+    /// - 경기 끝 규칙: <see cref="FinalInning"/>회 이후 말 공격은 홈이 앞서면 하지 않고, 하다가 홈이 앞서면 끝내기로 멈춘다.
     /// </summary>
     public sealed class PlayByPlayGenerator
     {
@@ -40,6 +46,8 @@ namespace DailyFranchise.Sim.Fixtures
         /// <summary>작전 전 구간 길이 (초구 + 2구, 1-1).</summary>
         public const int PitchesBeforeDecision = 2;
         public const double DefaultBatterHeightCm = 180;
+        /// <summary>정규 이닝 마지막 회.</summary>
+        public const int FinalInning = 9;
 
         /// <summary>기본 진행 출루 중 볼넷 몫. 나머지는 안타이며 종류는 <see cref="HitDistributor"/>가 나눈다.</summary>
         public const double WalkShare = 0.20;
@@ -113,27 +121,79 @@ namespace DailyFranchise.Sim.Fixtures
         }
 
         /// <summary>다음 타자의 작전 전 구간과 분기점. 반 이닝이 끝났으면(<see cref="HalfInningContinues"/>가 거짓) null.</summary>
-        public PlateAppearanceSegment Next(IReadOnlyList<PitchEvent> played)
+        /// <param name="pitcherId">다음 타석을 던질 투수. null이면 직전 투구의 투수 그대로.</param>
+        /// <param name="userBatting">내 구단 공격이면 true (강공·스퀴즈 제공), 수비면 기본 진행만.</param>
+        public PlateAppearanceSegment Next(IReadOnlyList<PitchEvent> played, string pitcherId = null, bool userBatting = true)
         {
             if (!HalfInningContinues(played)) return null;
             var last = played[played.Count - 1];
-            var pa = new AtBat(last, BattingOrder.Next(last.BatterId), PlateAppearancesInHalf(played));
+            var pa = new AtBat(last.Inning, last.HalfInning, pitcherId ?? last.PitcherId, BattingOrder.Next(last.BatterId),
+                last.OutsAfter, last.RunnersAfter, PlateAppearancesInHalf(played));
+            return Segment(pa, played.Count, userBatting);
+        }
 
+        /// <summary>새 반 이닝의 첫 타석 (0아웃·주자 없음). 구간은 played 뒤에 이어 붙인다.</summary>
+        public PlateAppearanceSegment StartHalf(IReadOnlyList<PitchEvent> played, int inning, HalfInning half,
+            string batterId, string pitcherId, bool userBatting)
+        {
+            if (played == null) throw new ArgumentNullException(nameof(played));
+            if (BattingOrder.OrderOf(batterId) == null) throw new ArgumentException($"타순 자리 ID가 아니다: {batterId}", nameof(batterId));
+            if (pitcherId == null) throw new ArgumentNullException(nameof(pitcherId));
+            var pa = new AtBat(inning, half, pitcherId, batterId, 0, BaseState.Empty, 0);
+            return Segment(pa, played.Count, userBatting);
+        }
+
+        /// <summary>
+        /// 1-1 작전 대기 중 투수 교체: 마지막 투구가 이 타석의 작전 전 구간(1-1)이어야 한다. 남은 투구는 새 투수가 던지는
+        /// 분기점(AfterIndex = 마지막 투구)을 새로 만든다. 난수는 쓰지 않는다 (작전을 고를 때 쓴다).
+        /// </summary>
+        public BranchPoint Relieve(IReadOnlyList<PitchEvent> played, string newPitcherId, bool userBatting)
+        {
+            if (played == null || played.Count < PitchesBeforeDecision) throw new ArgumentException("작전 전 구간이 없다.", nameof(played));
+            if (newPitcherId == null) throw new ArgumentNullException(nameof(newPitcherId));
+            var last = played[played.Count - 1];
+            if (last.Outcome != PlateAppearanceOutcome.None || last.CountAfter.Balls != 1 || last.CountAfter.Strikes != 1)
+                throw new ArgumentException("1-1 작전 대기 중에만 투수를 바꿀 수 있다.", nameof(played));
+            var pa = new AtBat(last.Inning, last.HalfInning, newPitcherId, last.BatterId,
+                last.OutsAfter, last.RunnersAfter, PlateAppearancesInHalf(played));
+            return new BranchPoint { AfterIndex = played.Count - 1, Options = OptionsFor(pa, userBatting) };
+        }
+
+        /// <summary>다음 반 이닝 (N회초 → N회말, N회말 → N+1회초).</summary>
+        public static (int inning, HalfInning half) NextHalf(int inning, HalfInning half) =>
+            half == HalfInning.Top ? (inning, HalfInning.Bottom) : (inning + 1, HalfInning.Top);
+
+        /// <summary><see cref="FinalInning"/>회 이후 말 공격에서 홈이 앞선다 (말 공격 생략 또는 끝내기).</summary>
+        public static bool HomeWinsInBottom(int inning, HalfInning half, int awayScore, int homeScore) =>
+            inning >= FinalInning && half == HalfInning.Bottom && homeScore > awayScore;
+
+        PlateAppearanceSegment Segment(AtBat pa, int startIndex, bool userBatting)
+        {
             var events = new List<PitchEvent>
             {
                 pa.Pitch(0, PitchResult.CalledStrike, Count.Zero),
                 pa.Pitch(1, PitchResult.Ball, new Count(0, 1)),
             };
+            return new PlateAppearanceSegment
+            {
+                BatterId = pa.BatterId,
+                Events = events,
+                Branch = new BranchPoint { AfterIndex = startIndex + PitchesBeforeDecision - 1, Options = OptionsFor(pa, userBatting) },
+            };
+        }
 
+        Dictionary<TacticKind, TacticBranch> OptionsFor(AtBat pa, bool userBatting)
+        {
             var options = new Dictionary<TacticKind, TacticBranch>
             {
                 [TacticKind.Default] = new TacticBranch { Success = () => pa.Finish(RollDefault(pa)) },
-                [TacticKind.SwingAway] = new TacticBranch
-                {
-                    SuccessRate = Fixture8thBottomTactics.SwingAwaySuccessRate,
-                    Success = () => pa.Finish(Roll(HitTable(MixFor(pa, HitDistributor.PowerBaseline), 0))),
-                    Failure = () => pa.Finish(Roll(SwingOuts)),
-                },
+            };
+            if (!userBatting) return options; // 수비: 상대 타자에게 작전을 낼 수 없다.
+            options[TacticKind.SwingAway] = new TacticBranch
+            {
+                SuccessRate = Fixture8thBottomTactics.SwingAwaySuccessRate,
+                Success = () => pa.Finish(Roll(HitTable(MixFor(pa, HitDistributor.PowerBaseline), 0))),
+                Failure = () => pa.Finish(Roll(SwingOuts)),
             };
             if (pa.Runners.Third != null && pa.Outs < 2)
             {
@@ -144,13 +204,7 @@ namespace DailyFranchise.Sim.Fixtures
                     Failure = () => pa.Finish(PlayOutcome.FailedSqueeze),
                 };
             }
-
-            return new PlateAppearanceSegment
-            {
-                BatterId = pa.BatterId,
-                Events = events,
-                Branch = new BranchPoint { AfterIndex = played.Count + PitchesBeforeDecision - 1, Options = options },
-            };
+            return options;
         }
 
         PlayOutcome RollDefault(AtBat pa)
@@ -213,15 +267,15 @@ namespace DailyFranchise.Sim.Fixtures
             public readonly int Outs;
             public readonly BaseState Runners;
 
-            public AtBat(PitchEvent previous, string batterId, int variant)
+            public AtBat(int inning, HalfInning half, string pitcherId, string batterId, int outs, BaseState runners, int variant)
             {
-                _inning = previous.Inning;
-                _half = previous.HalfInning;
+                _inning = inning;
+                _half = half;
                 _variant = variant;
                 BatterId = batterId;
-                PitcherId = previous.PitcherId;
-                Outs = previous.OutsAfter;
-                Runners = previous.RunnersAfter;
+                PitcherId = pitcherId;
+                Outs = outs;
+                Runners = runners;
                 _zone = ZoneRuleConfig.ProvisionalKbo.ZoneFor(HeightFor(batterId));
             }
 

@@ -900,3 +900,67 @@ Label {
     color: #2A0F27;
     -unity-font-style: bold;
 }
+
+/* ───────── 투수 교체 모달 (불펜) ───────── */
+.modal {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.6);
+}
+
+.modal__panel {
+    width: 680px;
+    padding: 20px;
+}
+
+.modal__list {
+    margin-top: 6px;
+}
+
+.modal__actions {
+    flex-direction: row;
+    justify-content: flex-end;
+    margin-top: 12px;
+}
+
+.unity-button.bullpen-row {
+    height: 52px;
+    margin: 0 0 8px 0;
+    padding: 0 14px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.bullpen-row__name {
+    font-size: 17px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.bullpen-row__stats {
+    font-size: 14px;
+    color: var(--muted);
+    -unity-text-align: middle-right;
+}
+
+.bullpen-row--used .bullpen-row__stats {
+    color: var(--strike);
+}
+
+.bullpen-empty {
+    height: 40px;
+    font-size: 15px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+/* 체력 저하·고갈 경고 (투수 카드) */
+.info-line--alert {
+    color: var(--strike);
+}

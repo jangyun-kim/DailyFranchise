@@ -51,6 +51,13 @@ namespace DailyFranchise.Sim.Fixtures
         public int HomeErrors => Early.HomeErrors + EighthTop.Errors;
 
         public GameScore ScoreBefore => new GameScore(Fixture.AwayScoreBefore, Fixture.HomeScoreBefore);
+
+        /// <summary>
+        /// 9회초 원정 선두 타자 타순 (1~9). 퀵 시뮬레이션은 타순을 추적하지 않으므로 1~8회 원정 타석 수를
+        /// 아웃 24개 + 안타 + 볼넷 + 홈 실책으로 어림해 이어 간다. 난수를 쓰지 않아 같은 경기면 늘 같다.
+        /// </summary>
+        public int AwayNinthLeadoffOrder =>
+            (3 * FixtureGenerator.DecisionInning + AwayHits + AwayWalks + HomeErrors) % BattingOrder.Size + 1;
     }
 
     /// <summary>
