@@ -149,8 +149,9 @@ namespace DailyFranchise.Sim.Data
             Id = p.Id, Name = p.Name, Team = p.Team, Position = position, Throws = p.Throws, Bats = p.Bats,
             Role = role, Order = order, Memo = p.Memo,
             BattingAverage = p.BattingAverage, OnBasePercentage = p.OnBasePercentage, HomeRuns = p.HomeRuns,
-            Ops = p.Ops, StolenBases = p.StolenBases,
+            Ops = p.Ops, StolenBases = p.StolenBases, ScoringPositionAverage = p.ScoringPositionAverage,
             Era = p.Era, OpponentAverage = p.OpponentAverage, Wins = p.Wins, Losses = p.Losses, Saves = p.Saves, Holds = p.Holds,
+            HomeRunsPer9 = p.HomeRunsPer9,
         };
     }
 }

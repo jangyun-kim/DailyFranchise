@@ -416,14 +416,15 @@ namespace DailyFranchise.UI.Tests
                 yield return null;
                 var desc = root.Q<Label>("tactic-desc").text;
                 Assert.That(desc, Does.Contain("근거 · 성지환 타율 .318 vs 염태준 평균자책 3.21 · 득점권"));
+                Assert.That(desc, Does.Contain("보정 · 플래툰 열세(좌투 vs 좌타) -5% · 득점권 클러치 +7%"), "Phase 17 보정 내역");
                 Assert.That(desc, Does.EndWith(TacticText.Odds(branch[tactic], rate)));
                 var issues = LayoutChecker.Check(root.Q("screen"));
                 Assert.That(issues, Is.Empty, $"[{tactic} 설명]\n" + string.Join("\n", issues));
             }
-            Assert.That(root.Q<Label>("tactic-desc").text, Does.EndWith("성공 확률 52% · 실패 48%"));
+            Assert.That(root.Q<Label>("tactic-desc").text, Does.EndWith("성공 확률 51% · 실패 49%"), "Phase 17: 좌투 vs 좌타 -5%, 클러치 +7%");
             game.PreviewTactic(null);
 
-            // 난수 0.6: 고정 60%였다면 실패지만, 계산된 61%로는 성공.
+            // 난수 0.6: 고정 60%였다면 실패지만, 계산된 약 60.4%(표시 60%)로는 성공.
             Assert.That(squeeze, Is.GreaterThan(0.6));
             game.TacticRandom = new ScriptedRandom(0.6);
             Assert.That(game.ChooseTactic(TacticKind.SqueezeBunt), Is.True);

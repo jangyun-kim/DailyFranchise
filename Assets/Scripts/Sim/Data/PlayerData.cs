@@ -51,6 +51,11 @@ namespace DailyFranchise.Sim.Data
         public int HomeRuns;
         public double Ops;
         public int StolenBases;
+        /// <summary>득점권 타율. 0이면 기록 없음 (득점권 보정은 리그 기본값).</summary>
+        public double ScoringPositionAverage;
+
+        /// <summary>장타율 = OPS − 출루율. 둘 중 하나라도 없으면 0 (기록 없음).</summary>
+        public double SluggingPercentage => Ops > 0 && OnBasePercentage > 0 ? Ops - OnBasePercentage : 0;
 
         // 투수 시즌 기록
         public double Era;
@@ -60,6 +65,8 @@ namespace DailyFranchise.Sim.Data
         public int Losses;
         public int Saves;
         public int Holds;
+        /// <summary>9이닝당 피홈런. 0이면 기록 없음 (타구 분배는 리그 평균).</summary>
+        public double HomeRunsPer9;
 
         public bool IsPitcher => Role == RosterRole.Starter || Role == RosterRole.Bullpen;
     }

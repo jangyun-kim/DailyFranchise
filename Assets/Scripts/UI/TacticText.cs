@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using DailyFranchise.Sim;
 using DailyFranchise.Sim.Fixtures;
 
@@ -57,6 +59,16 @@ namespace DailyFranchise.UI
             string avg = b.BattingAverage.ToString(b.BattingAverage < 1 ? ".000" : "0.000", inv);
             string text = $"근거 · {b.Name} 타율 {avg} vs {p.Name} 평균자책 {p.Era.ToString("0.00", inv)}";
             return context.Situation.RunnersInScoringPosition ? text + " · 득점권" : text;
+        }
+
+        /// <summary>
+        /// 보정 내역 줄: "보정 · 플래툰 열세(좌투 vs 좌타) -5% · 득점권 클러치 +7%" (안타 확률 기준 상대 변화).
+        /// 적용된 보정이 없으면 null.
+        /// </summary>
+        public static string Adjustments(IReadOnlyList<MatchupAdjustment> adjustments)
+        {
+            if (adjustments == null || adjustments.Count == 0) return null;
+            return "보정 · " + string.Join(" · ", adjustments.Select(a => a.Text));
         }
 
         /// <summary>작전 결과 한 단어. 기본 진행은 판정이 없으므로 "개입 없음".</summary>

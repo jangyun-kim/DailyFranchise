@@ -64,19 +64,25 @@ namespace DailyFranchise.Sim.Tests
         [Test]
         public void 샘플_대결의_타석_확률과_작전_성공률을_공식대로_계산한다()
         {
-            // 성지환(.318 / .391) vs 염태준(3.21 / .238), 1사 1·3루 (득점권 +5%)
-            var calc = new MatchupCalculator(new Lookup(Batter("b", 0.318, 0.391), Pitcher("p", 3.21, 0.238)));
+            // 성지환(좌타 .318 / .391, 득점권 .341) vs 염태준(좌투 3.21 / .238), 1사 1·3루
+            // Phase 17 기본 보정: 플래툰 좌투 vs 좌타 −5% → 득점권 클러치 .341 / .318 − 1 (≈ +7.2%)
+            var batter = Batter("b", 0.318, 0.391);
+            batter.Bats = Hand.Left;
+            batter.ScoringPositionAverage = 0.341;
+            var pitcher = Pitcher("p", 3.21, 0.238);
+            pitcher.Throws = Hand.Left;
+            var calc = new MatchupCalculator(new Lookup(batter, pitcher));
             double b = (2 * 0.318 + 0.391) / 3;
             double p = (0.238 + 0.270 * 3.21 / 4.30) / 2;
-            double h = (b + p) / 2 * 1.05;
+            double h = (b + p) / 2 * 0.95 * (0.341 / 0.318);
             Assert.That(calc.HitProbability("b", "p", Corners), Is.EqualTo(h).Within(Eps));
-            Assert.That(calc.HitProbability("b", "p", Empty), Is.EqualTo((b + p) / 2).Within(Eps), "주자 없으면 보정 없음");
+            Assert.That(calc.HitProbability("b", "p", Empty), Is.EqualTo((b + p) / 2 * 0.95).Within(Eps), "주자 없으면 플래툰만");
 
             double r = h / 0.2825;
             Assert.That(calc.TacticSuccessRate(TacticKind.SwingAway, 0.5, "b", "p", Corners), Is.EqualTo(0.5 * r).Within(Eps));
             Assert.That(calc.TacticSuccessRate(TacticKind.SqueezeBunt, 0.6, "b", "p", Corners), Is.EqualTo(0.6 * (1 + 0.5 * (r - 1))).Within(Eps));
-            Assert.That(Math.Round(0.5 * r * 100), Is.EqualTo(52));
-            Assert.That(Math.Round(0.6 * (1 + 0.5 * (r - 1)) * 100), Is.EqualTo(61));
+            Assert.That(Math.Round(0.5 * r * 100), Is.EqualTo(51));
+            Assert.That(Math.Round(0.6 * (1 + 0.5 * (r - 1)) * 100), Is.EqualTo(60));
         }
 
         [Test]
@@ -176,11 +182,13 @@ namespace DailyFranchise.Sim.Tests
             Assert.That(new MatchupCalculator(players, new[] { new FixedModifier(p => -5) }).HitProbability("b", "p", Empty), Is.EqualTo(0));
             Assert.That(new MatchupCalculator(players, new[] { new FixedModifier(p => double.NaN) }).HitProbability("b", "p", Empty), Is.EqualTo(0));
 
-            // 기본 보정은 득점권 +5%
+            // 기본 보정은 플래툰 → 득점권 클러치 (Phase 17). 두 선수 모두 우(기본값) → 우투 vs 우타 −3%, 득점권 기록 없음 → +5%
             var defaults = new MatchupCalculator(players);
-            Assert.That(defaults.Modifiers.Single(), Is.InstanceOf<ScoringPositionModifier>());
-            Assert.That(defaults.HitProbability("b", "p", Corners), Is.EqualTo(raw * 1.05).Within(Eps));
-            Assert.That(defaults.HitProbability("b", "p", new MatchupSituation(2, new BaseState("r1", null, null))), Is.EqualTo(raw).Within(Eps), "1루만은 득점권 아님");
+            Assert.That(defaults.Modifiers.Select(m => m.GetType()), Is.EqualTo(new[] { typeof(PlatoonModifier), typeof(ClutchModifier) }));
+            Assert.That(defaults.HitProbability("b", "p", Corners), Is.EqualTo(raw * 0.97 * 1.05).Within(Eps));
+            Assert.That(defaults.HitProbability("b", "p", new MatchupSituation(2, new BaseState("r1", null, null))), Is.EqualTo(raw * 0.97).Within(Eps), "1루만은 득점권 아님");
+            // 이전 일괄 득점권 보정도 그대로 끼울 수 있다.
+            Assert.That(new MatchupCalculator(players, new[] { new ScoringPositionModifier() }).HitProbability("b", "p", Corners), Is.EqualTo(raw * 1.05).Within(Eps));
 
             Assert.Throws<ArgumentException>(() => new MatchupCalculator(players, new IMatchupModifier[] { null }));
         }

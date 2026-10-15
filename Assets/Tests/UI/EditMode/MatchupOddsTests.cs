@@ -50,9 +50,11 @@ namespace DailyFranchise.UI.Tests
             double squeeze = calc.TacticSuccessRate(f.Branch, f.Events, TacticKind.SqueezeBunt);
             Assert.That(swing, Is.Not.EqualTo(Fixture8thBottomTactics.SwingAwaySuccessRate), "고정 50%가 아님");
             Assert.That(squeeze, Is.Not.EqualTo(Fixture8thBottomTactics.SqueezeSuccessRate), "고정 60%가 아님");
-            Assert.That(TacticText.Odds(f.Branch[TacticKind.SwingAway], swing), Is.EqualTo("성공 확률 52% · 실패 48%"));
-            Assert.That(TacticText.Odds(f.Branch[TacticKind.SqueezeBunt], squeeze), Is.EqualTo("성공 확률 61% · 실패 39%"));
+            // Phase 17: 좌투 vs 좌타 플래툰 −5%와 성지환 득점권 클러치(.341 / .318)가 반영된다.
+            Assert.That(TacticText.Odds(f.Branch[TacticKind.SwingAway], swing), Is.EqualTo("성공 확률 51% · 실패 49%"));
+            Assert.That(TacticText.Odds(f.Branch[TacticKind.SqueezeBunt], squeeze), Is.EqualTo("성공 확률 60% · 실패 40%"));
             Assert.That(TacticText.Basis(ctx), Is.EqualTo("근거 · 성지환 타율 .318 vs 염태준 평균자책 3.21 · 득점권"));
+            Assert.That(TacticText.Adjustments(calc.Adjustments(ctx)), Is.EqualTo("보정 · 플래툰 열세(좌투 vs 좌타) -5% · 득점권 클러치 +7%"));
         }
 
         [Test]

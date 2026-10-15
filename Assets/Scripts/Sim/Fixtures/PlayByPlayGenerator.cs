@@ -20,11 +20,14 @@ namespace DailyFranchise.Sim.Fixtures
     ///
     /// 타석 결과 (작전 후속 구간, 모두 <see cref="PitchEventValidator"/> 규칙을 지킨다):
     /// - 기본 진행: 출루 확률 = <see cref="MatchupCalculator.HitProbability(string, string, MatchupSituation)"/>
-    ///   ([<see cref="MinOnBaseRate"/>, <see cref="MaxOnBaseRate"/>]로 자름). 출루면 볼넷·단타·2루타·3루타·홈런, 아니면
-    ///   삼진·땅볼·병살·뜬공·희생플라이·직선타·내야 뜬공 중 하나 (상황에 안 맞는 결과는 Resolver가 바꾼다).
+    ///   ([<see cref="MinOnBaseRate"/>, <see cref="MaxOnBaseRate"/>]로 자름). 출루면 볼넷(<see cref="WalkShare"/>) 또는 안타,
+    ///   아니면 삼진·땅볼·병살·뜬공·희생플라이·직선타·내야 뜬공 중 하나 (상황에 안 맞는 결과는 Resolver가 바꾼다).
     /// - 강공: 성공 = 장타 위주 안타, 실패 = 병살(가능하면)·뜬공·삼진.
+    /// - 안타 종류(단타·2루타·3루타·홈런)는 <see cref="HitDistributor"/>가 타자 장타율·홈런 수와 투수 피홈런으로 기울인
+    ///   가중치로 뽑는다. 두 선수 모두 데이터가 없으면 이전 고정 분포와 같다.
     /// - 스퀴즈(3루 주자·2아웃 전만): 성공 = 3루 주자 득점·주자 한 루씩·타자 아웃, 실패 = 번트 뜬공 더블 아웃.
     /// 난수는 작전을 고른 순간(후속 구간을 만들 때)에만 소비한다. 다음 타석의 작전 전 구간은 난수를 쓰지 않는다.
+    /// 난수 소비 수는 분배 방식과 무관하다: 기본 진행 = 출루 판정 1 + 결과 1, 강공 = 결과 1 (성공·실패 판정은 BranchPoint).
     ///
     /// 무한 순환 방지: 3아웃이면 즉시 멈추고, 한 반 이닝 타석 수가 <see cref="MaxPlateAppearancesPerHalf"/>에 닿아도 멈춘다.
     /// </summary>
@@ -38,12 +41,8 @@ namespace DailyFranchise.Sim.Fixtures
         public const int PitchesBeforeDecision = 2;
         public const double DefaultBatterHeightCm = 180;
 
-        // 출루 결과 분포 (기본 진행)
-        static readonly (PlayOutcome outcome, double weight)[] OnBase =
-        {
-            (PlayOutcome.Walk, 0.20), (PlayOutcome.Single, 0.55), (PlayOutcome.Double, 0.15),
-            (PlayOutcome.Triple, 0.02), (PlayOutcome.HomeRun, 0.08),
-        };
+        /// <summary>기본 진행 출루 중 볼넷 몫. 나머지는 안타이며 종류는 <see cref="HitDistributor"/>가 나눈다.</summary>
+        public const double WalkShare = 0.20;
 
         // 아웃 결과 분포 (기본 진행)
         static readonly (PlayOutcome outcome, double weight)[] Outs =
@@ -51,12 +50,6 @@ namespace DailyFranchise.Sim.Fixtures
             (PlayOutcome.Strikeout, 0.25), (PlayOutcome.GroundOut, 0.20), (PlayOutcome.DoublePlay, 0.15),
             (PlayOutcome.FlyOut, 0.15), (PlayOutcome.SacrificeFly, 0.10), (PlayOutcome.LineOut, 0.08),
             (PlayOutcome.PopOut, 0.07),
-        };
-
-        // 강공 성공: 장타 위주
-        static readonly (PlayOutcome outcome, double weight)[] PowerHits =
-        {
-            (PlayOutcome.Single, 0.50), (PlayOutcome.Double, 0.28), (PlayOutcome.Triple, 0.04), (PlayOutcome.HomeRun, 0.18),
         };
 
         // 강공 실패
@@ -138,7 +131,7 @@ namespace DailyFranchise.Sim.Fixtures
                 [TacticKind.SwingAway] = new TacticBranch
                 {
                     SuccessRate = Fixture8thBottomTactics.SwingAwaySuccessRate,
-                    Success = () => pa.Finish(Roll(PowerHits)),
+                    Success = () => pa.Finish(Roll(HitTable(MixFor(pa, HitDistributor.PowerBaseline), 0))),
                     Failure = () => pa.Finish(Roll(SwingOuts)),
                 },
             };
@@ -164,18 +157,47 @@ namespace DailyFranchise.Sim.Fixtures
         {
             double p = _calculator.HitProbability(pa.BatterId, pa.PitcherId, new MatchupSituation(pa.Outs, pa.Runners));
             p = Math.Max(MinOnBaseRate, Math.Min(MaxOnBaseRate, p));
-            return Roll(_random.NextDouble() < p ? OnBase : Outs);
+            return Roll(_random.NextDouble() < p ? HitTable(MixFor(pa, HitDistributor.LeagueBaseline), WalkShare) : Outs);
         }
 
-        PlayOutcome Roll((PlayOutcome outcome, double weight)[] table)
+        /// <summary>이 타석 타자·투수의 안타 분포. 둘 다 데이터가 없으면 기본 분포.</summary>
+        HitMix MixFor(AtBat pa, HitMix baseline)
         {
-            double roll = _random.NextDouble() * table.Sum(t => t.weight);
+            var context = _calculator.ContextFor(pa.BatterId, pa.PitcherId, new MatchupSituation(pa.Outs, pa.Runners));
+            return context == null ? baseline : HitDistributor.Distribute(context.Batter, context.Pitcher, baseline);
+        }
+
+        /// <summary>출루 결과표: 볼넷 walkShare + 안타 (1 − walkShare) × 분포. 강공 성공은 walkShare 0.</summary>
+        public static (PlayOutcome outcome, double weight)[] HitTable(HitMix mix, double walkShare)
+        {
+            double hits = 1 - walkShare;
+            return new[]
+            {
+                (PlayOutcome.Walk, walkShare), (PlayOutcome.Single, hits * mix.Single), (PlayOutcome.Double, hits * mix.Double),
+                (PlayOutcome.Triple, hits * mix.Triple), (PlayOutcome.HomeRun, hits * mix.HomeRun),
+            };
+        }
+
+        PlayOutcome Roll((PlayOutcome outcome, double weight)[] table) => Pick(table, _random.NextDouble());
+
+        /// <summary>
+        /// 가중치 표에서 [0, 1) 값 하나로 결과를 고른다. 가중치 0인 항목은 뽑히지 않고, 끝까지 못 고르면(부동소수 오차)
+        /// 가중치가 있는 마지막 항목. 가중치 합이 0 이하·NaN이면 <see cref="ArgumentException"/> (분배기가 미리 막는다).
+        /// </summary>
+        public static PlayOutcome Pick((PlayOutcome outcome, double weight)[] table, double unit)
+        {
+            double total = table.Sum(t => t.weight);
+            if (!(total > 0) || double.IsInfinity(total)) throw new ArgumentException("가중치 합이 0 이하다.", nameof(table));
+            double roll = unit * total;
+            PlayOutcome last = table[0].outcome;
             foreach (var (outcome, weight) in table)
             {
+                if (weight <= 0) continue;
                 if (roll < weight) return outcome;
                 roll -= weight;
+                last = outcome;
             }
-            return table[table.Length - 1].outcome;
+            return last;
         }
 
         /// <summary>타석 하나: 1-1까지의 투구와, 결과를 받아 결정구(들)를 만드는 부분.</summary>

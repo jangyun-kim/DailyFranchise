@@ -722,7 +722,7 @@ Label {
 }
 
 .tactics {
-    height: 320px;
+    height: 372px;
     border-top-width: 1px;
     border-color: var(--line);
     padding-top: 10px;

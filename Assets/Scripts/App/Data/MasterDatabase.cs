@@ -97,12 +97,14 @@ namespace DailyFranchise.App.Data
                     HomeRuns = row.Int("hr"),
                     Ops = row.Double("ops"),
                     StolenBases = row.Int("sb"),
+                    ScoringPositionAverage = row.Double("risp"),
                     Era = row.Double("era"),
                     OpponentAverage = row.Double("baa"),
                     Wins = row.Int("w"),
                     Losses = row.Int("l"),
                     Saves = row.Int("sv"),
                     Holds = row.Int("hld"),
+                    HomeRunsPer9 = row.Double("hr9"),
                 };
                 if (teams.All(t => t.Name != p.Team)) throw new FormatException($"{row.Line}행: 모르는 구단 '{p.Team}'");
                 if (players.Any(x => x.Id == p.Id)) throw new FormatException($"{row.Line}행: 선수 ID 중복 '{p.Id}'");

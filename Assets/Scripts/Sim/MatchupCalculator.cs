@@ -46,7 +46,46 @@ namespace DailyFranchise.Sim
         double Adjust(double probability, MatchupContext context);
     }
 
-    /// <summary>득점권(2·3루 주자)에서 안타 확률을 상대적으로 올린다 (기본 +5%).</summary>
+    /// <summary>
+    /// 툴팁에 내역을 보이는 보정. 이 맥락에서 적용되지 않으면 <see cref="Label"/>이 null.
+    /// 보정 크기는 계산기가 적용 전·후 확률로 잰다 (<see cref="MatchupCalculator.Adjustments"/>).
+    /// </summary>
+    public interface IDescribedMatchupModifier : IMatchupModifier
+    {
+        /// <summary>내역 이름 (예: "플래툰 열세(좌투 vs 좌타)"). 적용되지 않으면 null.</summary>
+        string Label(MatchupContext context);
+    }
+
+    /// <summary>보정 하나의 실제 효과 (안타 확률 기준 상대 변화).</summary>
+    public readonly struct MatchupAdjustment
+    {
+        public MatchupAdjustment(string label, double before, double after)
+        {
+            Label = label;
+            Before = before;
+            After = after;
+        }
+
+        public string Label { get; }
+        public double Before { get; }
+        public double After { get; }
+
+        /// <summary>상대 변화 (After / Before − 1). Before가 0이면 0.</summary>
+        public double RelativeChange => Before > 0 ? After / Before - 1 : 0;
+
+        /// <summary>반올림한 % (예: +3, −5).</summary>
+        public int Percent => (int)Math.Round(RelativeChange * 100, MidpointRounding.AwayFromZero);
+
+        /// <summary>"플래툰 우위(우투 vs 좌타) +3%".</summary>
+        public string Text => $"{Label} {(Percent > 0 ? "+" : Percent < 0 ? "-" : "±")}{Math.Abs(Percent)}%";
+
+        public override string ToString() => Text;
+    }
+
+    /// <summary>
+    /// 득점권(2·3루 주자)에서 안타 확률을 일괄로 올린다 (기본 +5%). Phase 17부터 기본 보정은 선수별로 달라지는
+    /// <see cref="ClutchModifier"/>이며, 이 클래스는 단순 일괄 보정이 필요할 때 쓴다.
+    /// </summary>
     public sealed class ScoringPositionModifier : IMatchupModifier
     {
         public readonly double RelativeBonus;
@@ -62,12 +101,96 @@ namespace DailyFranchise.Sim
     }
 
     /// <summary>
+    /// 플래툰(좌우 상성). 타자 타석 방향 vs 투수 투구 방향:
+    /// - 반대 손(우투 vs 좌타, 좌투 vs 우타)·스위치 타자: 타자 우위 <see cref="Advantage"/> (기본 +3%)
+    /// - 우투 vs 우타: <see cref="SameHandPenalty"/> (기본 −3%)
+    /// - 좌투 vs 좌타: <see cref="LeftOnLeftPenalty"/> (기본 −5%, 좌타자는 좌완 공을 볼 기회가 적어 더 약하다)
+    /// 리그 평균 가상 선수(데이터 없음)는 손을 모르므로 보정하지 않는다.
+    /// </summary>
+    public sealed class PlatoonModifier : IDescribedMatchupModifier
+    {
+        public readonly double Advantage;
+        public readonly double SameHandPenalty;
+        public readonly double LeftOnLeftPenalty;
+
+        public PlatoonModifier(double advantage = 0.03, double sameHandPenalty = -0.03, double leftOnLeftPenalty = -0.05)
+        {
+            foreach (var v in new[] { advantage, sameHandPenalty, leftOnLeftPenalty })
+                if (double.IsNaN(v) || v <= -1) throw new ArgumentOutOfRangeException(nameof(advantage), v, "보정은 −100% 초과");
+            Advantage = advantage;
+            SameHandPenalty = sameHandPenalty;
+            LeftOnLeftPenalty = leftOnLeftPenalty;
+        }
+
+        /// <summary>이 대결의 상대 보정. 손을 모르면 0.</summary>
+        public double RelativeBonus(MatchupContext context)
+        {
+            if (!Applies(context)) return 0;
+            var bats = context.Batter.Bats;
+            var throws = context.Pitcher.Throws;
+            if (bats == Hand.Switch || bats != throws) return Advantage;
+            return throws == Hand.Left ? LeftOnLeftPenalty : SameHandPenalty;
+        }
+
+        public double Adjust(double probability, MatchupContext context) => probability * (1 + RelativeBonus(context));
+
+        public string Label(MatchupContext context)
+        {
+            if (!Applies(context)) return null;
+            string bats = context.Batter.Bats == Hand.Switch ? "양" : HandText(context.Batter.Bats);
+            string matchup = $"{HandText(context.Pitcher.Throws)}투 vs {bats}타";
+            return RelativeBonus(context) >= 0 ? $"플래툰 우위({matchup})" : $"플래툰 열세({matchup})";
+        }
+
+        static bool Applies(MatchupContext context) =>
+            context != null && !MatchupCalculator.IsLeagueAverage(context.Batter) && !MatchupCalculator.IsLeagueAverage(context.Pitcher)
+            && context.Pitcher.Throws != Hand.Switch;
+
+        static string HandText(Hand h) => h == Hand.Left ? "좌" : "우";
+    }
+
+    /// <summary>
+    /// 득점권 클러치. 2·3루 주자가 있으면 타자의 (득점권 타율 / 시즌 타율 − 1)만큼 안타 확률을 상대 보정한다
+    /// ([<see cref="MinBonus"/>, <see cref="MaxBonus"/>]로 자름). 득점권 기록이 없는 타자(리그 평균 포함)는
+    /// 리그 기본 <see cref="DefaultBonus"/>(+5%, 이전 일괄 보정과 같다).
+    /// </summary>
+    public sealed class ClutchModifier : IDescribedMatchupModifier
+    {
+        public const double DefaultBonus = 0.05;
+        public const double MinBonus = -0.15;
+        public const double MaxBonus = 0.15;
+
+        /// <summary>득점권이면 적용할 상대 보정, 아니면 0.</summary>
+        public static double RelativeBonus(MatchupContext context)
+        {
+            if (context == null || !context.Situation.RunnersInScoringPosition) return 0;
+            return HasClutchRecord(context.Batter)
+                ? Math.Max(MinBonus, Math.Min(MaxBonus, context.Batter.ScoringPositionAverage / context.Batter.BattingAverage - 1))
+                : DefaultBonus;
+        }
+
+        public static bool HasClutchRecord(PlayerData batter) =>
+            batter != null && IsRate(batter.ScoringPositionAverage) && IsRate(batter.BattingAverage);
+
+        static bool IsRate(double v) => !double.IsNaN(v) && !double.IsInfinity(v) && v > 0 && v <= 1;
+
+        public double Adjust(double probability, MatchupContext context) => probability * (1 + RelativeBonus(context));
+
+        public string Label(MatchupContext context)
+        {
+            if (context == null || !context.Situation.RunnersInScoringPosition) return null;
+            return HasClutchRecord(context.Batter) ? "득점권 클러치" : "득점권";
+        }
+    }
+
+    /// <summary>
     /// 타자·투수 시즌 기록으로 타석 안타(출루) 확률과 작전 성공률을 계산한다. 순수 C#이며 판정(난수)은 하지 않는다.
     /// 공식은 이 클래스 안에만 있어 나중에 세이버메트릭스 공식으로 바꿀 수 있다.
     ///
     /// 1) 타자 안타력  B = (2 × 타율 + 출루율) / 3
     /// 2) 투수 허용률  P = (피안타율 + 리그 타율 × 평균자책 / 리그 평균자책) / 2
-    /// 3) 타석 확률    H = 상황 보정( (B + P) / 2 ), [0, 1]
+    /// 3) 타석 확률    H = 상황 보정( (B + P) / 2 ), [0, 1]. 기본 보정은 플래툰(<see cref="PlatoonModifier"/>) →
+    ///    득점권 클러치(<see cref="ClutchModifier"/>) 순으로 곱한다.
     /// 4) 작전 성공률: 리그 평균 대결(상황 보정 없음)의 확률 H₀ 대비 비율 r = H / H₀ 로 장면 기본 성공률을 늘리고 줄인다.
     ///    강공 = 기본 × r,  스퀴즈(컨택 위주라 덜 민감) = 기본 × (1 + 0.5 × (r − 1)),  [5%, 95%]로 자른다.
     /// 타자·투수 둘 다 데이터가 없으면 계산하지 않고 장면 기본 성공률을 그대로 쓴다. 한쪽만 없으면 그쪽은 리그 평균.
@@ -99,21 +222,29 @@ namespace DailyFranchise.Sim
             if (_modifiers.Any(m => m == null)) throw new ArgumentException("보정에 null이 있다.", nameof(modifiers));
         }
 
-        public static IEnumerable<IMatchupModifier> DefaultModifiers() => new IMatchupModifier[] { new ScoringPositionModifier() };
+        public static IEnumerable<IMatchupModifier> DefaultModifiers() =>
+            new IMatchupModifier[] { new PlatoonModifier(), new ClutchModifier() };
+
+        public const string AverageBatterId = "league-batter";
+        public const string AveragePitcherId = "league-pitcher";
+
+        /// <summary>데이터가 없어 대신 쓰는 리그 평균 가상 선수인가.</summary>
+        public static bool IsLeagueAverage(PlayerData player) =>
+            player == null || player.Id == AverageBatterId || player.Id == AveragePitcherId;
 
         public IReadOnlyList<IMatchupModifier> Modifiers => _modifiers;
 
         /// <summary>리그 평균 타자 (타율·출루율 리그 평균).</summary>
         public static PlayerData AverageBatter => new PlayerData
         {
-            Id = "league-batter", Name = "리그 평균 타자", Role = RosterRole.Lineup,
+            Id = AverageBatterId, Name = "리그 평균 타자", Role = RosterRole.Lineup,
             BattingAverage = LeagueAverage, OnBasePercentage = LeagueOnBase,
         };
 
         /// <summary>리그 평균 투수 (피안타율 = 리그 타율, 평균자책 리그 평균).</summary>
         public static PlayerData AveragePitcher => new PlayerData
         {
-            Id = "league-pitcher", Name = "리그 평균 투수", Role = RosterRole.Bullpen,
+            Id = AveragePitcherId, Name = "리그 평균 투수", Role = RosterRole.Bullpen,
             Era = LeagueEra, OpponentAverage = LeagueAverage,
         };
 
@@ -168,6 +299,25 @@ namespace DailyFranchise.Sim
             double p = Combine(context.Batter, context.Pitcher);
             foreach (var m in _modifiers) p = Clamp01(m.Adjust(p, context));
             return p;
+        }
+
+        /// <summary>
+        /// 보정 내역 (툴팁용). <see cref="IDescribedMatchupModifier"/> 중 이 맥락에 적용되고 확률을 실제로 바꾼 것만,
+        /// 적용 순서대로. 각 항목은 그 보정 직전·직후 확률을 담는다.
+        /// </summary>
+        public IReadOnlyList<MatchupAdjustment> Adjustments(MatchupContext context)
+        {
+            var list = new List<MatchupAdjustment>();
+            if (context == null) return list;
+            double p = Combine(context.Batter, context.Pitcher);
+            foreach (var m in _modifiers)
+            {
+                double next = Clamp01(m.Adjust(p, context));
+                string label = (m as IDescribedMatchupModifier)?.Label(context);
+                if (label != null && next != p) list.Add(new MatchupAdjustment(label, p, next));
+                p = next;
+            }
+            return list;
         }
 
         /// <summary>

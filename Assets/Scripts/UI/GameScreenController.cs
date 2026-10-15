@@ -502,8 +502,11 @@ namespace DailyFranchise.UI
             if (open && _previewTactic.HasValue && branch.Offers(_previewTactic.Value))
             {
                 var t = _previewTactic.Value;
-                var basis = branch[t].IsGamble ? TacticText.Basis(_calculator.DecisionContext(branch, _events)) : null;
+                var context = branch[t].IsGamble ? _calculator.DecisionContext(branch, _events) : null;
+                var basis = TacticText.Basis(context);
+                var adjustments = TacticText.Adjustments(_calculator.Adjustments(context));
                 _tacticDesc.text = TacticText.Detail(t) + "\n" + (basis != null ? basis + "\n" : "") +
+                                   (adjustments != null ? adjustments + "\n" : "") +
                                    TacticText.Odds(branch[t], TacticSuccessRate(t));
             }
             else if (open)
