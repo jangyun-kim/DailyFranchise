@@ -270,6 +270,29 @@ namespace DailyFranchise.App
             return true;
         }
 
+        /// <summary>오프시즌 결산으로 새 시즌이 시작됐다 (로비 다시 그리기용, Phase 27).</summary>
+        public event Action SeasonRolledOver;
+
+        /// <summary>마지막 오프시즌 결산 요약. 이번 실행에서 아직 없으면 null.</summary>
+        public SeasonRollover LastRollover { get; private set; }
+
+        /// <summary>
+        /// 시즌 결산 및 다음 시즌 준비 (Phase 27, <see cref="SeasonState.TransitionToNextSeason"/>): 연도를 넘기고 전적·일정을
+        /// 새로 짠 뒤 바로 저장한다. 예산·팬 만족도·TP·팬덤 슬롯·선수단(이적 기록)은 이월된다.
+        /// 정규시즌이 남았거나 경기 중·전환 중이면 아무것도 하지 않고 null.
+        /// </summary>
+        public SeasonRollover TransitionToNextSeason()
+        {
+            if (_loading || Season.InProgress != null || !Season.IsSeasonFinished) return null;
+            LastRollover = Season.TransitionToNextSeason();
+            LastReport = null; // 직전 경기 재정 변화는 지난 시즌 것
+            LastScore = null;
+            _ = Rosters; // 캡 기준·페이롤 다시 맞추기 (선수단은 그대로)
+            Saves.Save(Season);
+            SeasonRolledOver?.Invoke();
+            return LastRollover;
+        }
+
         /// <returns>경기 화면으로 넘어가면 true. 이미 전환 중이거나, 선수 DB를 읽는 중이거나, 남은 경기가 없으면 false.</returns>
         public bool StartNextGame()
         {

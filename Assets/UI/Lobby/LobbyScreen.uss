@@ -346,6 +346,12 @@ Label {
     -unity-font-style: bold;
 }
 
+/* 정규시즌 종료 뒤 [시즌 결산 및 2027 시즌 준비] (Phase 27) — 같은 폭에 맞춰 글자를 줄인다 */
+.unity-button.btn--primary.btn--offseason {
+    font-size: 16px;
+    white-space: normal;
+}
+
 .unity-button.btn--primary:disabled {
     opacity: 0.45;
 }

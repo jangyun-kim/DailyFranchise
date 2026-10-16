@@ -93,7 +93,7 @@ namespace DailyFranchise.UI.Tests
         {
             var s = SeasonState.CreateDummy();
             for (int i = 0; i < s.Schedule.Count; i++) Play(s, new GameScore(1, 2), Seed + i, null);
-            Assert.That(s.IsSeasonOver, Is.True);
+            Assert.That(s.IsSeasonFinished, Is.True);
             Assert.That(s.NextGame, Is.Null);
             Assert.Throws<InvalidOperationException>(() => PostGameProcessor.Process(s, new GameScore(0, 0), new SeededRandom(Seed), null));
         }

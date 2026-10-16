@@ -52,11 +52,11 @@ namespace DailyFranchise.UI.Tests
             var s = SeasonState.CreateDummy();
             for (int i = 0; i < s.Schedule.Count; i++)
             {
-                Assert.That(s.IsSeasonOver, Is.False);
+                Assert.That(s.IsSeasonFinished, Is.False);
                 s.StartNextGame();
                 s.FinishCurrentGame(new GameScore(3, 3), new SeededRandom(1));
             }
-            Assert.That(s.IsSeasonOver, Is.True);
+            Assert.That(s.IsSeasonFinished, Is.True);
             Assert.That(s.NextGame, Is.Null);
             Assert.Throws<InvalidOperationException>(() => s.StartNextGame());
         }

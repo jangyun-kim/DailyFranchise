@@ -159,6 +159,64 @@ namespace DailyFranchise.UI.Tests
             Assert.That(LobbyRoot().Q<Label>("my-record").text, Does.Contain("진행 3 / 10경기"));
         }
 
+        [UnityTest]
+        public IEnumerator Phase27_일정을_모두_치르면_시즌_결산으로_2027_시즌이_되고_예산은_남는다()
+        {
+            var manager = SeasonManager.Instance;
+            int total = manager.Season.Schedule.Count;
+            for (int i = 0; i < total - 1; i++)
+            {
+                manager.Season.StartNextGame();
+                manager.AdvanceSeason(manager.Season.ScheduleScore(4, 2));
+            }
+            // 마지막 경기는 실제 화면 흐름으로 치르고 로비로 돌아온다.
+            yield return PlayGame(null, 0.5);
+
+            var root = LobbyRoot();
+            var start = root.Q<Button>("start-game");
+            Assert.That(manager.Season.IsSeasonFinished, Is.True);
+            Assert.That(root.Q<Label>("season-title").text, Is.EqualTo("2026 시즌 · 정규시즌 종료"));
+            Assert.That(start.text, Is.EqualTo("시즌 결산 및 2027 시즌 준비"));
+            Assert.That(start.enabledSelf, Is.True);
+            Assert.That(start.ClassListContains("btn--offseason"), Is.True);
+            Assert.That(root.Q<Label>("next-game").text, Does.StartWith("2026 정규시즌 일정이 모두 끝났습니다."));
+            Assert.That(manager.StartNextGame(), Is.False, "일정 종료 뒤 인게임 진입 차단");
+
+            long budget = manager.Season.Budget;
+            int fan = manager.Season.FanApproval;
+            int trust = manager.Season.TrustPoints;
+            int signings = manager.Season.Signings.Count;
+            var me = manager.Season.MyStanding;
+            string final = $"2026 시즌 최종 {me.Rank}위 · {me.Wins}승 {me.Losses}패";
+
+            Submit(start);
+            yield return null;
+
+            Assert.That(manager.Season.Year, Is.EqualTo(2027));
+            Assert.That(root.Q<Label>("season-title").text, Is.EqualTo("2027 시즌 · 5월"));
+            Assert.That(root.Q<Label>("my-record").text, Does.StartWith("1위 · 0승 0패 0무").And.Contains("진행 0 / 10경기"));
+            for (int i = 0; i < 10; i++)
+                Assert.That(StandingRowTexts(root, i).Skip(3).Take(3), Is.EqualTo(new[] { "0", "0", "0" }), $"순위표 {i + 1}행");
+            Assert.That(root.Q<Label>("stat-l10").text, Is.EqualTo("—"));
+            Assert.That(root.Q<Label>("last-result").text, Does.StartWith(final));
+            Assert.That(root.Q<Label>("next-game").text, Does.StartWith("경기 1 · 5.15 (토) · LG 트윈스 vs 삼성 라이온즈"));
+            Assert.That(start.text, Is.EqualTo("다음 경기 시작"));
+            Assert.That(start.ClassListContains("btn--offseason"), Is.False);
+            Assert.That(start.enabledSelf, Is.True);
+            Assert.That((manager.Season.Budget, manager.Season.FanApproval, manager.Season.TrustPoints, manager.Season.Signings.Count),
+                Is.EqualTo((budget, fan, Mathf.Min(trust, FrontOfficeTrust.CarryOver), signings)), "예산·팬·TP·이적 기록 이월");
+
+            // 즉시 저장: 껐다 켜도 2027 시즌 첫 경기부터.
+            var saved = SaveManager.FromJson(File.ReadAllText(TestSavePath));
+            Assert.That((saved.Year, saved.GamesPlayed, saved.Budget), Is.EqualTo((2027, 0, budget)));
+            yield return RestartFromLobby();
+            Assert.That(LobbyRoot().Q<Label>("season-title").text, Is.EqualTo("2027 시즌 · 5월"));
+
+            // 새 시즌 첫 경기도 그대로 치른다.
+            yield return PlayGame(null, 0.5);
+            Assert.That(SeasonManager.Instance.Season.GamesPlayed, Is.EqualTo(1));
+        }
+
         /// <summary>로비에서 경기를 시작해 승부처까지 간 뒤, 고정 난수로 작전을 고르고 끝까지 보낸 다음 [경기 종료].</summary>
         static IEnumerator PlayGame(TacticKind? tactic, double roll)
         {

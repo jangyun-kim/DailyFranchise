@@ -32,6 +32,8 @@ namespace DailyFranchise.App
     /// 재정 현실화(Phase 26): 금액은 "₩ 50억" 꼴, 헤더에 경기당 유지비·직전 경기 순이익, 하단에 관중 수입·유지비·순이익 명세.
     /// 벤치 행·불펜 칩의 [방출]로 위약금(연봉 50%)을 내고 선수를 시장에 돌려보낸다 (선발 타순·로테이션은 불가).
     /// 선수단이 경기를 치를 수 없으면(타순 9명·선발 투수) [다음 경기 시작]을 잠그고 이유를 보인다.
+    /// 오프시즌(Phase 27): 상단 제목은 시즌 연도로 그리고, 정규시즌 일정을 모두 치르면 [다음 경기 시작] 자리에
+    /// [시즌 결산 및 2027 시즌 준비]를 띄워 <see cref="SeasonManager.TransitionToNextSeason"/>을 요청한다.
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class LobbyController : MonoBehaviour
@@ -82,6 +84,7 @@ namespace DailyFranchise.App
             _manager.DatabaseReady += OnDatabaseReady;
             _manager.LineupChanged += OnLineupChanged;
             _manager.StoveChanged += OnStoveChanged;
+            _manager.SeasonRolledOver += OnSeasonRolledOver;
             _selection.Clear();
             _chemistryKey = null;
             Render();
@@ -98,6 +101,7 @@ namespace DailyFranchise.App
                 _manager.DatabaseReady -= OnDatabaseReady;
                 _manager.LineupChanged -= OnLineupChanged;
                 _manager.StoveChanged -= OnStoveChanged;
+                _manager.SeasonRolledOver -= OnSeasonRolledOver;
             }
             _fa?.Detach();
             _fa = null;
@@ -108,6 +112,13 @@ namespace DailyFranchise.App
         }
 
         void OnDatabaseReady() => Render();
+
+        void OnSeasonRolledOver()
+        {
+            _selection.Clear();
+            _notice = null;
+            Render();
+        }
 
         void OnModeClicked() => _manager?.ToggleFullInningMode();
 
@@ -156,6 +167,12 @@ namespace DailyFranchise.App
         {
             var manager = SeasonManager.Instance;
             if (manager == null) return;
+            // 일정을 모두 치렀으면 같은 버튼이 시즌 결산 (결산 뒤 SeasonRolledOver로 다시 그린다).
+            if (manager.Season.IsSeasonFinished)
+            {
+                manager.TransitionToNextSeason();
+                return;
+            }
             // 씬 로드 전에 두 번 눌리지 않도록 즉시 잠근다.
             if (manager.StartNextGame()) _start.SetEnabled(false);
         }
@@ -175,22 +192,32 @@ namespace DailyFranchise.App
             RenderSchedule(season);
             RenderStandings(season);
 
-            Q<Label>("last-result").text = LastResultText(season);
+            Q<Label>("last-result").text = season.LastFinished == null && _manager.LastRollover != null
+                ? _manager.LastRollover.Text
+                : LastResultText(season);
             Q<Label>("last-finance").text = _manager.LastReport?.FinanceText ?? "";
 
             var next = season.NextGame;
-            Q<Label>("next-game").text = next == null
-                ? "시즌 일정이 모두 끝났습니다."
+            bool finished = season.IsSeasonFinished;
+            Q<Label>("next-game").text = finished
+                ? $"{season.Year} 정규시즌 일정이 모두 끝났습니다. 결산 후 {season.Year + 1} 시즌으로 넘어갑니다."
                 : $"경기 {next.Number} · {next.Date} · {next.MatchupText} · {next.Stadium}";
-            string problem = _manager.IsDatabaseReady ? _manager.RosterProblem : null;
-            _start.text = next == null ? "시즌 종료" : !_manager.IsDatabaseReady ? "선수 데이터 불러오는 중…"
+            string problem = _manager.IsDatabaseReady && !finished ? _manager.RosterProblem : null;
+            _start.text = finished ? OffseasonButtonText(season) : !_manager.IsDatabaseReady ? "선수 데이터 불러오는 중…"
                 : problem != null ? "선수단 확인 필요" : "다음 경기 시작";
-            _start.SetEnabled(next != null && season.InProgress == null && _manager.IsDatabaseReady && problem == null);
-            _start.tooltip = problem ?? "";
+            _start.EnableInClassList("btn--offseason", finished);
+            // 결산은 선수 DB 없이도 할 수 있다 (예산·TP·이적 기록만 넘긴다).
+            _start.SetEnabled(season.InProgress == null && (finished || (_manager.IsDatabaseReady && problem == null)));
+            _start.tooltip = finished
+                ? "전적·일정을 새로 짜고 예산·팬 만족도·신뢰도·선수단은 그대로 넘깁니다. 신뢰 대출의 50%는 새 시즌 캡에서 빠집니다."
+                : problem ?? "";
             _scout.SetEnabled(_manager.IsDatabaseReady && season.InProgress == null);
             _mode.text = _manager.FullInningMode ? "진행: 풀 이닝 (1회부터)" : "진행: 퀵 시뮬 (8회부터)";
             _mode.EnableInClassList("btn--active", _manager.FullInningMode);
         }
+
+        /// <summary>정규시즌 종료 뒤 시작 버튼 문구: "시즌 결산 및 2027 시즌 준비".</summary>
+        public static string OffseasonButtonText(SeasonState season) => $"시즌 결산 및 {season.Year + 1} 시즌 준비";
 
         static string RecordText(SeasonState season)
         {

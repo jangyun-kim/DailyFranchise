@@ -158,17 +158,77 @@ namespace DailyFranchise.App
 
         readonly List<GameRecord> _lastDay = new List<GameRecord>();
 
+        /// <summary>새 시즌 기본 연도 (Phase 27).</summary>
+        public const int DefaultYear = 2026;
+
+        /// <param name="seasonTitle">연도를 읽을 제목 (예: "2026 시즌 · 5월"). 앞 네 자리가 연도가 아니면 <see cref="DefaultYear"/>.</param>
         public SeasonState(string seasonTitle, string myTeam, List<ScheduledGame> schedule, List<StandingRow> standings)
         {
             if (schedule == null || schedule.Count == 0) throw new ArgumentException("일정이 비어 있다.", nameof(schedule));
-            SeasonTitle = seasonTitle;
+            Year = YearOf(seasonTitle) ?? DefaultYear;
             MyTeam = myTeam;
             _schedule = schedule;
             _standings = standings;
             Rerank();
         }
 
-        public string SeasonTitle { get; }
+        /// <summary>시즌 연도 (Phase 27). 오프시즌 결산(<see cref="TransitionToNextSeason"/>)마다 1씩 오른다. 시즌과 함께 저장된다.</summary>
+        public int Year { get; private set; }
+
+        /// <summary>
+        /// 로비 상단 시즌 제목: "2026 시즌 · 5월" (다음 경기 날짜의 달), 일정을 모두 치르면 "2026 시즌 · 정규시즌 종료".
+        /// </summary>
+        public string SeasonTitle
+        {
+            get
+            {
+                if (IsSeasonFinished) return $"{Year} 시즌 · 정규시즌 종료";
+                int? month = MonthDayOf(NextGame?.Date)?.Month;
+                return month.HasValue ? $"{Year} 시즌 · {month}월" : $"{Year} 시즌";
+            }
+        }
+
+        /// <summary>제목 앞 네 자리 연도 (예: "2026 시즌" → 2026). 없으면 null.</summary>
+        public static int? YearOf(string title)
+        {
+            if (title == null || title.Length < 4) return null;
+            if (!int.TryParse(title.Substring(0, 4), NumberStyles.None, CultureInfo.InvariantCulture, out int year)) return null;
+            return year >= 1000 && (title.Length == 4 || !char.IsDigit(title[4])) ? year : (int?)null;
+        }
+
+        /// <summary>일정 날짜 표기 "5.15 (금)"의 월·일. 읽을 수 없으면 null.</summary>
+        static (int Month, int Day)? MonthDayOf(string date)
+        {
+            if (string.IsNullOrEmpty(date)) return null;
+            int dot = date.IndexOf('.');
+            if (dot <= 0) return null;
+            int end = dot + 1;
+            while (end < date.Length && char.IsDigit(date[end])) end++;
+            if (!int.TryParse(date.Substring(0, dot), NumberStyles.None, CultureInfo.InvariantCulture, out int m)
+                || !int.TryParse(date.Substring(dot + 1, end - dot - 1), NumberStyles.None, CultureInfo.InvariantCulture, out int d))
+                return null;
+            return m >= 1 && m <= 12 && d >= 1 && d <= 31 ? (m, d) : ((int, int)?)null;
+        }
+
+        static readonly string[] KoreanWeekdays = { "일", "월", "화", "수", "목", "금", "토" };
+
+        /// <summary>
+        /// 다음 해 같은 월·일의 날짜 표기 (Phase 27), 요일은 그해 달력으로 다시 붙인다. 예: 2026 "5.15 (금)" → 2027 "5.15 (토)".
+        /// (같은 요일로 맞추면 해마다 하루씩 당겨져 일정이 흘러가므로 월·일을 고정한다.) 2.29는 평년이면 2.28.
+        /// 읽을 수 없거나 그해에 없는 날짜 표기는 그대로.
+        /// </summary>
+        /// <param name="year">지금 날짜의 연도.</param>
+        public static string NextYearDate(string date, int year)
+        {
+            var md = MonthDayOf(date);
+            if (md == null) return date;
+            var (month, day) = md.Value;
+            int next = year + 1;
+            if (month == 2 && day == 29 && !DateTime.IsLeapYear(next)) day = 28;
+            if (day > DateTime.DaysInMonth(next, month)) return date;
+            var to = new DateTime(next, month, day);
+            return $"{to.Month}.{to.Day} ({KoreanWeekdays[(int)to.DayOfWeek]})";
+        }
         public string MyTeam { get; }
         public IReadOnlyList<ScheduledGame> Schedule => _schedule;
         public IReadOnlyList<StandingRow> Standings => _standings;
@@ -416,7 +476,8 @@ namespace DailyFranchise.App
         public ScheduledGame LastFinished => NextIndex > 0 ? _schedule[NextIndex - 1] : null;
 
         public ScheduledGame NextGame => NextIndex < _schedule.Count ? _schedule[NextIndex] : null;
-        public bool IsSeasonOver => NextIndex >= _schedule.Count && InProgress == null;
+        /// <summary>정규시즌 일정을 모두 치렀다 (다음 경기 인덱스 ≥ 일정 수). 로비는 [다음 경기] 대신 시즌 결산을 띄운다.</summary>
+        public bool IsSeasonFinished => NextIndex >= _schedule.Count;
         public int GamesPlayed => NextIndex;
 
         public StandingRow MyStanding => StandingOf(MyTeam);
@@ -555,6 +616,53 @@ namespace DailyFranchise.App
             }
         }
 
+        /// <summary>
+        /// 오프시즌 결산 (Phase 27): 정규시즌을 모두 치렀을 때만. 연도 +1, 순위표 전적·득실점·순위 변동 초기화,
+        /// 지난 시즌 일정의 대진을 다음 해 같은 월·일로 옮긴 새 일정, 최근 경기·L10 비움, 컨디션 보통(3) 미만은 보통으로,
+        /// 선발 로테이션은 1번부터, 신뢰도 시즌 마감(<see cref="CloseTrustSeason"/> — 신뢰 대출의 50%를 새 시즌 캡 상환으로,
+        /// TP는 이월 상한까지). 예산·팬 만족도·팬덤 슬롯·이적 기록(영입·방출 = 선수단과 FA 시장)·라인업은 그대로 넘어간다.
+        /// 저장은 하지 않는다 (SeasonManager가 바로 저장한다).
+        /// </summary>
+        /// <returns>끝난 시즌 요약.</returns>
+        public SeasonRollover TransitionToNextSeason()
+        {
+            if (InProgress != null) throw new InvalidOperationException($"경기 중에는 시즌을 넘기지 않는다: {InProgress.Number}");
+            if (!IsSeasonFinished) throw new InvalidOperationException($"정규시즌이 끝나지 않았다: {NextIndex} / {_schedule.Count}");
+
+            var me = MyStanding;
+            var summary = new SeasonRollover(Year, me?.Rank ?? 0, me?.Wins ?? 0, me?.Losses ?? 0, me?.Draws ?? 0, CapFlex);
+
+            var schedule = _schedule.Select(g => new ScheduledGame
+            {
+                Number = g.Number,
+                Date = NextYearDate(g.Date, Year),
+                AwayTeam = g.AwayTeam,
+                HomeTeam = g.HomeTeam,
+                Stadium = g.Stadium,
+                Status = GameStatus.Scheduled,
+            }).ToList();
+            _schedule.Clear();
+            _schedule.AddRange(schedule);
+            NextIndex = 0;
+            _lastDay.Clear();
+
+            foreach (var row in _standings)
+            {
+                row.Wins = row.Losses = row.Draws = 0;
+                row.RunsScored = row.RunsAllowed = 0;
+                row.PreviousRank = 0;
+            }
+            Rerank(); // 전원 동률 — 지난 시즌 최종 순서를 유지한 채 공동 1위
+
+            foreach (var id in _conditions.Keys.ToList())
+                _conditions[id] = Math.Max(_conditions[id], PlayerCondition.Default);
+            _lastStarters.Clear();
+
+            CloseTrustSeason();
+            Year++;
+            return summary;
+        }
+
         /// <summary>저장용 형태로 바꾼다. 경기 중에는 저장할 수 없다 (로비에서만 저장한다).</summary>
         public SeasonSaveData ToSaveData()
         {
@@ -563,6 +671,7 @@ namespace DailyFranchise.App
             {
                 Version = SeasonSaveData.CurrentVersion,
                 SeasonTitle = SeasonTitle,
+                Year = Year,
                 MyTeam = MyTeam,
                 NextIndex = NextIndex,
                 Schedule = _schedule.Select(g => new ScheduledGameData
@@ -671,6 +780,8 @@ namespace DailyFranchise.App
                 NextIndex = data.NextIndex,
                 MyLineup = LineupFrom(data.Lineup),
             };
+            // 연도가 없는 이전 저장 파일(Phase 27 이전)은 생성자가 제목 앞 네 자리에서 읽은 연도(없으면 2026)를 쓴다.
+            if (data.Year > 0) season.Year = data.Year;
             // 재정 필드가 없는 이전 저장 파일(Phase 20 이전)은 기본값(₩5,000,000 · 50%)으로 시작한다.
             // 범위를 벗어난 값은 손상으로 보지 않고 범위 안으로 맞춘다.
             // Phase 26 이전 저장 파일(화폐 단위 버전 0)은 금액이 1/1,000 단위라 ×1,000으로 바꿔 읽는다.
@@ -791,7 +902,41 @@ namespace DailyFranchise.App
                 row.RunsScored = baseline + margin;
                 row.RunsAllowed = baseline - margin;
             }
-            return new SeasonState("2026 시즌 · 5월", my, schedule, standings);
+            return new SeasonState($"{DefaultYear} 시즌", my, schedule, standings);
+        }
+    }
+
+    /// <summary>오프시즌 결산으로 끝난 시즌 요약 (Phase 27, <see cref="SeasonState.TransitionToNextSeason"/>).</summary>
+    public sealed class SeasonRollover
+    {
+        public SeasonRollover(int year, int rank, int wins, int losses, int draws, long capFlex)
+        {
+            Year = year;
+            Rank = rank;
+            Wins = wins;
+            Losses = losses;
+            Draws = draws;
+            CapFlex = capFlex;
+        }
+
+        /// <summary>끝난 시즌 연도.</summary>
+        public int Year { get; }
+        /// <summary>내 구단 최종 순위 (순위표에 없으면 0).</summary>
+        public int Rank { get; }
+        public int Wins { get; }
+        public int Losses { get; }
+        public int Draws { get; }
+        /// <summary>끝난 시즌에 받은 신뢰 대출 — 50%가 새 시즌 캡에서 빠진다.</summary>
+        public long CapFlex { get; }
+
+        /// <summary>"2026 시즌 최종 3위 · 78승 64패 2무" (무승부가 없으면 생략).</summary>
+        public string Text
+        {
+            get
+            {
+                string record = Draws == 0 ? $"{Wins}승 {Losses}패" : $"{Wins}승 {Losses}패 {Draws}무";
+                return Rank > 0 ? $"{Year} 시즌 최종 {Rank}위 · {record}" : $"{Year} 시즌 · {record}";
+            }
         }
     }
 }

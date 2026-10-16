@@ -25,7 +25,13 @@ namespace DailyFranchise.App
         /// </summary>
         public int MoneyUnitVersion;
         public const int CurrentMoneyUnitVersion = 1;
+        /// <summary>표시용 시즌 제목 (연도에서 다시 만든다 — 읽을 때는 <see cref="Year"/>가 없는 이전 파일의 연도 추정에만 쓴다).</summary>
         public string SeasonTitle;
+        /// <summary>
+        /// 시즌 연도 (Phase 27). 0이면 이 필드가 없는 이전 저장 파일 — 제목 앞 네 자리(예: "2026 시즌 · 5월")에서,
+        /// 그것도 없으면 <see cref="SeasonState.DefaultYear"/>로 읽는다. 형식 <see cref="Version"/>은 그대로라 이전 파일도 이어서 읽힌다.
+        /// </summary>
+        public int Year;
         public string MyTeam;
         /// <summary>다음에 치를 경기의 일정 인덱스 (= 치른 경기 수).</summary>
         public int NextIndex;
