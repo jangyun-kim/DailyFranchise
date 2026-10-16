@@ -201,6 +201,21 @@ namespace DailyFranchise.App
             return new FinanceChange(Budget - budget, FanApproval - fan);
         }
 
+        /// <summary>해금한 팬덤 슬롯 (Phase 23, <see cref="FandomRules"/>). 한 번 해금되면 잃지 않는다. 시즌과 함께 저장된다.</summary>
+        public FandomSlot UnlockedSlots { get; private set; }
+
+        /// <summary>슬롯을 정한다 (불러오기·테스트용). 모르는 비트는 버린다.</summary>
+        public void SetUnlockedSlots(FandomSlot slots) => UnlockedSlots = slots & FandomSlot.All;
+
+        /// <summary>지금 성적·팬 만족도로 슬롯 해금을 갱신한다.</summary>
+        /// <returns>이번에 새로 해금된 슬롯.</returns>
+        public FandomSlot UpdateFandomUnlocks()
+        {
+            var before = UnlockedSlots;
+            UnlockedSlots = FandomRules.Unlocked(before, MyStanding?.Wins ?? 0, FanApproval);
+            return UnlockedSlots & ~before;
+        }
+
         readonly Dictionary<string, int> _conditions = new Dictionary<string, int>();
 
         /// <summary>
@@ -430,6 +445,8 @@ namespace DailyFranchise.App
                 HasFinance = true,
                 Budget = Budget,
                 FanApproval = FanApproval,
+                HasFandom = true,
+                FandomSlots = (int)UnlockedSlots,
                 Conditions = _conditions.OrderBy(kv => kv.Key, StringComparer.Ordinal)
                     .Select(kv => new ConditionData { Id = kv.Key, Value = kv.Value }).ToList(),
                 LastStarters = _lastStarters.OrderBy(kv => kv.Key, StringComparer.Ordinal)
@@ -502,6 +519,8 @@ namespace DailyFranchise.App
             // 재정 필드가 없는 이전 저장 파일(Phase 20 이전)은 기본값(₩5,000,000 · 50%)으로 시작한다.
             // 범위를 벗어난 값은 손상으로 보지 않고 범위 안으로 맞춘다.
             if (data.HasFinance) season.SetFinance(data.Budget, data.FanApproval);
+            // 팬덤 슬롯이 없는 이전 저장 파일(Phase 22 이전)은 해금 없음에서 시작한다. 모르는 비트는 버린다.
+            if (data.HasFandom) season.SetUnlockedSlots((FandomSlot)data.FandomSlots);
             // 컨디션 목록이 없는 이전 저장 파일(Phase 21 이전)은 전원 보통(3)에서 시작한다 (기록 없음 = 보통).
             // ID가 빈 항목은 건너뛰고, 범위 밖 값은 1~5로 맞춘다.
             if (data.Conditions != null)

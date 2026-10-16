@@ -37,6 +37,13 @@ namespace DailyFranchise.App
         public int FanApproval;
 
         /// <summary>
+        /// 팬덤 슬롯(<see cref="FandomSlots"/>, <see cref="FandomSlot"/> 비트)이 저장돼 있는지 (Phase 23).
+        /// 이 필드가 없는 이전 저장 파일은 false로 읽혀 해금 없음에서 시작한다.
+        /// </summary>
+        public bool HasFandom;
+        public int FandomSlots;
+
+        /// <summary>
         /// 선수 컨디션 (Phase 22). 기록된 선수만 담고, 없는 선수는 보통(3). 이 필드가 없는 이전 저장 파일은 빈 목록(전원 보통).
         /// JsonUtility가 Dictionary를 다루지 못해 목록으로 저장한다.
         /// </summary>

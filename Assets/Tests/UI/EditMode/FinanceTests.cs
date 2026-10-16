@@ -106,7 +106,8 @@ namespace DailyFranchise.UI.Tests
             Play(s, HomeLoss); // 원정 경기: 원정 6 : 홈 1 → 내 구단(원정) 승
             var loaded = SaveManager.FromJson(SaveManager.ToJson(s));
             Assert.That((loaded.Budget, loaded.FanApproval), Is.EqualTo((s.Budget, s.FanApproval)));
-            Assert.That((loaded.Budget, loaded.FanApproval), Is.EqualTo((5_100_000, 56)));
+            // Phase 23: 더미 시즌은 23승에서 시작해 첫 승 뒤 유니폼 슬롯(10승)이 열려, 두 번째 승리에 굿즈 수입 +₩5,000.
+            Assert.That((loaded.Budget, loaded.FanApproval), Is.EqualTo((5_105_000, 56)));
         }
 
         [Test]

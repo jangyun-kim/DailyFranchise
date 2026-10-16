@@ -25,6 +25,11 @@ namespace DailyFranchise.App
         public int FanApprovalBefore;
         public int FanApprovalAfter;
         public FinanceChange Finance;
+        /// <summary>이 경기 재정에 적용된 팬 만족도 구간(경기 전 기준)과 해금 슬롯 (Phase 23).</summary>
+        public FanMood MoodBefore;
+        public FandomSlot SlotsApplied;
+        /// <summary>이 경기 뒤 새로 해금된 팬덤 슬롯.</summary>
+        public FandomSlot NewlyUnlocked;
         /// <summary>
         /// 컨디션 변화 (경기를 치른 두 구단 선수, ID 순). 출장 기록 없이 처리했으면 비어 있다.
         /// 타 구단끼리의 경기는 점수만 만들므로 그 선수들의 컨디션은 바뀌지 않는다.
@@ -39,7 +44,8 @@ namespace DailyFranchise.App
     /// 1) 진행 중인 경기를 최종 점수로 끝내 내 구단·상대의 승/패/무와 득점·실점(RS/RA)을 기록한다.
     /// 2) 같은 날 타 구단 경기를 난수로 만들어 함께 기록한다 (내 구단만 순위·득실점이 쌓이지 않게).
     /// 3) 순위표를 다시 정렬하고 일정을 다음 경기로 전진한다.
-    /// 4) 내 구단 승/무/패로 예산(관중 수입)·팬 만족도를 바꾼다 (<see cref="FranchiseFinance.For"/>, 범위 제한).
+    /// 4) 내 구단 승/무/패로 예산(관중 수입)·팬 만족도를 바꾼다. 경기 전 팬 만족도 구간(관중 배수)과 해금한 팬덤 슬롯을 반영하고
+    ///    (<see cref="FranchiseFinance.For(GameOutcome, FanMood, FandomSlot)"/>, 범위 제한), 그 뒤 슬롯 해금을 갱신한다.
     /// 5) 출장 기록이 있으면 두 구단 선수 컨디션을 바꾼다 (<see cref="ConditionRules"/>, 전용 난수).
     /// 6) 곧바로 저장해, 로비로 돌아가기 전에 꺼져도 결과가 남는다.
     /// </summary>
@@ -65,7 +71,10 @@ namespace DailyFranchise.App
             var mine = season.LastDayResults[0];
             var outcome = mine.OutcomeFor(season.MyTeam);
             int budgetBefore = season.Budget, fanBefore = season.FanApproval;
-            var finance = season.ApplyFinance(FranchiseFinance.For(outcome));
+            var mood = FranchiseFinance.MoodOf(fanBefore);
+            var slots = season.UnlockedSlots;
+            var finance = season.ApplyFinance(FranchiseFinance.For(outcome, mood, slots));
+            var unlocked = season.UpdateFandomUnlocks();
             var conditions = participation == null ? new List<ConditionChange>() : season.ApplyConditions(participation, conditionRandom);
 
             return new PostGameReport
@@ -78,6 +87,9 @@ namespace DailyFranchise.App
                 FanApprovalBefore = fanBefore,
                 FanApprovalAfter = season.FanApproval,
                 Finance = finance,
+                MoodBefore = mood,
+                SlotsApplied = slots,
+                NewlyUnlocked = unlocked,
                 Conditions = conditions,
                 MyRunsScored = mine.RunsFor(season.MyTeam),
                 MyRunsAllowed = mine.RunsAgainst(season.MyTeam),

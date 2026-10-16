@@ -74,6 +74,42 @@ namespace DailyFranchise.App
             }
         }
 
+        /// <summary>관중 배수 (%) — 경기 전 팬 만족도 구간 기준. Angry 80 / Normal 100 / Happy 120.</summary>
+        public const int AngryAttendancePercent = 80;
+        public const int HappyAttendancePercent = 120;
+        /// <summary>유니폼 슬롯: 승리 시 굿즈 수입.</summary>
+        public const int UniformMerchIncome = 5_000;
+        /// <summary>Happy 구간 패배는 팬 기대치 때문에 하락 폭이 이 배수가 된다 (스노우볼 브레이크).</summary>
+        public const int HappyLossMultiplier = 2;
+
+        public static int AttendancePercent(FanMood mood) =>
+            mood == FanMood.Happy ? HappyAttendancePercent : mood == FanMood.Angry ? AngryAttendancePercent : 100;
+
+        /// <summary>
+        /// 팬덤 스노우볼 재정 변화 (Phase 23). 경기 전 팬 만족도 구간(<paramref name="mood"/>)과 해금 슬롯을 반영한다.
+        /// - 예산: 기본 수입 × 관중 배수(0.8/1.0/1.2) + (승리 &amp; 유니폼 ? ₩5,000 : 0)
+        /// - 팬: 승 +3 (+1 세리머니), 무 0, 패 −2 (Happy면 ×2) (+1 치어리더)
+        /// Normal 구간·슬롯 없음이면 <see cref="For(GameOutcome)"/>와 같다.
+        /// </summary>
+        public static FinanceChange For(GameOutcome outcome, FanMood mood, FandomSlot slots)
+        {
+            var basic = For(outcome);
+            int budget = (int)((long)basic.BudgetDelta * AttendancePercent(mood) / 100);
+            int fan = basic.FanDelta;
+            switch (outcome)
+            {
+                case GameOutcome.Win:
+                    if ((slots & FandomSlot.Uniform) != 0) budget += UniformMerchIncome;
+                    if ((slots & FandomSlot.Ceremony) != 0) fan += 1;
+                    break;
+                case GameOutcome.Loss:
+                    if (mood == FanMood.Happy) fan *= HappyLossMultiplier;
+                    if ((slots & FandomSlot.Cheerleader) != 0) fan += 1;
+                    break;
+            }
+            return new FinanceChange(budget, fan);
+        }
+
         /// <summary>예산 범위 [0, int.MaxValue]. 넘침 없이 long으로 받는다.</summary>
         public static int ClampBudget(long budget) => (int)Math.Max(0, Math.Min(int.MaxValue, budget));
 
