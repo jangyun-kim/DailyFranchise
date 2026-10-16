@@ -36,6 +36,14 @@ namespace DailyFranchise.UI.Tests
             Assert.That(FrontOfficeTrust.FeeOf(-5), Is.Zero);
         }
 
+        [Test]
+        public void 로비_표기()
+        {
+            Assert.That(FrontOfficeTrust.TrustText(24), Is.EqualTo("24 / 200"));
+            Assert.That(FrontOfficeTrust.CeilingText(24), Is.EqualTo("천장까지 76 TP"));
+            Assert.That(FrontOfficeTrust.CeilingText(100), Is.EqualTo("천장 도달 · 다음 협상 확정 영입"));
+        }
+
         [TestCase(480_000, 0.50)]
         [TestCase(432_000, 0.25)]
         [TestCase(566_400, 0.95)]

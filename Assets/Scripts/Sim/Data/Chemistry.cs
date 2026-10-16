@@ -8,11 +8,11 @@ namespace DailyFranchise.Sim.Data
     public enum ChemistryTag
     {
         None,
-        /// <summary>주루: 도루 시도율 리그 상위 30% + 도루 성공률 65% 이상.</summary>
+        /// <summary>주루: 도루 시도율 리그 상위 20% + 도루 성공률 65% 이상.</summary>
         Speed,
-        /// <summary>수비: PA당 dWAR 리그 상위 30%.</summary>
+        /// <summary>수비: PA당 dWAR 리그 상위 20%.</summary>
         Glove,
-        /// <summary>장타: ISO(SLG − AVG) 리그 상위 30%.</summary>
+        /// <summary>장타: ISO(SLG − AVG) 리그 상위 20%.</summary>
         Power,
         /// <summary>에이스 투수: FIP 리그 상위 20% (케미스트리 멤버가 아니라 거포 클린업 카운터).</summary>
         Ace,
@@ -41,7 +41,8 @@ namespace DailyFranchise.Sim.Data
     {
         public const int MinPlateAppearances = 100;
         public const double MinInnings = 30;
-        public const double TopPercent = 0.30;
+        /// <summary>성향 태그 기준 (Phase 24에서 30% → 20%로 낮춰 희소성 확보).</summary>
+        public const double TopPercent = 0.20;
         public const double AcePercent = 0.20;
         public const double MinStealSuccess = 0.65;
 

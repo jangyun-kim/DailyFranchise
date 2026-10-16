@@ -452,11 +452,12 @@ namespace DailyFranchise.UI.Tests
                 Assert.That(issues, Is.Empty, $"[{tactic} 설명]\n" + string.Join("\n", issues));
             }
             // Phase 17 기대값 51%에서 Phase 20 체력 저하(염태준 89구, 체력 11% → 피안타 +5%)를 더해 53%.
-            // Phase 23 케미스트리: 1루 주자 하윤재(Speed) 발야구 +4%가 서울 철벽 센터라인에 절반(+2%),
-            // 철벽 −3%는 성지환이 거포 클린업 멤버라 절반(−1.5%), 거포 클린업 +4%는 염태준이 Ace라 절반(+2%) → +2.5%, 55%.
+            // Phase 24 케미스트리(태그 상위 20%): 1루 주자 하윤재(Speed) 발야구 +4%. 서울은 Glove가 2B·SS·DH라
+            // 센터라인 2명뿐이라 철벽 센터라인이 없고(카운터 없음), 성지환은 태그가 없어 거포 클린업도 없다 → +4%, 55%.
+            // (Phase 23 상위 30%에서는 발야구 +2 · 철벽 −1.5 · 거포 +2 = +2.5%로 같은 55%였다.)
             Assert.That(root.Q<Label>("tactic-desc").text, Does.EndWith("성공 확률 55% · 실패 45%"),
-                "좌투 vs 좌타 -5%, 클러치 +7%, 체력 저하 +5%, 케미 +2.5%");
-            Assert.That(root.Q<Label>("tactic-desc").text, Does.Contain("· 케미 발야구·철벽 센터라인·거포 클린업 +2%"));
+                "좌투 vs 좌타 -5%, 클러치 +7%, 체력 저하 +5%, 케미 +4%");
+            Assert.That(root.Q<Label>("tactic-desc").text, Does.Contain("· 케미 발야구 +4%"));
             Assert.That(root.Q<Label>("tactic-desc").text, Does.Contain("· 체력 저하 +5%").And.Contain("투수 · 염태준 89구 · 체력 11% (저하)"));
             game.PreviewTactic(null);
 
@@ -895,6 +896,104 @@ namespace DailyFranchise.UI.Tests
                 Assert.That(root.Q<Label>("fo-fan").ClassListContains(cls.Replace("fill", "percent")), Is.True);
                 Assert.That(root.Q<Label>("fo-budget").text, Is.EqualTo("₩ 1,234,567"));
             }
+        }
+
+        /// <summary>로비를 1920×1080 렌더 텍스처에 그리게 한다 (레이아웃 검사용). 정리할 것들을 돌려준다.</summary>
+        static (RenderTexture, PanelSettings) RenderAt1080(LobbyController lobby)
+        {
+            var doc = lobby.GetComponent<UIDocument>();
+            var rt = new RenderTexture(1920, 1080, 24);
+            rt.Create();
+            var panelCopy = Object.Instantiate(doc.panelSettings);
+            panelCopy.targetTexture = rt;
+            doc.panelSettings = panelCopy;
+            return (rt, panelCopy);
+        }
+
+        [UnityTest]
+        public IEnumerator 프런트_오피스에_신뢰도_TP와_팬덤_특전_해금_상태가_보이고_FA_버튼은_잠겨_있다()
+        {
+            var manager = SeasonManager.Instance;
+            var lobby = Object.FindAnyObjectByType<LobbyController>();
+            var (rt, panel) = RenderAt1080(lobby);
+            yield return null;
+            var root = LobbyRoot();
+            Assert.That(root.Q<Label>("fo-trust").text, Is.EqualTo("0 / 200"));
+            Assert.That(root.Q("fo-trust-fill").style.width.value, Is.EqualTo(Length.Percent(0)));
+            foreach (var name in new[] { "uniform", "ceremony", "cheerleader" })
+                Assert.That(root.Q("fo-slot-" + name).ClassListContains("fo-slot--locked"), Is.True, name);
+
+            var fa = root.Q<Button>("scout-fa");
+            Assert.That((fa.text, fa.enabledSelf), Is.EqualTo(("스카우트 / FA", false)));
+
+            manager.Season.SetTrust(150, 0, 0, 0);
+            manager.Season.SetUnlockedSlots(FandomSlot.Uniform | FandomSlot.Cheerleader);
+            lobby.enabled = false;
+            lobby.enabled = true;
+            yield return null;
+            yield return null;
+            root = LobbyRoot();
+            Assert.That(root.Q<Label>("fo-trust").text, Is.EqualTo("150 / 200"));
+            Assert.That(root.Q("fo-trust-fill").style.width.value, Is.EqualTo(Length.Percent(75)));
+            Assert.That(root.Q("fo-trust-gauge").tooltip, Is.EqualTo("천장 도달 · 다음 협상 확정 영입"));
+            Assert.That(root.Q("fo-slot-uniform").ClassListContains("fo-slot--unlocked"), Is.True);
+            Assert.That(root.Q("fo-slot-ceremony").ClassListContains("fo-slot--locked"), Is.True);
+            Assert.That(root.Q("fo-slot-cheerleader").ClassListContains("fo-slot--unlocked"), Is.True);
+            Assert.That(root.Q("fo-slot-ceremony").tooltip, Does.StartWith("잠김 · 팬 만족도 70%"));
+
+            var issues = LayoutChecker.Check(root.Q("screen"));
+            Assert.That(issues, Is.Empty, string.Join("\n", issues));
+            rt.Release();
+            Object.Destroy(rt);
+            Object.Destroy(panel);
+        }
+
+        [UnityTest]
+        public IEnumerator 라인업을_바꾸면_팀_케미스트리가_즉시_켜지고_꺼지며_결과가_같으면_다시_그리지_않는다()
+        {
+            var lobby = Object.FindAnyObjectByType<LobbyController>();
+            var (rt, panel) = RenderAt1080(lobby);
+            yield return null;
+            var root = LobbyRoot();
+            var active = root.Q<Label>("chem-active");
+            Assert.That(active.text, Is.EqualTo("활성화됨: 발야구"));
+            Assert.That(active.ClassListContains("chem-active--on"), Is.True);
+            Assert.That(root.Q("lineup-1").Q<Label>(className: "chem-badge").text, Is.EqualTo("주"));
+            Assert.That(root.Q("lineup-4").Q<Label>(className: "chem-badge").text, Is.EqualTo("장"));
+            Assert.That(root.Q("lineup-7").Q<Label>(className: "chem-badge").text, Is.EqualTo("수"));
+            Assert.That(root.Q("lineup-3").Q<Label>(className: "chem-badge").ClassListContains("chem-badge--none"), Is.True);
+            var issues = LayoutChecker.Check(root.Q("screen"));
+            Assert.That(issues, Is.Empty, string.Join("\n", issues));
+            int renders = lobby.ChemistryRenderCount;
+
+            // 태그 없는 3번·5번 타순 맞바꿈 → 케미스트리 그대로, 다시 그리지 않는다.
+            lobby.ClickLineupSpot(LineupSpot.Batting(3));
+            lobby.ClickLineupSpot(LineupSpot.Batting(5));
+            yield return null;
+            Assert.That(LobbyRoot().Q("lineup-3").Q<Label>(className: "col-name").text, Is.EqualTo("길태윤"), "교체는 됐다");
+            Assert.That(lobby.ChemistryRenderCount, Is.EqualTo(renders));
+
+            // 8번 여민규(Speed) → 벤치 2번(태그 없음): 발야구 꺼짐
+            lobby.ClickLineupSpot(LineupSpot.Batting(8));
+            lobby.ClickLineupSpot(LineupSpot.Bench(1));
+            yield return null;
+            active = LobbyRoot().Q<Label>("chem-active");
+            Assert.That(active.text, Is.EqualTo("활성화된 케미스트리 없음"));
+            Assert.That(active.ClassListContains("chem-active--on"), Is.False);
+            Assert.That(lobby.ChemistryRenderCount, Is.EqualTo(renders + 1));
+            Assert.That(lobby.Chemistry.Kinds, Is.Empty);
+
+            // 대주자 국태민(Speed)을 8번에 넣으면 다시 켜진다.
+            lobby.ClickLineupSpot(LineupSpot.Batting(8));
+            lobby.ClickLineupSpot(LineupSpot.Bench(2));
+            yield return null;
+            Assert.That(LobbyRoot().Q<Label>("chem-active").text, Is.EqualTo("활성화됨: 발야구"));
+            Assert.That(lobby.Chemistry.Members(ChemistryKind.SpeedBall), Is.EquivalentTo(new[] { "WV001", "WV002", "WV012" }));
+            Assert.That(lobby.ChemistryRenderCount, Is.EqualTo(renders + 2));
+
+            rt.Release();
+            Object.Destroy(rt);
+            Object.Destroy(panel);
         }
 
         static string[] ConditionClasses(VisualElement container) =>

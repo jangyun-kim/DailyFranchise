@@ -37,6 +37,21 @@ namespace DailyFranchise.App
             return slots;
         }
 
+        /// <summary>로비 표시 순서.</summary>
+        public static readonly FandomSlot[] Slots = { FandomSlot.Uniform, FandomSlot.Ceremony, FandomSlot.Cheerleader };
+
+        /// <summary>해금 조건과 효과 (로비 툴팁).</summary>
+        public static string Hint(FandomSlot slot)
+        {
+            switch (slot)
+            {
+                case FandomSlot.Uniform: return $"시즌 {UniformWins}승에 해금 · 승리 시 굿즈 수입 +₩5,000";
+                case FandomSlot.Ceremony: return $"팬 만족도 {CeremonyFan}% 도달 시 해금 · 승리 시 팬 만족도 +1%p";
+                case FandomSlot.Cheerleader: return $"팬 만족도 {CheerleaderFan}% 도달 시 해금 · 패배 시 팬 하락 1%p 완화";
+                default: throw new ArgumentOutOfRangeException(nameof(slot), slot, "슬롯 하나만");
+            }
+        }
+
         public static string Label(FandomSlot slot)
         {
             switch (slot)

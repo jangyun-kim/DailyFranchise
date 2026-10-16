@@ -146,6 +146,10 @@ namespace DailyFranchise.UI.Tests
             Assert.That(new[] { FandomSlot.Uniform, FandomSlot.Ceremony, FandomSlot.Cheerleader }.Select(FandomRules.Label),
                 Is.EqualTo(new[] { "유니폼", "세리머니", "치어리더" }));
             Assert.Throws<ArgumentOutOfRangeException>(() => FandomRules.Label(FandomSlot.All));
+            Assert.That(FandomRules.Slots, Is.EqualTo(new[] { FandomSlot.Uniform, FandomSlot.Ceremony, FandomSlot.Cheerleader }));
+            Assert.That(FandomRules.Hint(FandomSlot.Uniform), Is.EqualTo("시즌 10승에 해금 · 승리 시 굿즈 수입 +₩5,000"));
+            Assert.That(FandomRules.Hint(FandomSlot.Cheerleader), Does.StartWith("팬 만족도 80% 도달 시 해금"));
+            Assert.Throws<ArgumentOutOfRangeException>(() => FandomRules.Hint(FandomSlot.None));
         }
     }
 }

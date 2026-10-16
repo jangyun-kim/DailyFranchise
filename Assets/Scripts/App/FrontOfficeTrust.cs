@@ -104,6 +104,13 @@ namespace DailyFranchise.App
         /// <summary>다음 시즌 상환액 = 50% × Flex (내림).</summary>
         public static int NextRepay(int flex) => (int)(Math.Max(0, flex) * RepayRate);
 
+        /// <summary>로비 표기 "24 / 200".</summary>
+        public static string TrustText(int trust) => $"{trust} / {MaxTrust}";
+
+        /// <summary>로비 보조 줄: 천장까지 남은 TP, 천장 도달이면 "확정 영입 가능".</summary>
+        public static string CeilingText(int trust) =>
+            trust >= Ceiling ? "천장 도달 · 다음 협상 확정 영입" : $"천장까지 {Ceiling - trust} TP";
+
         /// <summary>시즌 캡 = 기본 캡 − 상환 + Flex (0 이상).</summary>
         public static int EffectiveCap(int baseCap, int repay, int flex) => (int)Math.Max(0, (long)baseCap - repay + flex);
     }

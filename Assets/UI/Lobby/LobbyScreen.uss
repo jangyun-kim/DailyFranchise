@@ -231,7 +231,12 @@ Label {
     -unity-font-style: bold;
 }
 
-/* 라인업 교체 (Click-to-Swap). 상태는 클래스로만 바꾼다. */
+/* 라인업 교체 (Click-to-Swap). 상태는 클래스로만 바꾼다.
+   Phase 24: 팀 케미스트리 칸 자리를 위해 교체 가능한 행(라인업·벤치)은 36px. */
+.lobby-row--selectable {
+    height: 36px;
+}
+
 .bench-title {
     margin-top: 14px;
 }
@@ -307,7 +312,7 @@ Label {
 }
 
 .footer__last {
-    width: 640px;
+    width: 520px;
     margin-right: 24px;
 }
 
@@ -345,6 +350,18 @@ Label {
     opacity: 0.45;
 }
 
+/* 스카우트 / FA 진입 (Phase 24, 아직 비활성) */
+.unity-button.btn--scout {
+    width: 170px;
+    height: 60px;
+    margin: 0 12px 0 0;
+    font-size: 16px;
+}
+
+.unity-button.btn--scout:disabled {
+    opacity: 0.45;
+}
+
 /* 진행 방식 토글 (퀵 시뮬 8회~ / 풀 이닝 1회~) */
 .unity-button.btn--mode {
     width: 240px;
@@ -367,9 +384,10 @@ Label {
     -unity-text-align: middle-left;
 }
 
-/* 헤더 가운데 고정 폭 패널: 좌측 타이틀·우측 성적과 겹치지 않도록 줄어들지 않는다. */
+/* 헤더 가운데 고정 폭 패널: 좌측 타이틀·우측 성적과 겹치지 않도록 줄어들지 않는다.
+   Phase 24: 신뢰도·팬덤 특전 칸을 더해 860 → 1060px (4칸). */
 .front-office {
-    width: 860px;
+    width: 1060px;
     height: 96px;
     flex-shrink: 0;
     flex-direction: row;
@@ -495,3 +513,79 @@ Label {
     color: var(--accent);
     -unity-font-style: bold;
 }
+
+/* ───────── 프런트 신뢰도·팬덤 특전 (Phase 24) ───────── */
+.fo-fill--trust { background-color: #A371F7; }
+
+.fo-slots {
+    height: 20px;
+    flex-direction: row;
+    align-items: center;
+}
+
+.fo-slot {
+    height: 18px;
+    margin-right: 6px;
+    padding: 0 6px;
+    border-width: 1px;
+    border-radius: 9px;
+    font-size: 11px;
+    -unity-text-align: middle-center;
+}
+
+.fo-slot--unlocked {
+    border-color: #3FB950;
+    color: #3FB950;
+    -unity-font-style: bold;
+}
+
+.fo-slot--locked {
+    border-color: var(--line);
+    color: var(--muted);
+    opacity: 0.6;
+}
+
+/* ───────── 팀 케미스트리 (Phase 24, 로비 라인업 패널 전용) ───────── */
+.chem-box {
+    height: 48px;
+    margin-bottom: 6px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background-color: var(--panel-2);
+}
+
+.chem-title {
+    height: 20px;
+    font-size: 12px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+.chem-active {
+    height: 22px;
+    font-size: 14px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+.chem-active--on {
+    color: var(--accent);
+    -unity-font-style: bold;
+}
+
+/* 라인업 행 성향 배지: 주(주루) 파랑 · 수(수비) 초록 · 장(장타) 빨강 */
+.lobby-row > Label.chem-badge {
+    width: 20px;
+    height: 20px;
+    margin-right: 4px;
+    border-radius: 10px;
+    font-size: 11px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    color: #0E1319;
+}
+
+.chem-badge--none { background-color: rgba(0, 0, 0, 0); }
+.chem-badge--speed { background-color: #4C9BE8; }
+.chem-badge--glove { background-color: #3FB950; }
+.chem-badge--power { background-color: #E5534B; }

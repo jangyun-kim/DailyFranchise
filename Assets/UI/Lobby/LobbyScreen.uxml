@@ -2,7 +2,7 @@
     <Style src="LobbyScreen.uss" />
     <ui:VisualElement name="screen" class="screen">
 
-        <!-- 상단 120px: 타이틀·시즌·오늘 날짜 / 프런트 오피스(예산·팬 만족도·시즌 진행) / 내 구단 성적 -->
+        <!-- 상단 120px: 타이틀·시즌·오늘 날짜 / 프런트 오피스(예산·팬 만족도·시즌 진행·신뢰도와 팬덤 특전) / 내 구단 성적 -->
         <ui:VisualElement class="header">
             <ui:VisualElement class="header__title">
                 <ui:Label class="app-title" text="데일리 프랜차이즈" />
@@ -25,7 +25,7 @@
                     </ui:VisualElement>
                     <ui:Label name="fo-fan-delta" class="fo-delta" text="" />
                 </ui:VisualElement>
-                <ui:VisualElement class="fo-cell fo-cell--last">
+                <ui:VisualElement class="fo-cell">
                     <ui:Label class="fo-label" text="시즌 진행" />
                     <ui:VisualElement class="fo-gauge">
                         <ui:VisualElement class="fo-track">
@@ -34,6 +34,21 @@
                         <ui:Label name="fo-season" class="fo-percent fo-percent--wide" text="—" />
                     </ui:VisualElement>
                     <ui:Label name="fo-season-next" class="fo-delta" text="" />
+                </ui:VisualElement>
+                <!-- Phase 24: 프런트 신뢰도(TP) 게이지 + 팬덤 특전 슬롯 3칸 -->
+                <ui:VisualElement name="fo-trust-cell" class="fo-cell fo-cell--last">
+                    <ui:Label class="fo-label" text="프런트 신뢰도 · 팬덤 특전" />
+                    <ui:VisualElement name="fo-trust-gauge" class="fo-gauge fo-gauge--trust">
+                        <ui:VisualElement class="fo-track">
+                            <ui:VisualElement name="fo-trust-fill" class="fo-fill fo-fill--trust" />
+                        </ui:VisualElement>
+                        <ui:Label name="fo-trust" class="fo-percent fo-percent--wide" text="—" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="fo-slots" class="fo-slots">
+                        <ui:Label name="fo-slot-uniform" class="fo-slot" text="유니폼" />
+                        <ui:Label name="fo-slot-ceremony" class="fo-slot" text="세리머니" />
+                        <ui:Label name="fo-slot-cheerleader" class="fo-slot" text="치어리더" />
+                    </ui:VisualElement>
                 </ui:VisualElement>
             </ui:VisualElement>
             <ui:VisualElement class="header__team">
@@ -46,6 +61,11 @@
         <ui:VisualElement class="main">
             <ui:VisualElement class="panel side side--left">
                 <ui:Label class="panel-title" text="내 구단 라인업" />
+                <!-- Phase 24: 라인업을 바꿀 때마다 다시 판정하는 팀 케미스트리 -->
+                <ui:VisualElement name="chemistry" class="chem-box">
+                    <ui:Label class="chem-title" text="팀 케미스트리 · 배지 주=주루 수=수비 장=장타" />
+                    <ui:Label name="chem-active" class="chem-active" text="—" />
+                </ui:VisualElement>
                 <ui:VisualElement name="roster" />
                 <ui:Label name="bench-title" class="section-title bench-title" text="벤치" />
                 <ui:VisualElement name="bench" />
@@ -129,6 +149,8 @@
                 <ui:Label class="section-title" text="다음 경기" />
                 <ui:Label name="next-game" class="next-game" text="—" />
             </ui:VisualElement>
+            <!-- Phase 24: 스토브리그(스카우트·FA) 진입 자리. 아직 비활성. -->
+            <ui:Button name="scout-fa" class="btn btn--scout" text="스카우트 / FA" enabled="false" tooltip="스토브리그 모드에서 열립니다" />
             <ui:Button name="game-mode" class="btn btn--mode" text="진행: 퀵 시뮬 (8회부터)" />
             <ui:Button name="start-game" class="btn btn--primary" text="다음 경기 시작" />
         </ui:VisualElement>

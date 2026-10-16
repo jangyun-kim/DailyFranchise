@@ -40,13 +40,14 @@ namespace DailyFranchise.Sim.Tests
         // ---------- 태그 ----------
 
         [Test]
-        public void 상위_30퍼센트만_태그를_받는다()
+        public void 상위_20퍼센트만_태그를_받는다()
         {
-            // 10명 → ceil(3) = 3등까지. 도루 시도 10, 9, … 1 (전부 성공)
+            // 10명 → ceil(2) = 2등까지. 도루 시도 10, 9, … 1 (전부 성공)
             var league = Enumerable.Range(0, 10).Select(i => Bat($"s{i}", sb: 10 - i)).ToList();
             var tags = ChemistryTagger.Tag(league);
+            Assert.That(ChemistryTagger.TopPercent, Is.EqualTo(0.20));
             Assert.That(league.Select(p => TagOf(tags, p.Id)),
-                Is.EqualTo(new[] { ChemistryTag.Speed, ChemistryTag.Speed, ChemistryTag.Speed }.Concat(Enumerable.Repeat(ChemistryTag.None, 7))));
+                Is.EqualTo(new[] { ChemistryTag.Speed, ChemistryTag.Speed }.Concat(Enumerable.Repeat(ChemistryTag.None, 8))));
         }
 
         [Test]
@@ -56,17 +57,18 @@ namespace DailyFranchise.Sim.Tests
             league[1] = Bat("s1", sb: 2, cs: 7); // 시도 9 (2등), 성공률 22%
             var tags = ChemistryTagger.Tag(league);
             Assert.That(TagOf(tags, "s1"), Is.EqualTo(ChemistryTag.None));
-            Assert.That(TagOf(tags, "s3"), Is.EqualTo(ChemistryTag.None), "4등은 여전히 범위 밖");
+            Assert.That(TagOf(tags, "s0"), Is.EqualTo(ChemistryTag.Speed));
+            Assert.That(TagOf(tags, "s2"), Is.EqualTo(ChemistryTag.None), "3등은 여전히 범위 밖");
             Assert.That(ChemistryTagger.StealSuccess(Bat("x", sb: 13, cs: 7)), Is.EqualTo(0.65).Within(Eps));
         }
 
         [Test]
         public void 같은_점수는_같은_등수라_경계에서_함께_들어간다()
         {
-            var sb = new[] { 10, 9, 8, 8, 5, 4, 3, 2, 1, 1 };
+            var sb = new[] { 10, 9, 9, 8, 5, 4, 3, 2, 1, 1 };
             var league = sb.Select((v, i) => Bat($"s{i}", sb: v)).ToList();
             var tags = ChemistryTagger.Tag(league);
-            Assert.That(league.Count(p => TagOf(tags, p.Id) == ChemistryTag.Speed), Is.EqualTo(4), "3등 동점 두 명 모두");
+            Assert.That(league.Count(p => TagOf(tags, p.Id) == ChemistryTag.Speed), Is.EqualTo(3), "2등 동점 두 명 모두");
         }
 
         [Test]
@@ -76,10 +78,10 @@ namespace DailyFranchise.Sim.Tests
             league[0] = Bat("x", sb: 20, iso: 0.250);  // 도루 1등, 장타 2등 → Speed
             league[1] = Bat("y", sb: 10, iso: 0.300);  // 도루 2등, 장타 1등 → Power
             league[2] = Bat("z", dwar: 1.0);           // 수비 1등
-            league[3] = Bat("w", iso: 0.100);          // 장타 3등
+            league[3] = Bat("w", iso: 0.100);          // 장타 3등 → 상위 20%(2등) 밖
             var tags = ChemistryTagger.Tag(league);
             Assert.That(new[] { "x", "y", "z", "w" }.Select(id => TagOf(tags, id)),
-                Is.EqualTo(new[] { ChemistryTag.Speed, ChemistryTag.Power, ChemistryTag.Glove, ChemistryTag.Power }));
+                Is.EqualTo(new[] { ChemistryTag.Speed, ChemistryTag.Power, ChemistryTag.Glove, ChemistryTag.None }));
             Assert.That(TagOf(tags, "n4"), Is.EqualTo(ChemistryTag.None), "점수 0은 자격 없음");
         }
 

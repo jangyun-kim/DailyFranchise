@@ -24,6 +24,10 @@ namespace DailyFranchise.App
     /// 직전 경기 재정 변화, 왼쪽 위에 현실 날짜(<see cref="Clock"/>).
     /// 선수 컨디션(Phase 22): 라인업·벤치 행마다 컨디션 점·글자(5 파랑 · 4/3 초록 · 2 노랑 · 1 빨강), 그 아래 선발 로테이션
     /// (직전 선발 다음 순번 중 컨디션 보통 이상인 투수가 "오늘 선발", <see cref="RotationPicker"/>).
+    /// 흥행 시스템(Phase 24): 프런트 오피스 넷째 칸에 신뢰도 TP 게이지와 팬덤 특전 슬롯(해금/잠김),
+    /// 라인업 패널 위에 팀 케미스트리(<see cref="ChemistryRules.Evaluate"/>)와 행마다 성향 배지(주·수·장).
+    /// 케미스트리는 라인업을 그릴 때(진입·DB 로드·교체 이벤트)만 판정하고, 결과가 바뀐 경우에만 문구를 바꾼다.
+    /// 하단에 아직 비활성인 [스카우트 / FA] 버튼.
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class LobbyController : MonoBehaviour
@@ -42,6 +46,15 @@ namespace DailyFranchise.App
         /// <summary>현재 라인업 선택 상태 (테스트·진단용).</summary>
         public LineupSelection Selection => _selection;
 
+        /// <summary>마지막으로 그린 케미스트리 열쇠 (<see cref="ChemistryText.Key"/>). null이면 아직 안 그림.</summary>
+        string _chemistryKey;
+
+        /// <summary>케미스트리 문구를 실제로 바꾼 횟수 (결과가 같으면 늘지 않는다 — 테스트·진단용).</summary>
+        public int ChemistryRenderCount { get; private set; }
+
+        /// <summary>지금 표시 중인 내 구단 케미스트리. 선수 DB가 없으면 null.</summary>
+        public ActiveChemistry Chemistry { get; private set; }
+
         void OnEnable()
         {
             _root = GetComponent<UIDocument>().rootVisualElement;
@@ -54,6 +67,7 @@ namespace DailyFranchise.App
             _manager.DatabaseReady += OnDatabaseReady;
             _manager.LineupChanged += OnLineupChanged;
             _selection.Clear();
+            _chemistryKey = null;
             Render();
         }
 
@@ -143,6 +157,7 @@ namespace DailyFranchise.App
             _card = _manager.CurrentLineup;
             if (mine != null && _card != null)
             {
+                RenderChemistry(ChemistryRules.Evaluate(mine, _manager.ChemistryTags), _manager.ChemistryTags != null);
                 RenderDatabaseRoster(mine);
                 RenderRotation(mine, season);
                 Q<Label>("roster-source").text = $"표시 데이터: {MasterDatabase.RosterFileName} ({db.Season})";
@@ -151,6 +166,7 @@ namespace DailyFranchise.App
             }
 
             // 선수 DB가 없거나 아직 읽는 중이면 경기 화면과 같은 더미 선수 데이터를 쓴다 (교체 불가).
+            RenderChemistry(null, false);
             _card = null;
             _selection.Clear();
             Q("rotation").Clear();
@@ -160,6 +176,22 @@ namespace DailyFranchise.App
             FillDummy(Q("bench"), roster, roster.GetBench(roster.MyTeam));
             Q<Label>("roster-source").text = "표시 데이터: 가상 더미";
             Q<Label>("lineup-hint").text = _manager.IsDatabaseReady ? "라인업 교체는 선수 데이터가 있을 때만 할 수 있습니다." : "";
+        }
+
+        /// <summary>
+        /// 팀 케미스트리 문구. 발동 종류·멤버가 직전과 같으면 아무것도 바꾸지 않는다 (교체해도 결과가 같으면 다시 그리지 않음).
+        /// </summary>
+        /// <param name="known">태그를 알고 있는지. false면 "선수 데이터 필요" 안내.</param>
+        void RenderChemistry(ActiveChemistry active, bool known)
+        {
+            Chemistry = active;
+            string key = known ? ChemistryText.Key(active) : "unknown";
+            if (key == _chemistryKey) return;
+            _chemistryKey = key;
+            ChemistryRenderCount++;
+            var label = Q<Label>("chem-active");
+            label.text = known ? ChemistryText.Summary(active) : "선수 데이터를 읽으면 판정합니다";
+            label.EnableInClassList("chem-active--on", active != null && active.Kinds.Count > 0);
         }
 
         static void FillDummy(VisualElement container, DummyScenarioData roster, IEnumerable<RosterEntry> entries)
@@ -238,6 +270,7 @@ namespace DailyFranchise.App
                 Cell(order, "col-order"),
                 Cell(p.Position, "col-pos"),
                 Cell(p.Name, "col-name"),
+                BadgeCell(TagOf(p)),
                 ConditionCell(_manager.Season.ConditionOf(p.Id)),
                 Cell(ScenarioRosterSource.HandednessText(p), "col-hand"));
             row.name = spot.IsBench ? $"bench-{spot.Index + 1}" : $"lineup-{spot.Index + 1}";
@@ -245,6 +278,19 @@ namespace DailyFranchise.App
             row.AddToClassList("lobby-row--selectable");
             row.RegisterCallback<ClickEvent>(_ => ClickLineupSpot(spot));
             return row;
+        }
+
+        ChemistryTag TagOf(PlayerData p) =>
+            _manager.ChemistryTags != null && p?.Id != null && _manager.ChemistryTags.TryGetValue(p.Id, out var t) ? t : ChemistryTag.None;
+
+        /// <summary>성향 배지 (주·수·장). 태그가 없으면 빈 자리만 차지한다 (열 맞춤).</summary>
+        static Label BadgeCell(ChemistryTag tag)
+        {
+            var badge = Cell(ChemistryText.Badge(tag), "chem-badge");
+            badge.AddToClassList(ChemistryText.BadgeClass(tag));
+            badge.tooltip = ChemistryText.BadgeTooltip(tag);
+            badge.userData = tag;
+            return badge;
         }
 
         /// <summary>선택·교체 가능 표시를 USS 클래스로만 갱신하고 안내 문구를 바꾼다.</summary>
@@ -421,11 +467,30 @@ namespace DailyFranchise.App
                 ? $"승 {FranchiseFinance.FanDeltaText(FranchiseFinance.WinFan)} · 패 {FranchiseFinance.FanDeltaText(FranchiseFinance.LossFan)}"
                 : $"직전 경기({OutcomeText(report.MyOutcome)}) {FranchiseFinance.FanDeltaText(report.Finance.FanDelta)}";
 
+            RenderTrustAndSlots(season);
+
             int played = season.GamesPlayed, total = season.Schedule.Count;
             Q<VisualElement>("fo-season-fill").style.width = Length.Percent(total == 0 ? 0 : 100f * played / total);
             Q<Label>("fo-season").text = $"{played} / {total}경기";
             var next = season.NextGame;
             Q<Label>("fo-season-next").text = next == null ? "시즌 종료" : $"다음 경기일 {next.Date} · 남은 {total - played}경기";
+        }
+
+        /// <summary>프런트 신뢰도 TP 게이지(0~200)와 팬덤 특전 슬롯 해금/잠김.</summary>
+        void RenderTrustAndSlots(SeasonState season)
+        {
+            int trust = season.TrustPoints;
+            Q<VisualElement>("fo-trust-fill").style.width = Length.Percent(100f * trust / FrontOfficeTrust.MaxTrust);
+            Q<Label>("fo-trust").text = FrontOfficeTrust.TrustText(trust);
+            Q("fo-trust-gauge").tooltip = FrontOfficeTrust.CeilingText(trust);
+            foreach (var slot in FandomRules.Slots)
+            {
+                bool unlocked = (season.UnlockedSlots & slot) != 0;
+                var chip = Q<Label>("fo-slot-" + slot.ToString().ToLowerInvariant());
+                chip.EnableInClassList("fo-slot--unlocked", unlocked);
+                chip.EnableInClassList("fo-slot--locked", !unlocked);
+                chip.tooltip = (unlocked ? "해금됨 · " : "잠김 · ") + FandomRules.Hint(slot);
+            }
         }
 
         static string OutcomeText(GameOutcome outcome) =>
