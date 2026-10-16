@@ -138,7 +138,7 @@
                 <ui:Label name="rotation-title" class="section-title rotation-title" text="선발 로테이션 · 컨디션이 좋은 투수부터 등판" />
                 <ui:VisualElement name="rotation" />
                 <ui:Label name="bullpen-title" class="section-title rotation-title" text="불펜" />
-                <ui:Label name="bullpen" class="bullpen-list" text="" />
+                <ui:VisualElement name="bullpen" class="bullpen-list" />
             </ui:VisualElement>
         </ui:VisualElement>
 
@@ -147,6 +147,7 @@
             <ui:VisualElement class="footer__last">
                 <ui:Label class="section-title" text="지난 경기" />
                 <ui:Label name="last-result" class="last-result" text="—" />
+                <ui:Label name="last-finance" class="last-finance" text="" />
             </ui:VisualElement>
             <ui:VisualElement class="footer__next">
                 <ui:Label class="section-title" text="다음 경기" />

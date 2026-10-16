@@ -9,7 +9,7 @@ namespace DailyFranchise.App
     /// 로비 위에 뜨는 스토브리그 FA 시장 모달 (Phase 25). 순수 C# 뷰 — 로비(<see cref="LobbyController"/>)가 만들고 연다.
     /// 왼쪽은 시장 목록(<see cref="SeasonManager.Market"/>), 오른쪽은 고른 선수의 협상 테이블:
     /// 제시액(요구액의 50~150%, ±1·5%)과 그에 따른 성공 확률(<see cref="FrontOfficeTrust.SuccessRate"/>)·수수료·환급 TP·
-    /// 성공 시 예산·캡 여유를 보이고, 막히는 이유(<see cref="StoveLeague.Check"/>)가 있으면 경고하고 버튼을 잠근다.
+    /// 성공 시 경기당 유지비 증가(연봉 ÷ 144, Phase 26)·캡 여유를 보이고, 막히는 이유(<see cref="StoveLeague.Check"/>)가 있으면 경고하고 버튼을 잠근다.
     /// [확정 영입]은 TP 100 이상일 때만 열린다. 협상 결과는 SeasonManager가 저장·알림하고 여기서 다시 그린다.
     /// 시장 목록은 열 때와 협상 뒤에만 다시 만들고, 선택·제시액 변경은 협상 테이블만 다시 그린다.
     /// </summary>
@@ -71,7 +71,7 @@ namespace DailyFranchise.App
         public FreeAgent Selected => SelectedId == null ? null : _manager.Market.FirstOrDefault(a => a.Id == SelectedId);
 
         /// <summary>지금 제시액 (원).</summary>
-        public int Offer => Selected == null ? 0 : StoveLeague.OfferAt(Selected.Ask, OfferPercent);
+        public long Offer => Selected == null ? 0 : StoveLeague.OfferAt(Selected.Ask, OfferPercent);
 
         /// <summary>시장 목록을 새로 만든 횟수 (선택·제시액만 바꾸면 늘지 않는다 — 테스트·진단용).</summary>
         public int ListRenderCount { get; private set; }
@@ -131,7 +131,7 @@ namespace DailyFranchise.App
             else if (o.Signed)
             {
                 string where = o.Agent.Player.IsPitcher ? "불펜" : "벤치";
-                _resultText = $"영입 성공 · {name} → {where} 합류 (계약금 {Won(o.Paid)} · 수수료 {Won(o.Negotiation.Fee)}" +
+                _resultText = $"영입 성공 · {name} → {where} 합류 (연봉 {Won(o.Salary)} · 수수료 {Won(o.Negotiation.Fee)}" +
                               (o.Negotiation.CeilingUsed ? " · TP 100 사용)" : ")");
                 _resultSuccess = true;
                 SelectedId = null; // 영입한 선수는 시장에서 빠진다 → 다음 선수
@@ -230,7 +230,7 @@ namespace DailyFranchise.App
             }
 
             var p = agent.Player;
-            int offer = Offer, fee = FrontOfficeTrust.FeeOf(agent.Ask);
+            long offer = Offer, fee = FrontOfficeTrust.FeeOf(agent.Ask);
             Q<Label>("fa-player-name").text = p.Name;
             Q<Label>("fa-player-meta").text =
                 $"{agent.Team} · {p.Position} · {(p.Age > 0 ? p.Age + "세 · " : "")}WAR {p.War.ToString("0.00", CultureInfo.InvariantCulture)} · {StoveLeague.KeyStat(p)}";
@@ -243,7 +243,8 @@ namespace DailyFranchise.App
             Q<Label>("fa-fee").text = $"수수료 {Won(fee)} (시도마다) · " +
                                      (FrontOfficeTrust.IsGoodFaith(offer, agent.Ask) ? $"결렬 시 TP +{refund}" : "헐값 제시(90% 미만) → 결렬 시 환급 없음");
             long capRoom = StoveLeague.CapRoom(season, _manager.Rosters);
-            Q<Label>("fa-after").text = $"성공 시 예산 {Won((long)season.Budget - fee - offer)} · 캡 여유 {Won(capRoom - offer)}";
+            Q<Label>("fa-after").text =
+                $"성공 시 경기당 유지비 +{Won(FranchiseFinance.PayrollPerGame(offer))} · 캡 여유 {Won(capRoom - offer)}";
 
             var block = StoveLeague.Check(season, _manager.Rosters, agent, offer);
             Q<Label>("fa-warning").text = StoveLeague.BlockText(block);
@@ -255,8 +256,8 @@ namespace DailyFranchise.App
                 : StoveLeague.BlockText(ceilingBlock);
         }
 
-        static string Won(long won) =>
-            (won < 0 ? "−₩" : "₩") + Math.Abs(won).ToString("N0", CultureInfo.InvariantCulture);
+        /// <summary>"₩3억 7,620만" / 음수 "−₩2,000만" (<see cref="FranchiseFinance.Won"/>).</summary>
+        static string Won(long won) => (won < 0 ? "−₩" : "₩") + FranchiseFinance.Won(won);
 
         T Q<T>(string name) where T : VisualElement => _root.Q<T>(name);
         VisualElement Q(string name) => _root.Q(name);

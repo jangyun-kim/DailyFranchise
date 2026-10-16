@@ -127,6 +127,9 @@ namespace DailyFranchise.App
                 {
                     _book = LeagueRosterBook.Build(Database, Season.Signings);
                     (_bookDatabase, _bookSeason, _bookSignings) = (Database, Season, Season.Signings.Count);
+                    // 재정 기준 (Phase 26): 캡 기준은 리그 개막 평균 페이롤 × 1.25, 페이롤은 지금 내 구단 1군 연봉 합계.
+                    Season.SetSalaryCapBase(StoveLeague.OpeningCap(Database));
+                    Season.SetPayroll(StoveLeague.Payroll(_book.Get(Season.MyTeam), Season.Signings));
                 }
                 return _book;
             }
@@ -137,7 +140,7 @@ namespace DailyFranchise.App
             StoveLeague.Market(Rosters, Season.MyTeam, FranchiseFinance.MoodOf(Season.FanApproval));
 
         /// <summary>FA 일반 협상. 시도했으면(막히지 않았으면) 바로 저장하고 알린다.</summary>
-        public SigningOutcome Negotiate(FreeAgent agent, int offer) =>
+        public SigningOutcome Negotiate(FreeAgent agent, long offer) =>
             Finish(_loading || Rosters == null ? Blocked(agent) : StoveLeague.Negotiate(Season, Rosters, agent, offer, NegotiationRandom));
 
         /// <summary>[확정 영입] (TP 100 소모). 시도했으면 바로 저장하고 알린다.</summary>
@@ -146,9 +149,29 @@ namespace DailyFranchise.App
 
         static SigningOutcome Blocked(FreeAgent agent) => new SigningOutcome { Agent = agent, Block = SigningBlock.InGame };
 
+        /// <summary>
+        /// 선수 방출 (Phase 26): 벤치·불펜 선수만, 위약금(연봉 50%)을 예산에서 내고 자유계약으로 시장에 돌려보낸다.
+        /// 방출했으면 바로 저장하고 알린다.
+        /// </summary>
+        public ReleaseOutcome Release(string playerId)
+        {
+            if (_loading || Rosters == null) return new ReleaseOutcome { Block = ReleaseBlock.InGame };
+            var outcome = StoveLeague.Release(Season, Rosters, playerId);
+            if (!outcome.Released) return outcome;
+            _ = Rosters; // 장부·페이롤 다시 짜기
+            Saves.Save(Season);
+            StoveChanged?.Invoke();
+            LineupChanged?.Invoke();
+            return outcome;
+        }
+
+        /// <summary>내 구단이 경기를 치를 수 없는 선수단이면 이유 (<see cref="RosterLimits.GameReadinessProblem"/>), 아니면 null.</summary>
+        public string RosterProblem => RosterLimits.GameReadinessProblem(MyRoster);
+
         SigningOutcome Finish(SigningOutcome outcome)
         {
             if (outcome.Block != SigningBlock.None) return outcome;
+            _ = Rosters; // 영입했으면 장부·페이롤 다시 짜기
             Saves.Save(Season);
             StoveChanged?.Invoke();
             if (outcome.Signed) LineupChanged?.Invoke();
@@ -251,6 +274,7 @@ namespace DailyFranchise.App
         public bool StartNextGame()
         {
             if (_loading || !IsDatabaseReady || Season.InProgress != null || Season.NextGame == null) return false;
+            if (RosterProblem != null) return false; // 타순·로테이션 펑크 (Phase 26)
             Season.StartNextGame();
             Load(GameScene);
             return true;
@@ -329,6 +353,7 @@ namespace DailyFranchise.App
         {
             if (Season.InProgress == null) return null;
             LastScore = finalScore;
+            _ = Rosters; // 정산 전에 페이롤을 지금 선수단에 맞춘다
             LastReport = PostGameProcessor.Process(Season, finalScore, LeagueRandom, Saves, participation, ConditionRandom);
             return LastReport;
         }

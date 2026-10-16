@@ -591,12 +591,34 @@ Label {
 .chem-badge--power { background-color: #E5534B; }
 
 /* ───────── 투수진 (Phase 25: 순위표 아래) ───────── */
+/* 불펜: 줄바꿈 칩 (이름(역할) + 방출), 최대 7명 → 3줄 */
 .bullpen-list {
-    height: 44px;
-    font-size: 14px;
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+
+.bullpen-chip {
+    height: 26px;
+    margin: 0 6px 4px 0;
+    padding: 0 0 0 8px;
+    flex-direction: row;
+    align-items: center;
+    border-radius: 13px;
+    background-color: var(--panel-2);
+}
+
+.bullpen-chip__name {
+    height: 24px;
+    margin-right: 4px;
+    font-size: 13px;
+    -unity-text-align: middle-left;
+}
+
+.bullpen-empty {
+    height: 24px;
+    font-size: 13px;
     color: var(--muted);
-    white-space: normal;
-    -unity-text-align: upper-left;
+    -unity-text-align: middle-left;
 }
 
 /* ───────── 스토브리그 FA 시장 모달 (Phase 25) ───────── */
@@ -741,17 +763,22 @@ Label {
 }
 
 .unity-button.fa-modal__step {
-    width: 64px;
+    width: 54px;
     height: 40px;
+    flex-shrink: 0;
     margin: 0 6px 0 0;
+    padding: 0;
     font-size: 15px;
 }
 
 .fa-modal__offer-value {
     flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
     height: 40px;
     margin-right: 6px;
-    font-size: 18px;
+    font-size: 16px;
+    white-space: normal;
     -unity-font-style: bold;
     -unity-text-align: middle-center;
 }
@@ -813,3 +840,36 @@ Label {
 
 .fa-modal__result--success { color: #3FB950; -unity-font-style: bold; }
 .fa-modal__result--failure { color: #E3B341; }
+
+/* ───────── 방출 (Phase 26) ───────── */
+.unity-button.lobby-release {
+    width: 40px;
+    height: 24px;
+    margin: 0;
+    padding: 0;
+    border-radius: 12px;
+    font-size: 11px;
+    color: #E5534B;
+    border-color: #E5534B;
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.unity-button.lobby-release:hover {
+    background-color: rgba(229, 83, 75, 0.15);
+}
+
+.unity-button.lobby-release:disabled {
+    opacity: 0.35;
+}
+
+.lobby-row > .lobby-release {
+    margin-left: 4px;
+}
+
+/* 지난 경기 재정 명세: 관중 수입 · 유지비 · 순이익 */
+.last-finance {
+    height: 22px;
+    font-size: 14px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}

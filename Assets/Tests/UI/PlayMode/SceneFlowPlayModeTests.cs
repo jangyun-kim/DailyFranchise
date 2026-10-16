@@ -839,13 +839,17 @@ namespace DailyFranchise.UI.Tests
             var manager = SeasonManager.Instance;
             var root = LobbyRoot();
             Assert.That(root.Q<Label>("today").text, Is.EqualTo("오늘 " + FranchiseFinance.TodayText(System.DateTime.Now)));
-            Assert.That(root.Q<Label>("fo-budget").text, Is.EqualTo("₩ 5,000,000"));
+            Assert.That(root.Q<Label>("fo-budget").text, Is.EqualTo("₩ 50억"), "Phase 26: 억·만 단위 표기");
+            Assert.That(root.Q<Label>("fo-budget").tooltip, Is.EqualTo("₩5,000,000,000"));
+            Assert.That(manager.Season.Payroll, Is.EqualTo(4_020_000_000L), "로비가 열리면 페이롤이 선수단에 맞춰진다");
+            Assert.That(manager.Season.SalaryCap, Is.EqualTo(4_686_562_500L), "캡 기준 = 리그 개막 평균 페이롤 × 1.25");
             Assert.That(root.Q<Label>("fo-fan").text, Is.EqualTo("50%"));
             Assert.That(root.Q("fo-fan-fill").style.width.value, Is.EqualTo(Length.Percent(50)));
             Assert.That(root.Q("fo-fan-fill").ClassListContains("fo-fill--happy") || root.Q("fo-fan-fill").ClassListContains("fo-fill--angry"),
                 Is.False, "50%는 보통");
             Assert.That(root.Q<Label>("fo-season").text, Is.EqualTo("0 / 10경기"));
-            Assert.That(root.Q<Label>("fo-budget-delta").text, Is.EqualTo("승 +₩50,000 · 패 +₩20,000"), "아직 치른 경기가 없으면 규칙 안내");
+            Assert.That(root.Q<Label>("fo-budget-delta").text, Is.EqualTo("승 +₩5,000만 · 유지비 −₩2,791만"), "아직 치른 경기가 없으면 수입·유지비 안내");
+            Assert.That(root.Q<Label>("last-finance").text, Is.Empty);
             yield return CheckLobbyLayout("첫 로비");
 
             // 고정 장면 1경기 → 로비 복귀
@@ -862,21 +866,27 @@ namespace DailyFranchise.UI.Tests
             yield return WaitForScene(SeasonManager.LobbyScene);
 
             var report = manager.LastReport;
-            var change = FranchiseFinance.For(report.MyOutcome);
+            // Phase 26: 관중 수입에서 선수단 유지비(페이롤 40.2억 ÷ 144 = 2,791만 6,666원)를 뺀 순이익이 예산에 반영된다.
+            var income = FranchiseFinance.For(report.MyOutcome);
+            Assert.That((report.Income, report.PayrollExpense), Is.EqualTo((income.BudgetDelta, 27_916_666L)));
+            var change = new FinanceChange(income.BudgetDelta - 27_916_666, income.FanDelta);
             Assert.That(report.Finance, Is.EqualTo(change));
             root = LobbyRoot();
-            Assert.That(root.Q<Label>("fo-budget").text, Is.EqualTo(FranchiseFinance.BudgetText(5_000_000 + change.BudgetDelta)), "즉시 갱신");
+            Assert.That(root.Q<Label>("fo-budget").text, Is.EqualTo(FranchiseFinance.BudgetText(5_000_000_000 + change.BudgetDelta)), "즉시 갱신");
             Assert.That(root.Q<Label>("fo-fan").text, Is.EqualTo($"{50 + change.FanDelta}%"));
             Assert.That(root.Q("fo-fan-fill").style.width.value, Is.EqualTo(Length.Percent(50 + change.FanDelta)));
-            Assert.That(root.Q<Label>("fo-budget-delta").text, Does.Contain(FranchiseFinance.BudgetDeltaText(change.BudgetDelta)));
+            Assert.That(root.Q<Label>("fo-budget-delta").text, Does.Contain("순이익 " + FranchiseFinance.BudgetDeltaText(change.BudgetDelta)));
+            Assert.That(root.Q<Label>("fo-budget-delta").tooltip, Is.EqualTo(report.FinanceText));
+            Assert.That(root.Q<Label>("last-finance").text, Is.EqualTo(report.FinanceText));
+            Assert.That(report.FinanceText, Does.Contain("유지비 −₩2,791만"));
             Assert.That(root.Q<Label>("fo-fan-delta").text, Does.EndWith(FranchiseFinance.FanDeltaText(change.FanDelta)));
             Assert.That(root.Q<Label>("fo-season").text, Is.EqualTo("1 / 10경기"));
-            Assert.That((manager.Season.Budget, manager.Season.FanApproval), Is.EqualTo((5_000_000 + change.BudgetDelta, 50 + change.FanDelta)));
+            Assert.That((manager.Season.Budget, manager.Season.FanApproval), Is.EqualTo((5_000_000_000 + change.BudgetDelta, 50 + change.FanDelta)));
             yield return CheckLobbyLayout("경기 후 로비");
 
             // 재시작해도 저장된 재정으로 이어진다.
             yield return RestartFromLobby();
-            Assert.That(LobbyRoot().Q<Label>("fo-budget").text, Is.EqualTo(FranchiseFinance.BudgetText(5_000_000 + change.BudgetDelta)));
+            Assert.That(LobbyRoot().Q<Label>("fo-budget").text, Is.EqualTo(FranchiseFinance.BudgetText(5_000_000_000 + change.BudgetDelta)));
             Assert.That(LobbyRoot().Q<Label>("fo-fan").text, Is.EqualTo($"{50 + change.FanDelta}%"));
         }
 
@@ -887,14 +897,14 @@ namespace DailyFranchise.UI.Tests
             var lobby = Object.FindAnyObjectByType<LobbyController>();
             foreach (var (fan, cls) in new[] { (85, "fo-fill--happy"), (20, "fo-fill--angry") })
             {
-                manager.Season.SetFinance(1_234_567, fan);
+                manager.Season.SetFinance(12_345_678_901, fan);
                 lobby.enabled = false;
                 lobby.enabled = true; // 다시 그리기
                 yield return null;
                 var root = LobbyRoot();
                 Assert.That(root.Q("fo-fan-fill").ClassListContains(cls), Is.True, $"{fan}% → {cls}");
                 Assert.That(root.Q<Label>("fo-fan").ClassListContains(cls.Replace("fill", "percent")), Is.True);
-                Assert.That(root.Q<Label>("fo-budget").text, Is.EqualTo("₩ 1,234,567"));
+                Assert.That(root.Q<Label>("fo-budget").text, Is.EqualTo("₩ 123억 4,567만"));
             }
         }
 

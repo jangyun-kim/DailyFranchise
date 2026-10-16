@@ -29,6 +29,9 @@ namespace DailyFranchise.App
     /// 케미스트리는 라인업을 그릴 때(진입·DB 로드·교체 이벤트)만 판정하고, 결과가 바뀐 경우에만 문구를 바꾼다.
     /// 스토브리그(Phase 25): 하단 [스카우트 / FA]로 FA 시장 모달(<see cref="FaMarketView"/>)을 연다 (선수 DB가 있고 경기 중이 아닐 때).
     /// 벤치가 5명까지 늘 수 있어 투수진(선발 로테이션·불펜)은 순위표 아래에 그린다.
+    /// 재정 현실화(Phase 26): 금액은 "₩ 50억" 꼴, 헤더에 경기당 유지비·직전 경기 순이익, 하단에 관중 수입·유지비·순이익 명세.
+    /// 벤치 행·불펜 칩의 [방출]로 위약금(연봉 50%)을 내고 선수를 시장에 돌려보낸다 (선발 타순·로테이션은 불가).
+    /// 선수단이 경기를 치를 수 없으면(타순 9명·선발 투수) [다음 경기 시작]을 잠그고 이유를 보인다.
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class LobbyController : MonoBehaviour
@@ -51,6 +54,9 @@ namespace DailyFranchise.App
 
         /// <summary>현재 라인업 선택 상태 (테스트·진단용).</summary>
         public LineupSelection Selection => _selection;
+
+        /// <summary>방출 결과 등 라인업 안내 줄에 잠시 보일 문구. 다음 클릭 때 지운다.</summary>
+        string _notice;
 
         /// <summary>마지막으로 그린 케미스트리 열쇠 (<see cref="ChemistryText.Key"/>). null이면 아직 안 그림.</summary>
         string _chemistryKey;
@@ -136,6 +142,7 @@ namespace DailyFranchise.App
         public void ClickLineupSpot(LineupSpot spot)
         {
             if (_card == null || !_card.Contains(spot) || _manager.Season.InProgress != null) return;
+            _notice = null;
             var result = _selection.Click(spot, _card.CanSwap);
             if (result == LineupClick.Swap)
             {
@@ -155,6 +162,7 @@ namespace DailyFranchise.App
 
         void Render()
         {
+            _ = _manager.Rosters; // 선수단 장부·페이롤·캡 기준을 먼저 맞춘다 (헤더 유지비 표기가 페이롤을 쓴다)
             var season = _manager.Season;
             Q<Label>("season-title").text = season.SeasonTitle;
             Q<Label>("my-team").text = season.MyTeam;
@@ -168,13 +176,17 @@ namespace DailyFranchise.App
             RenderStandings(season);
 
             Q<Label>("last-result").text = LastResultText(season);
+            Q<Label>("last-finance").text = _manager.LastReport?.FinanceText ?? "";
 
             var next = season.NextGame;
             Q<Label>("next-game").text = next == null
                 ? "시즌 일정이 모두 끝났습니다."
                 : $"경기 {next.Number} · {next.Date} · {next.MatchupText} · {next.Stadium}";
-            _start.text = next == null ? "시즌 종료" : !_manager.IsDatabaseReady ? "선수 데이터 불러오는 중…" : "다음 경기 시작";
-            _start.SetEnabled(next != null && season.InProgress == null && _manager.IsDatabaseReady);
+            string problem = _manager.IsDatabaseReady ? _manager.RosterProblem : null;
+            _start.text = next == null ? "시즌 종료" : !_manager.IsDatabaseReady ? "선수 데이터 불러오는 중…"
+                : problem != null ? "선수단 확인 필요" : "다음 경기 시작";
+            _start.SetEnabled(next != null && season.InProgress == null && _manager.IsDatabaseReady && problem == null);
+            _start.tooltip = problem ?? "";
             _scout.SetEnabled(_manager.IsDatabaseReady && season.InProgress == null);
             _mode.text = _manager.FullInningMode ? "진행: 풀 이닝 (1회부터)" : "진행: 퀵 시뮬 (8회부터)";
             _mode.EnableInClassList("btn--active", _manager.FullInningMode);
@@ -210,7 +222,7 @@ namespace DailyFranchise.App
             Q("rotation").Clear();
             SetVisible(Q("rotation-title"), false);
             SetVisible(Q("bullpen-title"), false);
-            Q<Label>("bullpen").text = "";
+            Q("bullpen").Clear();
             var roster = new DummyScenarioData();
             FillDummy(Q("roster"), roster, roster.GetLineup(roster.MyTeam));
             FillDummy(Q("bench"), roster, roster.GetBench(roster.MyTeam));
@@ -257,8 +269,17 @@ namespace DailyFranchise.App
             SetVisible(Q("rotation-title"), roster.Starters.Count > 0);
             SetVisible(Q("bullpen-title"), true);
             Q<Label>("bullpen-title").text = $"불펜 {roster.Bullpen.Count}명";
-            Q<Label>("bullpen").text = roster.Bullpen.Count == 0 ? "없음"
-                : string.Join(" · ", roster.Bullpen.Select(p => $"{p.Name}({p.Position})"));
+            var bullpen = Q("bullpen");
+            bullpen.Clear();
+            if (roster.Bullpen.Count == 0) bullpen.Add(Cell("없음", "bullpen-empty"));
+            foreach (var p in roster.Bullpen)
+            {
+                var chip = new VisualElement { name = "bullpen-" + p.Id, userData = p.Id };
+                chip.AddToClassList("bullpen-chip");
+                chip.Add(Cell($"{p.Name}({p.Position})", "bullpen-chip__name"));
+                chip.Add(ReleaseButton(p));
+                bullpen.Add(chip);
+            }
             var today = RotationPicker.Pick(roster, season, season.LastStarterOf(roster.Team));
             foreach (var p in roster.Starters)
             {
@@ -308,20 +329,61 @@ namespace DailyFranchise.App
                 bench.Add(SpotRow(LineupSpot.Bench(i), "", roster.Bench[i]));
         }
 
+        /// <summary>
+        /// 라인업 행: 순번 · 위치 · 이름 · 배지 · 컨디션 · 투타. 벤치 행은 순번·투타 대신 끝에 [방출] (투타는 이름 툴팁).
+        /// </summary>
         VisualElement SpotRow(LineupSpot spot, string order, PlayerData p)
         {
-            var row = Row("lobby-row",
-                Cell(order, "col-order"),
-                Cell(p.Position, "col-pos"),
-                Cell(p.Name, "col-name"),
-                BadgeCell(TagOf(p)),
-                ConditionCell(_manager.Season.ConditionOf(p.Id)),
-                Cell(ScenarioRosterSource.HandednessText(p), "col-hand"));
+            var name = Cell(p.Name, "col-name");
+            var row = spot.IsBench
+                ? Row("lobby-row",
+                    Cell(p.Position, "col-pos"),
+                    name,
+                    BadgeCell(TagOf(p)),
+                    ConditionCell(_manager.Season.ConditionOf(p.Id)),
+                    ReleaseButton(p))
+                : Row("lobby-row",
+                    Cell(order, "col-order"),
+                    Cell(p.Position, "col-pos"),
+                    name,
+                    BadgeCell(TagOf(p)),
+                    ConditionCell(_manager.Season.ConditionOf(p.Id)),
+                    Cell(ScenarioRosterSource.HandednessText(p), "col-hand"));
+            name.tooltip = ScenarioRosterSource.HandednessText(p);
             row.name = spot.IsBench ? $"bench-{spot.Index + 1}" : $"lineup-{spot.Index + 1}";
             row.userData = spot;
             row.AddToClassList("lobby-row--selectable");
             row.RegisterCallback<ClickEvent>(_ => ClickLineupSpot(spot));
             return row;
+        }
+
+        /// <summary>[방출] 버튼. 막히면 잠그고 이유를, 아니면 위약금을 툴팁으로 보인다. 행 클릭(교체 선택)으로 번지지 않는다.</summary>
+        Button ReleaseButton(PlayerData p)
+        {
+            string id = p.Id;
+            var button = new Button(() => ReleasePlayer(id)) { text = "방출", name = "release-" + id };
+            button.AddToClassList("lobby-release");
+            button.RegisterCallback<ClickEvent>(e => e.StopPropagation());
+            var block = StoveLeague.CheckRelease(_manager.Season, _manager.Rosters, id);
+            button.SetEnabled(block == ReleaseBlock.None);
+            button.tooltip = block == ReleaseBlock.None
+                ? $"방출 · 위약금 {FranchiseFinance.BudgetDeltaText(-StoveLeague.ReleasePenalty(_manager.Season, _manager.Rosters, id))} (연봉 50%)"
+                : StoveLeague.ReleaseBlockText(block);
+            return button;
+        }
+
+        /// <summary>선수 방출 (벤치 행·불펜 칩의 [방출]). 결과는 라인업 안내 줄에 보인다.</summary>
+        public ReleaseOutcome ReleasePlayer(string playerId)
+        {
+            if (_manager == null) return null;
+            string name = _manager.Rosters?.Find(playerId).player?.Name ?? playerId;
+            _selection.Clear();
+            var outcome = _manager.Release(playerId);
+            _notice = outcome.Released
+                ? $"방출 · {name} → FA 시장 (위약금 {FranchiseFinance.BudgetDeltaText(-outcome.Penalty)})"
+                : StoveLeague.ReleaseBlockText(outcome.Block);
+            RenderSelection();
+            return outcome;
         }
 
         ChemistryTag TagOf(PlayerData p) =>
@@ -349,7 +411,10 @@ namespace DailyFranchise.App
             }
 
             string name = selected.HasValue ? NameAt(selected.Value) : null;
+            string problem = _manager.RosterProblem;
             Q<Label>("lineup-hint").text = _manager.Season.InProgress != null ? ""
+                : _notice != null ? _notice
+                : problem != null ? problem
                 : name == null ? "선수를 누른 뒤 바꿀 타순 또는 벤치 선수를 누르면 자리를 맞바꿉니다."
                 : $"{name} 선택됨 · 바꿀 선수를 누르세요 (다시 누르면 취소).";
         }
@@ -492,10 +557,16 @@ namespace DailyFranchise.App
             Q<Label>("today").text = "오늘 " + FranchiseFinance.TodayText(Clock());
 
             var report = _manager.LastReport;
-            Q<Label>("fo-budget").text = FranchiseFinance.BudgetText(season.Budget);
-            Q<Label>("fo-budget-delta").text = report == null
-                ? $"승 {FranchiseFinance.BudgetDeltaText(FranchiseFinance.WinIncome)} · 패 {FranchiseFinance.BudgetDeltaText(FranchiseFinance.LossIncome)}"
-                : $"직전 경기({OutcomeText(report.MyOutcome)}) 관중 수입 {FranchiseFinance.BudgetDeltaText(report.Finance.BudgetDelta)}";
+            var budget = Q<Label>("fo-budget");
+            budget.text = FranchiseFinance.BudgetText(season.Budget);
+            budget.tooltip = FranchiseFinance.ExactText(season.Budget);
+            var delta = Q<Label>("fo-budget-delta");
+            delta.text = report == null
+                ? $"승 {FranchiseFinance.BudgetDeltaText(FranchiseFinance.WinIncome)} · 유지비 {FranchiseFinance.BudgetDeltaText(-FranchiseFinance.PayrollPerGame(season.Payroll))}"
+                : $"직전 경기({OutcomeText(report.MyOutcome)}) 순이익 {FranchiseFinance.BudgetDeltaText(report.NetIncome)}";
+            delta.tooltip = report == null
+                ? $"경기마다 관중 수입이 들어오고 선수단 유지비(페이롤 {FranchiseFinance.BudgetText(season.Payroll)} ÷ {FranchiseFinance.GamesPerSeason})가 나갑니다."
+                : report.FinanceText;
 
             int fan = season.FanApproval;
             var mood = FranchiseFinance.MoodOf(fan);

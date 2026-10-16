@@ -184,8 +184,8 @@ namespace DailyFranchise.App
         /// </summary>
         public LineupCard MyLineup { get; set; }
 
-        /// <summary>구단 예산 (원). 0 이상 (<see cref="FranchiseFinance.ClampBudget"/>). 시즌과 함께 저장된다.</summary>
-        public int Budget { get; private set; } = FranchiseFinance.DefaultBudget;
+        /// <summary>구단 예산 (원, long — Phase 26). 0 이상 (<see cref="FranchiseFinance.ClampBudget"/>). 시즌과 함께 저장된다.</summary>
+        public long Budget { get; private set; } = FranchiseFinance.DefaultBudget;
 
         /// <summary>팬 만족도 (%). 0~100 (<see cref="FranchiseFinance.ClampFanApproval"/>). 시즌과 함께 저장된다.</summary>
         public int FanApproval { get; private set; } = FranchiseFinance.DefaultFanApproval;
@@ -196,8 +196,9 @@ namespace DailyFranchise.App
         /// <returns>범위 제한 뒤 실제로 바뀐 양.</returns>
         public FinanceChange ApplyFinance(FinanceChange change)
         {
-            int budget = Budget, fan = FanApproval;
-            SetFinance((long)Budget + change.BudgetDelta, (long)FanApproval + change.FanDelta);
+            long budget = Budget;
+            int fan = FanApproval;
+            SetFinance(FranchiseFinance.AddBudget(Budget, change.BudgetDelta), (long)FanApproval + change.FanDelta);
             return new FinanceChange(Budget - budget, FanApproval - fan);
         }
 
@@ -221,20 +222,42 @@ namespace DailyFranchise.App
         /// <summary>이번 시즌에 적립한 TP (상한 <see cref="FrontOfficeTrust.MaxSeasonEarn"/>).</summary>
         public int TrustEarnedThisSeason { get; private set; }
         /// <summary>이번 시즌 캡에서 빼는 상환액 (직전 시즌 신뢰 대출의 50%).</summary>
-        public int CapRepay { get; private set; }
-        /// <summary>이번 시즌 신뢰 대출로 늘린 캡 (최대 기본 캡의 10%).</summary>
-        public int CapFlex { get; private set; }
+        public long CapRepay { get; private set; }
+        /// <summary>이번 시즌 신뢰 대출로 늘린 캡 (최대 캡 기준의 10%).</summary>
+        public long CapFlex { get; private set; }
 
-        /// <summary>이번 시즌 샐러리캡 = 기본 캡 − 상환 + 대출.</summary>
-        public int SalaryCap => FrontOfficeTrust.EffectiveCap(FrontOfficeTrust.BaseSalaryCap, CapRepay, CapFlex);
+        /// <summary>
+        /// 샐러리캡 기준 (Phase 26): 리그 개막 평균 페이롤 × 1.25 (<see cref="StoveLeague.OpeningCap"/>).
+        /// 선수 DB에서 다시 계산하는 값이라 저장하지 않는다. DB를 모르면 <see cref="FrontOfficeTrust.DefaultSalaryCap"/>.
+        /// </summary>
+        public long SalaryCapBase { get; private set; } = FrontOfficeTrust.DefaultSalaryCap;
+
+        /// <summary>캡 기준을 정한다 (0 이하는 무시). 대출은 새 기준의 10% 안으로 맞춘다.</summary>
+        public void SetSalaryCapBase(long baseCap)
+        {
+            if (baseCap <= 0) return;
+            SalaryCapBase = baseCap;
+            CapFlex = Math.Min(CapFlex, FrontOfficeTrust.MaxFlexOf(baseCap));
+        }
+
+        /// <summary>이번 시즌 샐러리캡 = 캡 기준 − 상환 + 대출.</summary>
+        public long SalaryCap => FrontOfficeTrust.EffectiveCap(SalaryCapBase, CapRepay, CapFlex);
+
+        /// <summary>
+        /// 내 구단 1군 총연봉 (Phase 26, <see cref="StoveLeague.Payroll"/>). 선수단 장부가 바뀔 때 SeasonManager가 맞춰 둔다
+        /// (선수 DB에서 다시 계산하는 값이라 저장하지 않는다). 경기마다 이 값 ÷ 144가 유지비로 나간다.
+        /// </summary>
+        public long Payroll { get; private set; }
+
+        public void SetPayroll(long payroll) => Payroll = Math.Max(0, payroll);
 
         /// <summary>신뢰도 상태를 범위 안으로 맞춰 정한다 (불러오기·테스트용).</summary>
-        public void SetTrust(int trust, int earnedThisSeason, int capRepay, int capFlex)
+        public void SetTrust(int trust, int earnedThisSeason, long capRepay, long capFlex)
         {
             TrustPoints = Math.Max(0, Math.Min(FrontOfficeTrust.MaxTrust, trust));
             TrustEarnedThisSeason = Math.Max(0, Math.Min(FrontOfficeTrust.MaxSeasonEarn, earnedThisSeason));
-            CapRepay = Math.Max(0, Math.Min(FrontOfficeTrust.BaseSalaryCap, capRepay));
-            CapFlex = Math.Max(0, Math.Min(FrontOfficeTrust.MaxFlexOf(FrontOfficeTrust.BaseSalaryCap), capFlex));
+            CapRepay = Math.Max(0, Math.Min(SalaryCapBase, capRepay));
+            CapFlex = Math.Max(0, Math.Min(FrontOfficeTrust.MaxFlexOf(SalaryCapBase), capFlex));
         }
 
         /// <summary>TP를 적립한다. TP 상한·시즌 적립 상한을 넘는 부분은 버린다.</summary>
@@ -249,15 +272,15 @@ namespace DailyFranchise.App
         }
 
         /// <summary>
-        /// 영입 협상 한 번 (수수료만 다룬다 — 계약금은 <see cref="StoveLeague"/>가 낸다). 수수료를 예산에서 내고
+        /// 영입 협상 한 번 (수수료만 다룬다 — 연봉은 경기마다 페이롤로 나간다). 수수료를 예산에서 내고
         /// 소프트 천장 성공률로 판정한다. 성공하면 천장 카운터(TP 최대 100)를 초기화하고, 결렬이면 성의 있는 제시일 때
         /// 수수료를 TP로 환급한다. 예산이 수수료보다 적으면 시도하지 않는다.
         /// </summary>
-        public NegotiationResult Negotiate(int offer, int ask, IRandomSource random)
+        public NegotiationResult Negotiate(long offer, long ask, IRandomSource random)
         {
             if (random == null) throw new ArgumentNullException(nameof(random));
             double rate = FrontOfficeTrust.SuccessRate(offer, ask, TrustPoints);
-            int fee = FrontOfficeTrust.FeeOf(ask);
+            long fee = FrontOfficeTrust.FeeOf(ask);
             if (Budget < fee) return new NegotiationResult(false, false, false, rate, 0, 0);
 
             ApplyFinance(new FinanceChange(-fee, 0));
@@ -276,12 +299,12 @@ namespace DailyFranchise.App
         }
 
         /// <summary>
-        /// 하드 천장 [확정 영입] (Phase 25): TP 100을 쓰고 난수 없이 영입한다. 수수료는 낸다 (계약금은 <see cref="StoveLeague"/>).
+        /// 하드 천장 [확정 영입] (Phase 25): TP 100을 쓰고 난수 없이 영입한다. 수수료는 낸다 (연봉은 경기마다 페이롤로).
         /// TP가 100 미만이거나 예산이 수수료보다 적으면 시도하지 않는다.
         /// </summary>
-        public NegotiationResult SignWithCeiling(int ask)
+        public NegotiationResult SignWithCeiling(long ask)
         {
-            int fee = FrontOfficeTrust.FeeOf(ask);
+            long fee = FrontOfficeTrust.FeeOf(ask);
             if (!FrontOfficeTrust.CanUseCeiling(TrustPoints) || Budget < fee) return new NegotiationResult(false, false, false, 1, 0, 0);
             ApplyFinance(new FinanceChange(-fee, 0));
             TrustPoints -= FrontOfficeTrust.Ceiling;
@@ -289,16 +312,16 @@ namespace DailyFranchise.App
         }
 
         /// <summary>
-        /// TP를 써서 이번 시즌 캡을 늘린다 (신뢰 대출). 시즌 대출 한도(기본 캡의 10%)와 가진 TP 안에서만 쓰고,
+        /// TP를 써서 이번 시즌 캡을 늘린다 (신뢰 대출). 시즌 대출 한도(캡 기준의 10%)와 가진 TP 안에서만 쓰고,
         /// 한도를 채우는 데 필요한 만큼만 TP를 깎는다.
         /// </summary>
         /// <returns>이번에 늘어난 캡.</returns>
-        public int BorrowCap(int trust)
+        public long BorrowCap(int trust)
         {
-            int room = FrontOfficeTrust.MaxFlexOf(FrontOfficeTrust.BaseSalaryCap) - CapFlex;
+            long room = Math.Max(0, FrontOfficeTrust.MaxFlexOf(SalaryCapBase) - CapFlex);
             int usable = Math.Min(Math.Max(0, trust), TrustPoints);
-            usable = Math.Min(usable, (room + FrontOfficeTrust.CapPerTrust - 1) / FrontOfficeTrust.CapPerTrust);
-            int flex = Math.Min(room, FrontOfficeTrust.FlexFor(usable, FrontOfficeTrust.BaseSalaryCap));
+            usable = (int)Math.Min(usable, (room + FrontOfficeTrust.CapPerTrust - 1) / FrontOfficeTrust.CapPerTrust);
+            long flex = Math.Min(room, FrontOfficeTrust.FlexFor(usable, SalaryCapBase));
             TrustPoints -= usable;
             CapFlex += flex;
             return flex;
@@ -317,7 +340,10 @@ namespace DailyFranchise.App
 
         readonly List<SigningRecord> _signings = new List<SigningRecord>();
 
-        /// <summary>FA 영입 기록 (Phase 25, 영입 순). 선수단은 "선수 DB + 이 기록"으로 다시 짠다 (<see cref="LeagueRosterBook"/>). 시즌과 함께 저장된다.</summary>
+        /// <summary>
+        /// 이적 기록 (Phase 25 영입, Phase 26 방출 — 받는 구단이 <see cref="LeagueRosterBook.FreeAgentTeam"/>이면 방출).
+        /// 선수단은 "선수 DB + 이 기록"으로 다시 짠다 (<see cref="LeagueRosterBook"/>). 시즌과 함께 저장된다.
+        /// </summary>
         public IReadOnlyList<SigningRecord> Signings => _signings;
 
         /// <summary>
@@ -327,9 +353,12 @@ namespace DailyFranchise.App
         public void AddSigning(SigningRecord record, bool isBatter)
         {
             _signings.Add(record ?? throw new ArgumentNullException(nameof(record)));
-            if (isBatter && MyLineup != null && record.ToTeam == MyTeam && !MyLineup.Bench.Contains(record.PlayerId)
+            if (!isBatter || MyLineup == null) return;
+            if (record.ToTeam == MyTeam && !MyLineup.Bench.Contains(record.PlayerId)
                 && MyLineup.Batting.All(s => s.PlayerId != record.PlayerId))
                 MyLineup = new LineupCard(MyLineup.Batting, MyLineup.Bench.Append(record.PlayerId));
+            else if (record.FromTeam == MyTeam && MyLineup.Bench.Contains(record.PlayerId))
+                MyLineup = new LineupCard(MyLineup.Batting, MyLineup.Bench.Where(id => id != record.PlayerId));
         }
 
         readonly Dictionary<string, int> _conditions = new Dictionary<string, int>();
@@ -558,6 +587,7 @@ namespace DailyFranchise.App
                     Positions = MyLineup.Batting.Select(s => s.Position).ToList(),
                     Bench = MyLineup.Bench.ToList(),
                 },
+                MoneyUnitVersion = SeasonSaveData.CurrentMoneyUnitVersion,
                 HasFinance = true,
                 Budget = Budget,
                 FanApproval = FanApproval,
@@ -643,16 +673,18 @@ namespace DailyFranchise.App
             };
             // 재정 필드가 없는 이전 저장 파일(Phase 20 이전)은 기본값(₩5,000,000 · 50%)으로 시작한다.
             // 범위를 벗어난 값은 손상으로 보지 않고 범위 안으로 맞춘다.
-            if (data.HasFinance) season.SetFinance(data.Budget, data.FanApproval);
+            // Phase 26 이전 저장 파일(화폐 단위 버전 0)은 금액이 1/1,000 단위라 ×1,000으로 바꿔 읽는다.
+            long money = data.MoneyUnitVersion >= SeasonSaveData.CurrentMoneyUnitVersion ? 1 : FranchiseFinance.LegacyMoneyScale;
+            if (data.HasFinance) season.SetFinance(Scaled(data.Budget, money), data.FanApproval);
             // 팬덤 슬롯이 없는 이전 저장 파일(Phase 22 이전)은 해금 없음에서 시작한다. 모르는 비트는 버린다.
             if (data.HasFandom) season.SetUnlockedSlots((FandomSlot)data.FandomSlots);
             // 신뢰도 필드가 없는 이전 저장 파일은 TP 0·대출 없음에서 시작한다. 범위 밖 값은 범위 안으로 맞춘다.
-            if (data.HasTrust) season.SetTrust(data.TrustPoints, data.TrustEarnedThisSeason, data.CapRepay, data.CapFlex);
+            if (data.HasTrust) season.SetTrust(data.TrustPoints, data.TrustEarnedThisSeason, Scaled(data.CapRepay, money), Scaled(data.CapFlex, money));
             // 영입 기록이 없는 이전 저장 파일은 빈 목록. 빈 칸이 있는 항목은 건너뛴다 (선수 DB와 맞지 않는 기록은 장부가 건너뛴다).
             if (data.Signings != null)
                 foreach (var s in data.Signings)
                     if (s != null && !string.IsNullOrEmpty(s.PlayerId) && !string.IsNullOrEmpty(s.FromTeam) && !string.IsNullOrEmpty(s.ToTeam))
-                        season._signings.Add(new SigningRecord(s.PlayerId, s.FromTeam, s.ToTeam, s.Salary));
+                        season._signings.Add(new SigningRecord(s.PlayerId, s.FromTeam, s.ToTeam, Scaled(s.Salary, money)));
             // 컨디션 목록이 없는 이전 저장 파일(Phase 21 이전)은 전원 보통(3)에서 시작한다 (기록 없음 = 보통).
             // ID가 빈 항목은 건너뛰고, 범위 밖 값은 1~5로 맞춘다.
             if (data.Conditions != null)
@@ -664,6 +696,12 @@ namespace DailyFranchise.App
                     if (l != null) season.SetLastStarter(l.Team, l.PlayerId);
             return season;
         }
+
+        /// <summary>이전 단위 금액 변환. 넘치면 long 끝값으로 맞춘다.</summary>
+        static long Scaled(long amount, long scale) =>
+            amount > 0 && amount > long.MaxValue / scale ? long.MaxValue
+            : amount < 0 && amount < long.MinValue / scale ? long.MinValue
+            : amount * scale;
 
         /// <summary>저장된 라인업. 비어 있으면 null(기본 라인업). 모양이 깨졌으면 FormatException.</summary>
         static LineupCard LineupFrom(LineupSaveData data)

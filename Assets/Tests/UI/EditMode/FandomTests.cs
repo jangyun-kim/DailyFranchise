@@ -30,13 +30,13 @@ namespace DailyFranchise.UI.Tests
                 Assert.That(FranchiseFinance.For(o, FanMood.Normal, FandomSlot.None), Is.EqualTo(FranchiseFinance.For(o)), o.ToString());
         }
 
-        [TestCase(GameOutcome.Win, FanMood.Happy, 60_000, 3)]
-        [TestCase(GameOutcome.Win, FanMood.Angry, 40_000, 3)]
-        [TestCase(GameOutcome.Draw, FanMood.Happy, 36_000, 0)]
-        [TestCase(GameOutcome.Draw, FanMood.Angry, 24_000, 0)]
-        [TestCase(GameOutcome.Loss, FanMood.Happy, 24_000, -4)]
-        [TestCase(GameOutcome.Loss, FanMood.Angry, 16_000, -2)]
-        public void 관중_배수와_Happy_패배_브레이크(GameOutcome outcome, FanMood mood, int budget, int fan)
+        [TestCase(GameOutcome.Win, FanMood.Happy, 60_000_000L, 3)]
+        [TestCase(GameOutcome.Win, FanMood.Angry, 40_000_000L, 3)]
+        [TestCase(GameOutcome.Draw, FanMood.Happy, 36_000_000L, 0)]
+        [TestCase(GameOutcome.Draw, FanMood.Angry, 24_000_000L, 0)]
+        [TestCase(GameOutcome.Loss, FanMood.Happy, 24_000_000L, -4)]
+        [TestCase(GameOutcome.Loss, FanMood.Angry, 16_000_000L, -2)]
+        public void 관중_배수와_Happy_패배_브레이크(GameOutcome outcome, FanMood mood, long budget, int fan)
         {
             Assert.That(FranchiseFinance.For(outcome, mood, FandomSlot.None), Is.EqualTo(new FinanceChange(budget, fan)));
         }
@@ -44,12 +44,12 @@ namespace DailyFranchise.UI.Tests
         [Test]
         public void 슬롯_효과는_결과별로_하나씩_붙는다()
         {
-            Assert.That(FranchiseFinance.For(GameOutcome.Win, FanMood.Normal, FandomSlot.Uniform), Is.EqualTo(new FinanceChange(55_000, 3)));
-            Assert.That(FranchiseFinance.For(GameOutcome.Win, FanMood.Normal, FandomSlot.Ceremony), Is.EqualTo(new FinanceChange(50_000, 4)));
-            Assert.That(FranchiseFinance.For(GameOutcome.Win, FanMood.Happy, FandomSlot.All), Is.EqualTo(new FinanceChange(65_000, 4)), "치어리더는 승리에 영향 없음");
-            Assert.That(FranchiseFinance.For(GameOutcome.Loss, FanMood.Normal, FandomSlot.Cheerleader), Is.EqualTo(new FinanceChange(20_000, -1)));
-            Assert.That(FranchiseFinance.For(GameOutcome.Loss, FanMood.Happy, FandomSlot.All), Is.EqualTo(new FinanceChange(24_000, -3)), "Happy 패배 −4 → 치어리더 −3");
-            Assert.That(FranchiseFinance.For(GameOutcome.Draw, FanMood.Normal, FandomSlot.All), Is.EqualTo(new FinanceChange(30_000, 0)), "무승부엔 슬롯 효과 없음");
+            Assert.That(FranchiseFinance.For(GameOutcome.Win, FanMood.Normal, FandomSlot.Uniform), Is.EqualTo(new FinanceChange(55_000_000, 3)));
+            Assert.That(FranchiseFinance.For(GameOutcome.Win, FanMood.Normal, FandomSlot.Ceremony), Is.EqualTo(new FinanceChange(50_000_000, 4)));
+            Assert.That(FranchiseFinance.For(GameOutcome.Win, FanMood.Happy, FandomSlot.All), Is.EqualTo(new FinanceChange(65_000_000, 4)), "치어리더는 승리에 영향 없음");
+            Assert.That(FranchiseFinance.For(GameOutcome.Loss, FanMood.Normal, FandomSlot.Cheerleader), Is.EqualTo(new FinanceChange(20_000_000, -1)));
+            Assert.That(FranchiseFinance.For(GameOutcome.Loss, FanMood.Happy, FandomSlot.All), Is.EqualTo(new FinanceChange(24_000_000, -3)), "Happy 패배 −4 → 치어리더 −3");
+            Assert.That(FranchiseFinance.For(GameOutcome.Draw, FanMood.Normal, FandomSlot.All), Is.EqualTo(new FinanceChange(30_000_000, 0)), "무승부엔 슬롯 효과 없음");
         }
 
         [Test]
@@ -83,33 +83,33 @@ namespace DailyFranchise.UI.Tests
             Assert.That(s.FanApproval, Is.EqualTo(83));
             Assert.That(s.UnlockedSlots, Is.EqualTo(FandomSlot.All));
             // 예산: 경기 전 팬은 끝까지 79 이하(Normal) → 기본 5만, 2경기부터 유니폼 굿즈 +5천.
-            Assert.That(s.Budget, Is.EqualTo(5_000_000 + 50_000 + 55_000 * 9));
+            Assert.That(s.Budget, Is.EqualTo(5_000_000_000L + 50_000_000 + 55_000_000L * 9));
         }
 
         [Test]
         public void 리포트는_새로_해금된_슬롯만_알린다()
         {
             var s = SeasonState.CreateDummy();
-            s.SetFinance(5_000_000, 68);
+            s.SetFinance(5_000_000_000, 68);
             var first = Play(s, MyWin);
             Assert.That(first.NewlyUnlocked, Is.EqualTo(FandomSlot.Uniform | FandomSlot.Ceremony), "24승 · 68 + 3 = 71");
             var second = Play(s, MyWin);
             Assert.That(second.NewlyUnlocked, Is.EqualTo(FandomSlot.None));
-            Assert.That(second.Finance, Is.EqualTo(new FinanceChange(55_000, 4)));
+            Assert.That(second.Finance, Is.EqualTo(new FinanceChange(55_000_000, 4)));
         }
 
         [Test]
         public void Happy_구간에서_지면_수입은_늘지만_팬_만족도는_두배로_떨어진다()
         {
             var s = SeasonState.CreateDummy();
-            s.SetFinance(5_000_000, 85);
+            s.SetFinance(5_000_000_000, 85);
             var r = Play(s, MyLoss);
             Assert.That(r.MoodBefore, Is.EqualTo(FanMood.Happy));
-            Assert.That(r.Finance, Is.EqualTo(new FinanceChange(24_000, -4)));
+            Assert.That(r.Finance, Is.EqualTo(new FinanceChange(24_000_000, -4)));
             Assert.That(s.UnlockedSlots, Is.EqualTo(FandomSlot.All), "23승 · 경기 뒤 81 → 전부 해금");
 
             var next = Play(s, MyLoss);
-            Assert.That(next.Finance, Is.EqualTo(new FinanceChange(24_000, -3)), "치어리더가 하락 완화");
+            Assert.That(next.Finance, Is.EqualTo(new FinanceChange(24_000_000, -3)), "치어리더가 하락 완화");
             Assert.That(s.FanApproval, Is.EqualTo(78));
         }
 
@@ -147,7 +147,7 @@ namespace DailyFranchise.UI.Tests
                 Is.EqualTo(new[] { "유니폼", "세리머니", "치어리더" }));
             Assert.Throws<ArgumentOutOfRangeException>(() => FandomRules.Label(FandomSlot.All));
             Assert.That(FandomRules.Slots, Is.EqualTo(new[] { FandomSlot.Uniform, FandomSlot.Ceremony, FandomSlot.Cheerleader }));
-            Assert.That(FandomRules.Hint(FandomSlot.Uniform), Is.EqualTo("시즌 10승에 해금 · 승리 시 굿즈 수입 +₩5,000"));
+            Assert.That(FandomRules.Hint(FandomSlot.Uniform), Is.EqualTo("시즌 10승에 해금 · 승리 시 굿즈 수입 +₩500만"));
             Assert.That(FandomRules.Hint(FandomSlot.Cheerleader), Does.StartWith("팬 만족도 80% 도달 시 해금"));
             Assert.Throws<ArgumentOutOfRangeException>(() => FandomRules.Hint(FandomSlot.None));
         }

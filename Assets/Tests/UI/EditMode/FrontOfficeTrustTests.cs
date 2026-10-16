@@ -21,19 +21,20 @@ namespace DailyFranchise.UI.Tests
             public int Next(int maxExclusive) { Draws++; return 0; }
         }
 
-        const int Ask = 480_000; // WAR 3.0 연봉
-        const int Fee = 24_000;
+        const long Ask = 480_000_000; // WAR 3.0 연봉 (₩4억 8,000만)
+        const long Fee = 24_000_000;
 
         [Test]
         public void 연봉과_수수료_공식()
         {
-            Assert.That(FrontOfficeTrust.SalaryOf(0), Is.EqualTo(30_000));
+            Assert.That(FrontOfficeTrust.SalaryOf(0), Is.EqualTo(30_000_000L));
             Assert.That(FrontOfficeTrust.SalaryOf(3.0), Is.EqualTo(Ask));
-            Assert.That(FrontOfficeTrust.SalaryOf(-1.2), Is.EqualTo(30_000), "음수 WAR는 최저 연봉");
-            Assert.That(FrontOfficeTrust.SalaryOf(2.345), Is.EqualTo(381_750));
-            Assert.That(FrontOfficeTrust.SalaryOf(double.NaN), Is.EqualTo(30_000));
+            Assert.That(FrontOfficeTrust.SalaryOf(-1.2), Is.EqualTo(30_000_000L), "음수 WAR는 최저 연봉");
+            Assert.That(FrontOfficeTrust.SalaryOf(2.345), Is.EqualTo(381_750_000L));
+            Assert.That(FrontOfficeTrust.SalaryOf(double.NaN), Is.EqualTo(30_000_000L));
             Assert.That(FrontOfficeTrust.FeeOf(Ask), Is.EqualTo(Fee));
             Assert.That(FrontOfficeTrust.FeeOf(-5), Is.Zero);
+            Assert.That(FrontOfficeTrust.FeeOf(long.MaxValue / 100), Is.GreaterThan(0), "long 범위 요구액도 계산된다");
         }
 
         [Test]
@@ -44,13 +45,13 @@ namespace DailyFranchise.UI.Tests
             Assert.That(FrontOfficeTrust.CeilingText(100), Is.EqualTo("천장 도달 · 확정 영입 가능"));
         }
 
-        [TestCase(480_000, 0.50)]
-        [TestCase(432_000, 0.25)]
-        [TestCase(566_400, 0.95)]
-        [TestCase(600_000, 0.95)]
-        [TestCase(240_000, 0.05)]
-        [TestCase(0, 0.05)]
-        public void 기본_성공률은_제시_요구_비율로_5에서_95퍼센트(int offer, double expected)
+        [TestCase(480_000_000L, 0.50)]
+        [TestCase(432_000_000L, 0.25)]
+        [TestCase(566_400_000L, 0.95)]
+        [TestCase(600_000_000L, 0.95)]
+        [TestCase(240_000_000L, 0.05)]
+        [TestCase(0L, 0.05)]
+        public void 기본_성공률은_제시_요구_비율로_5에서_95퍼센트(long offer, double expected)
         {
             Assert.That(FrontOfficeTrust.BaseSuccessRate(offer, Ask), Is.EqualTo(expected).Within(Eps));
         }
@@ -62,32 +63,32 @@ namespace DailyFranchise.UI.Tests
             Assert.That(FrontOfficeTrust.SuccessRate(Ask, Ask, 40), Is.EqualTo(0.7).Within(Eps));
             Assert.That(FrontOfficeTrust.SuccessRate(Ask, Ask, 99), Is.EqualTo(0.995).Within(Eps));
             // Phase 25: 하드 천장은 [확정 영입] 행동으로 분리 → 헐값 제시는 TP 100이어도 0.05 + 0.5
-            Assert.That(FrontOfficeTrust.SuccessRate(240_000, Ask, 100), Is.EqualTo(0.55).Within(Eps));
-            Assert.That(FrontOfficeTrust.SuccessRate(240_000, Ask, 200), Is.EqualTo(0.55).Within(Eps), "TP 100 넘는 몫은 더하지 않는다");
+            Assert.That(FrontOfficeTrust.SuccessRate(240_000_000, Ask, 100), Is.EqualTo(0.55).Within(Eps));
+            Assert.That(FrontOfficeTrust.SuccessRate(240_000_000, Ask, 200), Is.EqualTo(0.55).Within(Eps), "TP 100 넘는 몫은 더하지 않는다");
             Assert.That(FrontOfficeTrust.CanUseCeiling(99), Is.False);
             Assert.That(FrontOfficeTrust.CanUseCeiling(100), Is.True);
-            Assert.That(FrontOfficeTrust.SuccessRate(566_400, Ask, 60), Is.EqualTo(1), "1을 넘지 않는다");
+            Assert.That(FrontOfficeTrust.SuccessRate(566_400_000, Ask, 60), Is.EqualTo(1), "1을 넘지 않는다");
             Assert.Throws<ArgumentOutOfRangeException>(() => FrontOfficeTrust.BaseSuccessRate(1, 0));
         }
 
         [Test]
         public void 결렬_환급은_요구액의_90퍼센트_이상_제시만()
         {
-            Assert.That(FrontOfficeTrust.RefundOnFailure(432_000, Ask), Is.EqualTo(24), "수수료 ₩24,000 → 24 TP");
-            Assert.That(FrontOfficeTrust.RefundOnFailure(431_999, Ask), Is.Zero);
+            Assert.That(FrontOfficeTrust.RefundOnFailure(432_000_000, Ask), Is.EqualTo(24), "수수료 ₩2,400만 → 24 TP (₩100만당 1)");
+            Assert.That(FrontOfficeTrust.RefundOnFailure(431_999_999, Ask), Is.Zero);
             Assert.That(FrontOfficeTrust.RefundOnFailure(1, 0), Is.Zero);
         }
 
         [Test]
         public void 신뢰_대출_공식()
         {
-            const int c = FrontOfficeTrust.BaseSalaryCap;
-            Assert.That(FrontOfficeTrust.FlexFor(100, c), Is.EqualTo(200_000));
-            Assert.That(FrontOfficeTrust.FlexFor(400, c), Is.EqualTo(600_000), "기본 캡의 10%까지");
+            const long c = FrontOfficeTrust.DefaultSalaryCap;
+            Assert.That(FrontOfficeTrust.FlexFor(100, c), Is.EqualTo(200_000_000L));
+            Assert.That(FrontOfficeTrust.FlexFor(400, c), Is.EqualTo(600_000_000L), "캡 기준의 10%까지");
             Assert.That(FrontOfficeTrust.FlexFor(-3, c), Is.Zero);
-            Assert.That(FrontOfficeTrust.NextRepay(200_000), Is.EqualTo(100_000));
+            Assert.That(FrontOfficeTrust.NextRepay(200_000_000), Is.EqualTo(100_000_000L));
             Assert.That(FrontOfficeTrust.NextRepay(3), Is.EqualTo(1), "내림");
-            Assert.That(FrontOfficeTrust.EffectiveCap(c, 100_000, 200_000), Is.EqualTo(6_100_000));
+            Assert.That(FrontOfficeTrust.EffectiveCap(c, 100_000_000, 200_000_000), Is.EqualTo(6_100_000_000L));
             Assert.That(FrontOfficeTrust.EffectiveCap(10, 100, 0), Is.Zero);
         }
 
@@ -96,7 +97,7 @@ namespace DailyFranchise.UI.Tests
         {
             for (int tp = 0; tp <= 400; tp++)
             {
-                int flex = FrontOfficeTrust.FlexFor(tp, FrontOfficeTrust.BaseSalaryCap);
+                long flex = FrontOfficeTrust.FlexFor(tp, FrontOfficeTrust.DefaultSalaryCap);
                 Assert.That(flex - FrontOfficeTrust.NextRepay(flex), Is.LessThanOrEqualTo(tp * FrontOfficeTrust.WonPerTrust), $"{tp} TP");
             }
         }
@@ -110,7 +111,7 @@ namespace DailyFranchise.UI.Tests
             Assert.That((r.Attempted, r.Signed, r.CeilingUsed), Is.EqualTo((true, false, false)));
             Assert.That((r.Fee, r.TrustDelta), Is.EqualTo((Fee, 24)));
             Assert.That(r.SuccessRate, Is.EqualTo(0.5).Within(Eps));
-            Assert.That((s.Budget, s.TrustPoints, s.TrustEarnedThisSeason), Is.EqualTo((5_000_000 - Fee, 24, 24)));
+            Assert.That((s.Budget, s.TrustPoints, s.TrustEarnedThisSeason), Is.EqualTo((5_000_000_000 - Fee, 24, 24)));
             Assert.That(random.Draws, Is.EqualTo(1));
         }
 
@@ -135,7 +136,7 @@ namespace DailyFranchise.UI.Tests
             Assert.That(sixth.TrustDelta, Is.EqualTo(-100));
             Assert.That(s.TrustPoints, Is.EqualTo(20), "천장 카운터 100만 소모, 남는 TP는 유지");
             Assert.That(random.Draws, Is.EqualTo(6));
-            Assert.That(s.Budget, Is.EqualTo(5_000_000 - Fee * 6));
+            Assert.That(s.Budget, Is.EqualTo(5_000_000_000 - Fee * 6));
         }
 
         [Test]
@@ -146,11 +147,11 @@ namespace DailyFranchise.UI.Tests
             var r = s.SignWithCeiling(Ask);
             Assert.That((r.Attempted, r.Signed, r.CeilingUsed, r.SuccessRate), Is.EqualTo((true, true, true, 1.0)));
             Assert.That((r.Fee, r.TrustDelta), Is.EqualTo((Fee, -100)));
-            Assert.That((s.TrustPoints, s.Budget), Is.EqualTo((20, 5_000_000 - Fee)));
+            Assert.That((s.TrustPoints, s.Budget), Is.EqualTo((20, 5_000_000_000 - Fee)));
 
             var none = s.SignWithCeiling(Ask);
             Assert.That((none.Attempted, none.Signed), Is.EqualTo((false, false)), "TP 20");
-            Assert.That((s.TrustPoints, s.Budget), Is.EqualTo((20, 5_000_000 - Fee)), "아무것도 바뀌지 않는다");
+            Assert.That((s.TrustPoints, s.Budget), Is.EqualTo((20, 5_000_000_000 - Fee)), "아무것도 바뀌지 않는다");
 
             s.SetTrust(100, 0, 0, 0);
             s.SetFinance(Fee - 1, 50);
@@ -172,9 +173,9 @@ namespace DailyFranchise.UI.Tests
         public void 헐값_제시는_결렬돼도_환급이_없다()
         {
             var s = SeasonState.CreateDummy();
-            var r = s.Negotiate(384_000, Ask, new FixedRandom(0.5)); // 80%
+            var r = s.Negotiate(384_000_000, Ask, new FixedRandom(0.5)); // 80%
             Assert.That((r.Signed, r.TrustDelta, r.SuccessRate), Is.EqualTo((false, 0, 0.05)));
-            Assert.That((s.Budget, s.TrustPoints), Is.EqualTo((5_000_000 - Fee, 0)));
+            Assert.That((s.Budget, s.TrustPoints), Is.EqualTo((5_000_000_000 - Fee, 0)));
         }
 
         [Test]
@@ -184,7 +185,7 @@ namespace DailyFranchise.UI.Tests
             s.SetFinance(Fee - 1, 50);
             var random = new FixedRandom(0);
             var r = s.Negotiate(Ask, Ask, random);
-            Assert.That((r.Attempted, r.Signed, r.Fee), Is.EqualTo((false, false, 0)));
+            Assert.That((r.Attempted, r.Signed, r.Fee), Is.EqualTo((false, false, 0L)));
             Assert.That((s.Budget, s.TrustPoints, random.Draws), Is.EqualTo((Fee - 1, 0, 0)));
             Assert.Throws<ArgumentNullException>(() => s.Negotiate(Ask, Ask, null));
         }
@@ -206,45 +207,56 @@ namespace DailyFranchise.UI.Tests
         public void 신뢰_대출은_TP만큼_캡을_늘리고_다음_시즌_절반을_상환한다()
         {
             var s = SeasonState.CreateDummy();
-            Assert.That(s.SalaryCap, Is.EqualTo(6_000_000));
+            Assert.That(s.SalaryCap, Is.EqualTo(6_000_000_000L));
             s.SetTrust(150, 0, 0, 0);
-            Assert.That(s.BorrowCap(100), Is.EqualTo(200_000));
-            Assert.That((s.TrustPoints, s.CapFlex, s.SalaryCap), Is.EqualTo((50, 200_000, 6_200_000)));
-            Assert.That(s.BorrowCap(500), Is.EqualTo(100_000), "가진 TP 50까지만");
+            Assert.That(s.BorrowCap(100), Is.EqualTo(200_000_000L));
+            Assert.That((s.TrustPoints, s.CapFlex, s.SalaryCap), Is.EqualTo((50, 200_000_000L, 6_200_000_000L)));
+            Assert.That(s.BorrowCap(500), Is.EqualTo(100_000_000L), "가진 TP 50까지만");
             Assert.That(s.TrustPoints, Is.Zero);
 
             s.CloseTrustSeason();
-            Assert.That((s.CapRepay, s.CapFlex, s.SalaryCap), Is.EqualTo((150_000, 0, 5_850_000)));
+            Assert.That((s.CapRepay, s.CapFlex, s.SalaryCap), Is.EqualTo((150_000_000L, 0L, 5_850_000_000L)));
             s.CloseTrustSeason();
-            Assert.That(s.SalaryCap, Is.EqualTo(6_000_000), "대출 없던 시즌 다음은 상환 없음");
+            Assert.That(s.SalaryCap, Is.EqualTo(6_000_000_000L), "대출 없던 시즌 다음은 상환 없음");
         }
 
         [Test]
-        public void 시즌_대출_한도는_기본_캡의_10퍼센트이고_필요한_TP만_쓴다()
+        public void 시즌_대출_한도는_캡_기준의_10퍼센트이고_필요한_TP만_쓴다()
         {
             var s = SeasonState.CreateDummy();
-            s.SetTrust(200, 0, 0, 590_000);
-            Assert.That(s.BorrowCap(10), Is.EqualTo(10_000), "남은 한도 ₩10,000");
-            Assert.That((s.TrustPoints, s.CapFlex), Is.EqualTo((195, 600_000)), "5 TP만 소모");
+            s.SetTrust(200, 0, 0, 590_000_000);
+            Assert.That(s.BorrowCap(10), Is.EqualTo(10_000_000L), "남은 한도 ₩1,000만");
+            Assert.That((s.TrustPoints, s.CapFlex), Is.EqualTo((195, 600_000_000L)), "5 TP만 소모");
             Assert.That(s.BorrowCap(10), Is.Zero);
             Assert.That(s.TrustPoints, Is.EqualTo(195), "한도가 차면 TP를 쓰지 않는다");
+        }
+
+        [Test]
+        public void 캡_기준은_정할_수_있고_대출은_새_기준의_10퍼센트로_맞춘다()
+        {
+            var s = SeasonState.CreateDummy();
+            s.SetTrust(0, 0, 0, 600_000_000);
+            s.SetSalaryCapBase(4_000_000_000);
+            Assert.That((s.SalaryCapBase, s.CapFlex, s.SalaryCap), Is.EqualTo((4_000_000_000L, 400_000_000L, 4_400_000_000L)));
+            s.SetSalaryCapBase(0);
+            Assert.That(s.SalaryCapBase, Is.EqualTo(4_000_000_000L), "0 이하는 무시");
         }
 
         [Test]
         public void 신뢰도는_저장했다_불러와도_같고_없는_이전_파일은_0에서_시작한다()
         {
             var s = SeasonState.CreateDummy();
-            s.SetTrust(150, 40, 100_000, 200_000);
+            s.SetTrust(150, 40, 100_000_000, 200_000_000);
             string json = SaveManager.ToJson(s);
             var loaded = SaveManager.FromJson(json);
             Assert.That((loaded.TrustPoints, loaded.TrustEarnedThisSeason, loaded.CapRepay, loaded.CapFlex),
-                Is.EqualTo((150, 40, 100_000, 200_000)));
-            Assert.That(loaded.SalaryCap, Is.EqualTo(6_100_000));
+                Is.EqualTo((150, 40, 100_000_000L, 200_000_000L)));
+            Assert.That(loaded.SalaryCap, Is.EqualTo(6_100_000_000L));
 
             string legacy = Regex.Replace(json, @",\s*""(HasTrust|TrustPoints|TrustEarnedThisSeason|CapRepay|CapFlex)"":\s*[^,\r\n}]+", "");
             Assert.That(legacy, Does.Not.Contain("Trust").And.Not.Contain("CapRepay").And.Not.Contain("CapFlex"));
             var old = SaveManager.FromJson(legacy);
-            Assert.That((old.TrustPoints, old.TrustEarnedThisSeason, old.CapRepay, old.CapFlex), Is.EqualTo((0, 0, 0, 0)));
+            Assert.That((old.TrustPoints, old.TrustEarnedThisSeason, old.CapRepay, old.CapFlex), Is.EqualTo((0, 0, 0L, 0L)));
             Assert.That(old.Budget, Is.EqualTo(s.Budget), "나머지는 그대로");
         }
 
@@ -255,10 +267,10 @@ namespace DailyFranchise.UI.Tests
             data.TrustPoints = 999;
             data.TrustEarnedThisSeason = -4;
             data.CapRepay = -1;
-            data.CapFlex = 9_999_999;
+            data.CapFlex = 9_999_999_999;
             var loaded = SeasonState.FromSaveData(data);
             Assert.That((loaded.TrustPoints, loaded.TrustEarnedThisSeason, loaded.CapRepay, loaded.CapFlex),
-                Is.EqualTo((200, 0, 0, 600_000)));
+                Is.EqualTo((200, 0, 0L, 600_000_000L)));
         }
     }
 }

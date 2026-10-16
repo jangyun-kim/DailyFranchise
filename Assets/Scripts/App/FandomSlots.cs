@@ -11,7 +11,7 @@ namespace DailyFranchise.App
     public enum FandomSlot
     {
         None = 0,
-        /// <summary>유니폼 — 시즌 10승에 해금. 승리 시 굿즈 수입 +₩5,000.</summary>
+        /// <summary>유니폼 — 시즌 10승에 해금. 승리 시 굿즈 수입 +₩500만.</summary>
         Uniform = 1,
         /// <summary>세리머니 — 팬 만족도 70 첫 도달에 해금. 승리 시 팬 만족도 +1%p.</summary>
         Ceremony = 2,
@@ -45,7 +45,7 @@ namespace DailyFranchise.App
         {
             switch (slot)
             {
-                case FandomSlot.Uniform: return $"시즌 {UniformWins}승에 해금 · 승리 시 굿즈 수입 +₩5,000";
+                case FandomSlot.Uniform: return $"시즌 {UniformWins}승에 해금 · 승리 시 굿즈 수입 {FranchiseFinance.BudgetDeltaText(FranchiseFinance.UniformMerchIncome)}";
                 case FandomSlot.Ceremony: return $"팬 만족도 {CeremonyFan}% 도달 시 해금 · 승리 시 팬 만족도 +1%p";
                 case FandomSlot.Cheerleader: return $"팬 만족도 {CheerleaderFan}% 도달 시 해금 · 패배 시 팬 하락 1%p 완화";
                 default: throw new ArgumentOutOfRangeException(nameof(slot), slot, "슬롯 하나만");

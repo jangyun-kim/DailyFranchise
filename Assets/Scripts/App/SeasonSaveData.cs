@@ -15,6 +15,13 @@ namespace DailyFranchise.App
         public const int CurrentVersion = 1;
 
         public int Version;
+
+        /// <summary>
+        /// 화폐 단위 버전 (Phase 26). 0 = 이전 단위(예산 ₩5,000,000 시작) → 불러올 때 금액 ×1,000.
+        /// 1 = 현실화 단위(예산 ₩50억 시작). 형식 <see cref="Version"/>과 따로 둬 이전 파일을 손상으로 보지 않는다.
+        /// </summary>
+        public int MoneyUnitVersion;
+        public const int CurrentMoneyUnitVersion = 1;
         public string SeasonTitle;
         public string MyTeam;
         /// <summary>다음에 치를 경기의 일정 인덱스 (= 치른 경기 수).</summary>
@@ -33,7 +40,8 @@ namespace DailyFranchise.App
         /// 이 필드가 없는 이전 저장 파일은 false로 읽혀 기본값(₩5,000,000 · 50%)을 쓴다 — 저장된 0과 "없음"을 구분하기 위한 표시.
         /// </summary>
         public bool HasFinance;
-        public int Budget;
+        /// <summary>Phase 26부터 long. 이전 파일의 int 값도 그대로 읽힌다 (단위 변환은 <see cref="MoneyUnitVersion"/>).</summary>
+        public long Budget;
         public int FanApproval;
 
         /// <summary>
@@ -50,8 +58,8 @@ namespace DailyFranchise.App
         public bool HasTrust;
         public int TrustPoints;
         public int TrustEarnedThisSeason;
-        public int CapRepay;
-        public int CapFlex;
+        public long CapRepay;
+        public long CapFlex;
 
         /// <summary>FA 영입 기록 (Phase 25, 영입 순). 이 필드가 없는 이전 저장 파일은 빈 목록.</summary>
         public List<SigningData> Signings = new List<SigningData>();
@@ -72,7 +80,7 @@ namespace DailyFranchise.App
         public string PlayerId;
         public string FromTeam;
         public string ToTeam;
-        public int Salary;
+        public long Salary;
     }
 
     [Serializable]

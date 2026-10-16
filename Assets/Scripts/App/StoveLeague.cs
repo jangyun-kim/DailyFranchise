@@ -8,10 +8,13 @@ using DailyFranchise.Sim.Data;
 
 namespace DailyFranchise.App
 {
-    /// <summary>FA 영입 한 건 (Phase 25). 시즌과 함께 저장되고, 선수단은 "선수 DB + 영입 기록"으로 다시 짠다.</summary>
+    /// <summary>
+    /// 이적 한 건 (Phase 25 영입, Phase 26 방출). 시즌과 함께 저장되고, 선수단은 "선수 DB + 이적 기록"으로 다시 짠다.
+    /// 받는 구단이 <see cref="LeagueRosterBook.FreeAgentTeam"/>이면 방출이다.
+    /// </summary>
     public sealed class SigningRecord
     {
-        public SigningRecord(string playerId, string fromTeam, string toTeam, int salary)
+        public SigningRecord(string playerId, string fromTeam, string toTeam, long salary)
         {
             if (string.IsNullOrEmpty(playerId)) throw new ArgumentException("선수 ID가 비어 있다.", nameof(playerId));
             if (string.IsNullOrEmpty(fromTeam) || string.IsNullOrEmpty(toTeam)) throw new ArgumentException("구단이 비어 있다.");
@@ -24,8 +27,10 @@ namespace DailyFranchise.App
         public string PlayerId { get; }
         public string FromTeam { get; }
         public string ToTeam { get; }
-        /// <summary>계약 연봉 (영입 때 예산에서 낸 금액). 페이롤(샐러리캡)에 이 값이 잡힌다.</summary>
-        public int Salary { get; }
+        /// <summary>계약 연봉 (영입 때 합의한 제시액). 페이롤에 이 값이 잡힌다. 방출 기록은 0.</summary>
+        public long Salary { get; }
+
+        public bool IsRelease => ToTeam == LeagueRosterBook.FreeAgentTeam;
     }
 
     /// <summary>1군 정원 (Phase 25). 선발 9 + 벤치 5 + 선발 로테이션 5 + 불펜 7 = 26.</summary>
@@ -34,14 +39,31 @@ namespace DailyFranchise.App
         public const int MaxRoster = 26;
         public const int MaxBench = 5;
         public const int MaxBullpen = 7;
+        /// <summary>경기를 치르려면 필요한 선발 타순.</summary>
+        public const int LineupSize = LineupCard.BattingSlots;
 
         public static int CountOf(TeamRoster r) =>
             r == null ? 0 : r.Lineup.Count + r.Bench.Count + r.Starters.Count + r.Bullpen.Count;
+
+        /// <summary>
+        /// 경기를 치를 수 없는 선수단이면 이유 (선발 타순 9명이 아님 · 선발 투수 없음), 괜찮으면 null.
+        /// 로비가 [다음 경기 시작]을 잠그고 경고한다 (Phase 26 — 방출 등으로 빈자리가 생겨도 경기가 깨지지 않게).
+        /// </summary>
+        public static string GameReadinessProblem(TeamRoster r)
+        {
+            if (r == null) return null;
+            var orders = r.Lineup.Select(p => p.Order).ToList();
+            if (r.Lineup.Count != LineupSize || orders.Distinct().Count() != LineupSize || orders.Any(o => o < 1 || o > LineupSize))
+                return $"선발 타순이 {r.Lineup.Count}명입니다. {LineupSize}명을 채워야 경기를 시작할 수 있습니다.";
+            if (r.Starters.Count == 0) return "선발 투수가 없습니다. 로테이션을 채워야 경기를 시작할 수 있습니다.";
+            return null;
+        }
     }
 
     /// <summary>
-    /// 리그 선수단 장부: 선수 DB 선수단에 영입 기록을 차례로 적용한 결과. 기록이 없는 구단은 DB 선수단 그대로(같은 참조).
-    /// 영입된 선수는 새 구단 소속 사본으로 타자는 벤치 끝, 투수(선발 포함)는 불펜 끝에 들어간다.
+    /// 리그 선수단 장부: 선수 DB 선수단에 이적 기록을 차례로 적용한 결과. 기록이 없는 구단은 DB 선수단 그대로(같은 참조).
+    /// 방출된 선수는 소속 없는 자유계약 명단(<see cref="FreeAgentTeam"/>)으로 가고 FA 시장에 다시 나온다.
+    /// 옮긴 선수는 새 구단 소속 사본으로 타자는 벤치 끝, 투수(선발 포함)는 불펜 끝에 들어간다.
     /// 원 소속 구단의 빈자리:
     /// - 선발 타자: 벤치 첫 타자가 그 타순·수비 위치로 올라온다. 벤치가 없으면 리그 평균 "대체 선수"가 채운다.
     /// - 벤치·불펜: 빼고 순번을 다시 매긴다.
@@ -51,6 +73,8 @@ namespace DailyFranchise.App
     public sealed class LeagueRosterBook
     {
         public const string ReplacementPrefix = "REPL-";
+        /// <summary>방출된 선수의 소속 (자유계약). 경기를 치르지 않는다.</summary>
+        public const string FreeAgentTeam = "자유계약";
 
         readonly Dictionary<string, TeamRoster> _rosters;
 
@@ -60,9 +84,10 @@ namespace DailyFranchise.App
             Applied = applied;
         }
 
-        /// <summary>실제로 적용된 영입 기록 (건너뛴 것 제외).</summary>
+        /// <summary>실제로 적용된 이적 기록 (건너뛴 것 제외).</summary>
         public IReadOnlyList<SigningRecord> Applied { get; }
 
+        /// <summary>자유계약 명단을 포함한 모든 선수단.</summary>
         public IEnumerable<TeamRoster> Rosters => _rosters.Values;
 
         public TeamRoster Get(string team) => team != null && _rosters.TryGetValue(team, out var r) ? r : null;
@@ -91,6 +116,7 @@ namespace DailyFranchise.App
                     var r = db.GetRoster(team);
                     if (r != null) rosters[team] = r;
                 }
+            rosters[FreeAgentTeam] = new TeamRoster(FreeAgentTeam, null, null, null, null);
             var book = new LeagueRosterBook(rosters, new List<SigningRecord>());
             var applied = new List<SigningRecord>();
             foreach (var s in signings ?? Enumerable.Empty<SigningRecord>())
@@ -173,7 +199,7 @@ namespace DailyFranchise.App
     /// <summary>FA 시장의 선수 한 명.</summary>
     public sealed class FreeAgent
     {
-        public FreeAgent(PlayerData player, string team, int salary, int ask)
+        public FreeAgent(PlayerData player, string team, long salary, long ask)
         {
             Player = player ?? throw new ArgumentNullException(nameof(player));
             Team = team;
@@ -183,12 +209,12 @@ namespace DailyFranchise.App
 
         /// <summary>지금 소속 구단 기준 데이터.</summary>
         public PlayerData Player { get; }
-        /// <summary>지금 소속 구단.</summary>
+        /// <summary>지금 소속 구단 (방출된 선수는 <see cref="LeagueRosterBook.FreeAgentTeam"/>).</summary>
         public string Team { get; }
         /// <summary>WAR 기준 연봉 (<see cref="FrontOfficeTrust.SalaryOf"/>).</summary>
-        public int Salary { get; }
+        public long Salary { get; }
         /// <summary>요구액 = 연봉 × (1 + 인기 보정).</summary>
-        public int Ask { get; }
+        public long Ask { get; }
         public string Id => Player.Id;
     }
 
@@ -203,7 +229,7 @@ namespace DailyFranchise.App
         BullpenFull,
         /// <summary>제시액이 0 이하.</summary>
         InvalidOffer,
-        /// <summary>예산 &lt; 제시액 + 수수료.</summary>
+        /// <summary>예산 &lt; 수수료.</summary>
         Budget,
         /// <summary>페이롤 + 제시액 &gt; 이번 시즌 샐러리캡.</summary>
         SalaryCap,
@@ -219,34 +245,77 @@ namespace DailyFranchise.App
         public SigningBlock Block;
         public NegotiationResult Negotiation;
         public bool Signed => Block == SigningBlock.None && Negotiation.Signed;
-        /// <summary>계약금 (성공했을 때만, 수수료 별도).</summary>
-        public int Paid;
+        /// <summary>계약 연봉 (성공했을 때만). 영입 때 내지 않고 경기마다 페이롤 유지비로 나간다.</summary>
+        public long Salary;
         public FreeAgent Agent;
     }
 
+    /// <summary>방출을 막는 이유 (Phase 26).</summary>
+    public enum ReleaseBlock
+    {
+        None,
+        /// <summary>내 구단 선수가 아니다.</summary>
+        NotMine,
+        /// <summary>선발 타순·선발 로테이션 선수 — 먼저 벤치로 내려야 한다.</summary>
+        Starter,
+        /// <summary>예산 &lt; 위약금.</summary>
+        Budget,
+        InGame,
+    }
+
+    /// <summary>방출 한 번의 결과.</summary>
+    public sealed class ReleaseOutcome
+    {
+        public ReleaseBlock Block;
+        /// <summary>낸 위약금 (방출했을 때만).</summary>
+        public long Penalty;
+        public PlayerData Player;
+        public bool Released => Block == ReleaseBlock.None;
+    }
+
     /// <summary>
-    /// 스토브리그 FA 시장 규칙 (Phase 25). 순수 C#.
-    /// - 시장: 리그 선수단 장부에서 내 구단이 아닌 선수 전원 (대체 선수 제외), WAR 높은 순.
+    /// 스토브리그 FA 시장 규칙 (Phase 25, Phase 26 재정 현실화). 순수 C#.
+    /// - 시장: 리그 선수단 장부에서 내 구단이 아닌 선수 전원 (자유계약 포함, 대체 선수 제외), WAR 높은 순.
     /// - 요구액 = 연봉 × (1 + 인기 보정): 경기 전 팬 만족도 구간 Happy 0% · Normal 10% · Angry 20% (인기 없는 구단엔 더 비싸게).
-    /// - 협상: 수수료(요구액 5%)는 시도마다, 계약금(제시액)은 성공했을 때만 예산에서 나간다. 성공률은 <see cref="FrontOfficeTrust.SuccessRate"/>.
+    /// - 협상: 수수료(요구액 5%)는 시도마다 예산에서. 연봉(제시액)은 영입 때 내지 않고 페이롤에 잡혀 경기마다 ÷144씩 나간다.
+    ///   성공률은 <see cref="FrontOfficeTrust.SuccessRate"/>.
     /// - [확정 영입]: TP 100을 쓰고 요구액 그대로 100% 영입.
-    /// - 막는 조건: 정원(26·벤치 5·불펜 7), 예산 &lt; 제시액 + 수수료, 페이롤 + 제시액 &gt; 시즌 캡.
+    /// - 막는 조건: 정원(26·벤치 5·불펜 7), 예산 &lt; 수수료, 페이롤 + 제시액 &gt; 시즌 캡.
     /// - 페이롤: 영입 선수는 계약 연봉, 나머지는 WAR 연봉, 대체 선수는 최저 연봉.
+    /// - 방출 (Phase 26): 벤치·불펜 선수만. 위약금 = 연봉의 50% (예산에서 즉시), 선수는 자유계약으로 시장에 돌아간다.
+    /// - 캡 기준 (Phase 26): 리그 개막 평균 페이롤 × 1.25 (<see cref="OpeningCap"/>).
     /// </summary>
     public static class StoveLeague
     {
         public const int NormalPremiumPercent = 10;
         public const int AngryPremiumPercent = 20;
+        /// <summary>방출 위약금 = 연봉의 50%.</summary>
+        public const int ReleasePenaltyPercent = 50;
+        /// <summary>캡 기준 = 리그 개막 평균 페이롤 × 125%.</summary>
+        public const int CapPercentOfAveragePayroll = 125;
 
         public static int PremiumPercent(FanMood mood) =>
             mood == FanMood.Happy ? 0 : mood == FanMood.Angry ? AngryPremiumPercent : NormalPremiumPercent;
 
-        public static int AskOf(int salary, FanMood mood) =>
-            (int)Math.Round(salary * (100 + PremiumPercent(mood)) / 100.0, MidpointRounding.AwayFromZero);
+        public static long AskOf(long salary, FanMood mood) =>
+            (long)Math.Round(salary * (100 + PremiumPercent(mood)) / 100.0, MidpointRounding.AwayFromZero);
 
         /// <summary>요구액의 <paramref name="percent"/>% 제시액 (반올림). 100%면 요구액과 같다.</summary>
-        public static int OfferAt(int ask, int percent) =>
-            (int)Math.Round(ask * Math.Max(0, percent) / 100.0, MidpointRounding.AwayFromZero);
+        public static long OfferAt(long ask, int percent) =>
+            (long)Math.Round(ask * Math.Max(0, percent) / 100.0, MidpointRounding.AwayFromZero);
+
+        /// <summary>
+        /// 리그 개막 샐러리캡 기준 = 선수 DB 구단(선수단이 있는 구단) 평균 페이롤 × 1.25.
+        /// 내 구단의 지금 페이롤에 비례시키면 영입할수록 캡도 커져 제약이 사라지므로, 개막 시점 리그 평균에 묶는다.
+        /// DB가 없으면 <see cref="FrontOfficeTrust.DefaultSalaryCap"/>.
+        /// </summary>
+        public static long OpeningCap(MasterDatabase db)
+        {
+            var teams = db?.Players.Select(p => p.Team).Distinct().Select(db.GetRoster).Where(r => r != null).ToList();
+            if (teams == null || teams.Count == 0) return FrontOfficeTrust.DefaultSalaryCap;
+            decimal average = teams.Sum(r => (decimal)Payroll(r, null)) / teams.Count;
+            return (long)(average * CapPercentOfAveragePayroll / 100m);
+        }
 
         public static IReadOnlyList<FreeAgent> Market(LeagueRosterBook book, string myTeam, FanMood mood)
         {
@@ -256,25 +325,29 @@ namespace DailyFranchise.App
                 .Where(x => !LeagueRosterBook.IsReplacement(x.p))
                 .Select(x =>
                 {
-                    int salary = FrontOfficeTrust.SalaryOf(x.p.War);
+                    long salary = FrontOfficeTrust.SalaryOf(x.p.War);
                     return new FreeAgent(x.p, x.Team, salary, AskOf(salary, mood));
                 })
                 .OrderByDescending(a => a.Player.War).ThenBy(a => a.Id, StringComparer.Ordinal)
                 .ToList();
         }
 
-        /// <summary>선수단 연봉 합계. 영입 선수는 마지막 계약 연봉.</summary>
+        /// <summary>선수 한 명의 지금 연봉: 이 구단으로 온 마지막 계약 연봉, 없으면 WAR 연봉 (대체 선수는 최저 연봉).</summary>
+        public static long SalaryOf(PlayerData p, string team, IEnumerable<SigningRecord> signings)
+        {
+            long? contract = null;
+            foreach (var s in signings ?? Enumerable.Empty<SigningRecord>())
+                if (s.PlayerId == p.Id && s.ToTeam == team) contract = s.Salary;
+            return contract ?? (LeagueRosterBook.IsReplacement(p) ? FrontOfficeTrust.MinSalary : FrontOfficeTrust.SalaryOf(p.War));
+        }
+
+        /// <summary>선수단 연봉 합계 (1군 전원).</summary>
         public static long Payroll(TeamRoster roster, IEnumerable<SigningRecord> signings)
         {
             if (roster == null) return 0;
-            var contracts = new Dictionary<string, int>();
-            foreach (var s in signings ?? Enumerable.Empty<SigningRecord>())
-                if (s.ToTeam == roster.Team) contracts[s.PlayerId] = s.Salary;
+            var list = signings?.ToList();
             long sum = 0;
-            foreach (var p in LeagueRosterBook.AllOf(roster))
-                sum += contracts.TryGetValue(p.Id, out int c) ? c
-                    : LeagueRosterBook.IsReplacement(p) ? FrontOfficeTrust.MinSalary
-                    : FrontOfficeTrust.SalaryOf(p.War);
+            foreach (var p in LeagueRosterBook.AllOf(roster)) sum += SalaryOf(p, roster.Team, list);
             return sum;
         }
 
@@ -292,7 +365,7 @@ namespace DailyFranchise.App
         }
 
         /// <summary>이 제시액으로 협상(또는 확정 영입)할 수 있는지. 막히면 첫 이유.</summary>
-        public static SigningBlock Check(SeasonState season, LeagueRosterBook book, FreeAgent agent, int offer, bool ceiling = false)
+        public static SigningBlock Check(SeasonState season, LeagueRosterBook book, FreeAgent agent, long offer, bool ceiling = false)
         {
             if (season.InProgress != null) return SigningBlock.InGame;
             var (owner, _) = book.Find(agent.Id);
@@ -301,16 +374,16 @@ namespace DailyFranchise.App
             if (roster != SigningBlock.None) return roster;
             if (ceiling && !FrontOfficeTrust.CanUseCeiling(season.TrustPoints)) return SigningBlock.Trust;
             if (offer <= 0) return SigningBlock.InvalidOffer;
-            if ((long)offer + FrontOfficeTrust.FeeOf(agent.Ask) > season.Budget) return SigningBlock.Budget;
+            if (FrontOfficeTrust.FeeOf(agent.Ask) > season.Budget) return SigningBlock.Budget;
             if (offer > CapRoom(season, book)) return SigningBlock.SalaryCap;
             return SigningBlock.None;
         }
 
         /// <summary>
         /// 일반 협상. 막히면 아무것도 바꾸지 않는다. 시도하면 수수료를 내고(<see cref="SeasonState.Negotiate"/>),
-        /// 성공하면 제시액을 계약금으로 내고 영입 기록을 남긴다 (선수단 장부는 호출한 쪽이 다시 짠다).
+        /// 성공하면 제시액을 계약 연봉으로 영입 기록을 남긴다 (선수단 장부·페이롤은 호출한 쪽이 다시 짠다).
         /// </summary>
-        public static SigningOutcome Negotiate(SeasonState season, LeagueRosterBook book, FreeAgent agent, int offer, IRandomSource random)
+        public static SigningOutcome Negotiate(SeasonState season, LeagueRosterBook book, FreeAgent agent, long offer, IRandomSource random)
         {
             if (random == null) throw new ArgumentNullException(nameof(random));
             var outcome = new SigningOutcome { Agent = agent, Block = Check(season, book, agent, offer) };
@@ -330,11 +403,49 @@ namespace DailyFranchise.App
             return outcome;
         }
 
-        static void Sign(SeasonState season, FreeAgent agent, int salary, SigningOutcome outcome)
+        static void Sign(SeasonState season, FreeAgent agent, long salary, SigningOutcome outcome)
         {
-            season.ApplyFinance(new FinanceChange(-salary, 0));
             season.AddSigning(new SigningRecord(agent.Id, agent.Team, season.MyTeam, salary), isBatter: !agent.Player.IsPitcher);
-            outcome.Paid = salary;
+            outcome.Salary = salary;
+        }
+
+        /// <summary>방출 위약금 = 지금 연봉의 50% (내림).</summary>
+        public static long ReleasePenaltyOf(long salary) => Math.Max(0, salary) * ReleasePenaltyPercent / 100;
+
+        /// <summary>내 구단 선수의 방출 위약금. 내 선수가 아니면 0.</summary>
+        public static long ReleasePenalty(SeasonState season, LeagueRosterBook book, string playerId)
+        {
+            var mine = book?.Get(season.MyTeam);
+            var p = mine == null ? null : LeagueRosterBook.AllOf(mine).FirstOrDefault(x => x.Id == playerId);
+            return p == null ? 0 : ReleasePenaltyOf(SalaryOf(p, season.MyTeam, season.Signings));
+        }
+
+        /// <summary>방출할 수 있는지. 벤치·불펜 선수만, 위약금을 낼 예산이 있어야 한다.</summary>
+        public static ReleaseBlock CheckRelease(SeasonState season, LeagueRosterBook book, string playerId)
+        {
+            if (season.InProgress != null) return ReleaseBlock.InGame;
+            var mine = book?.Get(season.MyTeam);
+            if (mine == null || playerId == null) return ReleaseBlock.NotMine;
+            if (mine.Lineup.Any(p => p.Id == playerId) || mine.Starters.Any(p => p.Id == playerId)) return ReleaseBlock.Starter;
+            if (!mine.Bench.Concat(mine.Bullpen).Any(p => p.Id == playerId)) return ReleaseBlock.NotMine;
+            if (ReleasePenalty(season, book, playerId) > season.Budget) return ReleaseBlock.Budget;
+            return ReleaseBlock.None;
+        }
+
+        /// <summary>
+        /// 방출. 막히면 아무것도 바꾸지 않는다. 위약금을 예산에서 내고 자유계약으로 보내는 이적 기록을 남긴다
+        /// (사용자 라인업 카드 벤치에서도 뺀다 — <see cref="SeasonState.AddSigning"/>).
+        /// </summary>
+        public static ReleaseOutcome Release(SeasonState season, LeagueRosterBook book, string playerId)
+        {
+            var outcome = new ReleaseOutcome { Block = CheckRelease(season, book, playerId) };
+            if (outcome.Block != ReleaseBlock.None) return outcome;
+            var p = LeagueRosterBook.AllOf(book.Get(season.MyTeam)).First(x => x.Id == playerId);
+            outcome.Player = p;
+            outcome.Penalty = ReleasePenalty(season, book, playerId);
+            season.ApplyFinance(new FinanceChange(-outcome.Penalty, 0));
+            season.AddSigning(new SigningRecord(playerId, season.MyTeam, LeagueRosterBook.FreeAgentTeam, 0), isBatter: !p.IsPitcher);
+            return outcome;
         }
 
         public static string BlockText(SigningBlock block)
@@ -343,14 +454,27 @@ namespace DailyFranchise.App
             {
                 case SigningBlock.None: return "";
                 case SigningBlock.NotAvailable: return "시장에 없는 선수입니다.";
-                case SigningBlock.RosterFull: return $"1군 정원 {RosterLimits.MaxRoster}명이 찼습니다. (방출 기능 준비 중)";
-                case SigningBlock.BenchFull: return $"벤치 정원 {RosterLimits.MaxBench}명이 찼습니다. 야수는 더 영입할 수 없습니다.";
-                case SigningBlock.BullpenFull: return $"불펜 정원 {RosterLimits.MaxBullpen}명이 찼습니다. 투수는 더 영입할 수 없습니다.";
+                case SigningBlock.RosterFull: return $"1군 정원 {RosterLimits.MaxRoster}명이 찼습니다. 로비에서 선수를 방출하세요.";
+                case SigningBlock.BenchFull: return $"벤치 정원 {RosterLimits.MaxBench}명이 찼습니다. 야수를 방출해야 영입할 수 있습니다.";
+                case SigningBlock.BullpenFull: return $"불펜 정원 {RosterLimits.MaxBullpen}명이 찼습니다. 투수를 방출해야 영입할 수 있습니다.";
                 case SigningBlock.InvalidOffer: return "제시액이 없습니다.";
-                case SigningBlock.Budget: return "예산이 제시액 + 수수료보다 적습니다.";
+                case SigningBlock.Budget: return "예산이 협상 수수료보다 적습니다.";
                 case SigningBlock.SalaryCap: return "샐러리캡 여유가 제시액보다 적습니다.";
                 case SigningBlock.Trust: return $"확정 영입은 TP {FrontOfficeTrust.Ceiling} 이상일 때만 쓸 수 있습니다.";
                 case SigningBlock.InGame: return "경기 중에는 협상할 수 없습니다.";
+                default: throw new ArgumentOutOfRangeException(nameof(block), block, null);
+            }
+        }
+
+        public static string ReleaseBlockText(ReleaseBlock block)
+        {
+            switch (block)
+            {
+                case ReleaseBlock.None: return "";
+                case ReleaseBlock.NotMine: return "내 구단 선수가 아닙니다.";
+                case ReleaseBlock.Starter: return "선발 타순·로테이션 선수는 벤치로 내린 뒤 방출할 수 있습니다.";
+                case ReleaseBlock.Budget: return "예산이 위약금보다 적어 방출할 수 없습니다.";
+                case ReleaseBlock.InGame: return "경기 중에는 방출할 수 없습니다.";
                 default: throw new ArgumentOutOfRangeException(nameof(block), block, null);
             }
         }

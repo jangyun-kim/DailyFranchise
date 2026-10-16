@@ -19,12 +19,22 @@ namespace DailyFranchise.App
         public int RankAfter;
         /// <summary>그날 경기 결과 전체 (첫 항목이 내 경기).</summary>
         public IReadOnlyList<GameRecord> DayResults;
-        /// <summary>반영 직전 / 직후 예산·팬 만족도와 실제 변화량 (범위 제한 뒤).</summary>
-        public int BudgetBefore;
-        public int BudgetAfter;
+        /// <summary>반영 직전 / 직후 예산·팬 만족도와 실제 변화량 (범위 제한 뒤). 예산은 long (Phase 26).</summary>
+        public long BudgetBefore;
+        public long BudgetAfter;
         public int FanApprovalBefore;
         public int FanApprovalAfter;
         public FinanceChange Finance;
+        /// <summary>관중 수입 (팬 구간 배수·굿즈 포함, Phase 26 명세).</summary>
+        public long Income;
+        /// <summary>선수단 유지비 = 페이롤 ÷ 144 (Phase 26).</summary>
+        public long PayrollExpense;
+        /// <summary>순이익 = 관중 수입 − 유지비 (예산 0 아래로 내려가 잘리기 전 값).</summary>
+        public long NetIncome => Income - PayrollExpense;
+
+        /// <summary>"관중 수입 +₩5,000만 · 유지비 −₩2,791만 · 순이익 +₩2,208만".</summary>
+        public string FinanceText =>
+            $"관중 수입 {FranchiseFinance.BudgetDeltaText(Income)} · 유지비 {FranchiseFinance.BudgetDeltaText(-PayrollExpense)} · 순이익 {FranchiseFinance.BudgetDeltaText(NetIncome)}";
         /// <summary>이 경기 재정에 적용된 팬 만족도 구간(경기 전 기준)과 해금 슬롯 (Phase 23).</summary>
         public FanMood MoodBefore;
         public FandomSlot SlotsApplied;
@@ -46,6 +56,7 @@ namespace DailyFranchise.App
     /// 3) 순위표를 다시 정렬하고 일정을 다음 경기로 전진한다.
     /// 4) 내 구단 승/무/패로 예산(관중 수입)·팬 만족도를 바꾼다. 경기 전 팬 만족도 구간(관중 배수)과 해금한 팬덤 슬롯을 반영하고
     ///    (<see cref="FranchiseFinance.For(GameOutcome, FanMood, FandomSlot)"/>, 범위 제한), 그 뒤 슬롯 해금을 갱신한다.
+    ///    같은 정산에서 선수단 유지비(페이롤 ÷ 144, <see cref="FranchiseFinance.PayrollPerGame"/>)를 뺀다 (Phase 26).
     /// 5) 출장 기록이 있으면 두 구단 선수 컨디션을 바꾼다 (<see cref="ConditionRules"/>, 전용 난수).
     /// 6) 곧바로 저장해, 로비로 돌아가기 전에 꺼져도 결과가 남는다.
     /// </summary>
@@ -70,10 +81,13 @@ namespace DailyFranchise.App
             season.FinishCurrentGame(finalScore, leagueRandom);
             var mine = season.LastDayResults[0];
             var outcome = mine.OutcomeFor(season.MyTeam);
-            int budgetBefore = season.Budget, fanBefore = season.FanApproval;
+            long budgetBefore = season.Budget;
+            int fanBefore = season.FanApproval;
             var mood = FranchiseFinance.MoodOf(fanBefore);
             var slots = season.UnlockedSlots;
-            var finance = season.ApplyFinance(FranchiseFinance.For(outcome, mood, slots));
+            var income = FranchiseFinance.For(outcome, mood, slots);
+            long expense = FranchiseFinance.PayrollPerGame(season.Payroll);
+            var finance = season.ApplyFinance(new FinanceChange(income.BudgetDelta - expense, income.FanDelta));
             var unlocked = season.UpdateFandomUnlocks();
             var conditions = participation == null ? new List<ConditionChange>() : season.ApplyConditions(participation, conditionRandom);
 
@@ -87,6 +101,8 @@ namespace DailyFranchise.App
                 FanApprovalBefore = fanBefore,
                 FanApprovalAfter = season.FanApproval,
                 Finance = finance,
+                Income = income.BudgetDelta,
+                PayrollExpense = expense,
                 MoodBefore = mood,
                 SlotsApplied = slots,
                 NewlyUnlocked = unlocked,
