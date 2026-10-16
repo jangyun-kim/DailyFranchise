@@ -131,6 +131,15 @@ namespace DailyFranchise.UI
         /// </summary>
         public IConditionSource Conditions { get; set; }
 
+        /// <summary>
+        /// 리그 선수 성향 태그 (Phase 23, <see cref="ChemistryTagger"/>). 바깥(시즌 흐름)이 경기를 불러오기 전에 넣는다.
+        /// null이거나 대진에 선수단이 없으면 케미스트리 보정 없음.
+        /// </summary>
+        public IReadOnlyDictionary<string, ChemistryTag> ChemistryTags { get; set; }
+
+        /// <summary>이 경기 두 구단의 케미스트리. 케미스트리를 모르면 null.</summary>
+        public ChemistryBoard Chemistry { get; private set; }
+
         /// <summary>대진에 선수단이 실려 있을 때 화면 하단 출처 표기. 바깥(시즌 흐름)이 정한다.</summary>
         public string RosterSourceLabel { get; set; } = "선수 데이터";
         /// <summary>현재 장면의 원정·홈 시작 점수와 이벤트 (원정 경기면 뒤집은 사본).</summary>
@@ -426,7 +435,12 @@ namespace DailyFranchise.UI
                 _roster = data;
                 _scoreboard = data;
             }
-            _calculator = new MatchupCalculator(_roster as IPlayerLookup, pitcherStates: this, conditions: Conditions);
+            Chemistry = ChemistryTags != null && _matchup.HasRosters
+                ? new ChemistryBoard(ChemistryTags, _matchup.AwayRoster, _matchup.HomeRoster)
+                : null;
+            var modifiers = MatchupCalculator.DefaultModifiers();
+            if (Chemistry != null) modifiers = modifiers.Append(new ChemistryModifier(Chemistry, _roster as IPlayerLookup));
+            _calculator = new MatchupCalculator(_roster as IPlayerLookup, modifiers, pitcherStates: this, conditions: Conditions);
             _myPitching = BuildMyPitching();
             _cpu = new CpuRosterManager(BuildCpuPitching());
 

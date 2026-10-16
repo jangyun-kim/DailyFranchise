@@ -452,8 +452,11 @@ namespace DailyFranchise.UI.Tests
                 Assert.That(issues, Is.Empty, $"[{tactic} 설명]\n" + string.Join("\n", issues));
             }
             // Phase 17 기대값 51%에서 Phase 20 체력 저하(염태준 89구, 체력 11% → 피안타 +5%)를 더해 53%.
-            Assert.That(root.Q<Label>("tactic-desc").text, Does.EndWith("성공 확률 53% · 실패 47%"),
-                "좌투 vs 좌타 -5%, 클러치 +7%, 체력 저하 +5%");
+            // Phase 23 케미스트리: 1루 주자 하윤재(Speed) 발야구 +4%가 서울 철벽 센터라인에 절반(+2%),
+            // 철벽 −3%는 성지환이 거포 클린업 멤버라 절반(−1.5%), 거포 클린업 +4%는 염태준이 Ace라 절반(+2%) → +2.5%, 55%.
+            Assert.That(root.Q<Label>("tactic-desc").text, Does.EndWith("성공 확률 55% · 실패 45%"),
+                "좌투 vs 좌타 -5%, 클러치 +7%, 체력 저하 +5%, 케미 +2.5%");
+            Assert.That(root.Q<Label>("tactic-desc").text, Does.Contain("· 케미 발야구·철벽 센터라인·거포 클린업 +2%"));
             Assert.That(root.Q<Label>("tactic-desc").text, Does.Contain("· 체력 저하 +5%").And.Contain("투수 · 염태준 89구 · 체력 11% (저하)"));
             game.PreviewTactic(null);
 

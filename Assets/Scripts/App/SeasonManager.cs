@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using DailyFranchise.App.Data;
 using DailyFranchise.Sim;
 using DailyFranchise.Sim.Data;
@@ -93,6 +94,9 @@ namespace DailyFranchise.App
 
         /// <summary>선수·구단 마스터 데이터. 아직 읽는 중이면 null.</summary>
         public MasterDatabase Database { get; private set; }
+
+        /// <summary>선수 DB 전체로 매긴 성향 태그 (Phase 23, 케미스트리용). DB를 읽기 전이면 null.</summary>
+        public IReadOnlyDictionary<string, ChemistryTag> ChemistryTags { get; private set; }
         public bool IsDatabaseReady => Database != null;
         /// <summary>선수 DB를 다 읽었을 때 (비동기 로딩 완료 시점). 동기 로딩이면 Awake 안에서 이미 끝나 있다.</summary>
         public event Action DatabaseReady;
@@ -144,6 +148,7 @@ namespace DailyFranchise.App
         void SetDatabase(MasterDatabase database)
         {
             Database = database;
+            ChemistryTags = database == null ? null : ChemistryTagger.Tag(database.Players);
             DatabaseReady?.Invoke();
         }
 
@@ -213,6 +218,7 @@ namespace DailyFranchise.App
                 _game.RosterSourceLabel = $"{MasterDatabase.RosterFileName} ({Database.Season})";
             var matchup = MatchupOf(Season.InProgress);
             _game.Conditions = Season;
+            _game.ChemistryTags = ChemistryTags;
             if (FullInningMode) _game.LoadFullGame(matchup);
             else if (UseGeneratedScenario) _game.LoadGeneratedScenario(matchup, ScenarioRandom);
             else _game.LoadScenario(SeasonGameScenario, matchup);
