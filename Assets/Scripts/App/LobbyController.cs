@@ -32,6 +32,7 @@ namespace DailyFranchise.App
         Button _start;
         Button _mode;
         Button _scout;
+        Button _campClose;
         FaMarketView _fa;
         PlayerDetailView _detail;
         SeasonManager _manager;
@@ -76,6 +77,8 @@ namespace DailyFranchise.App
             _mode.clicked += OnModeClicked;
             _scout = _root.Q<Button>("scout-fa");
             _scout.clicked += OnScoutClicked;
+            _campClose = _root.Q<Button>("camp-close");
+            _campClose.clicked += CloseCampReport;
             _manager = SeasonManager.EnsureExists();
             _fa = new FaMarketView(_root, _manager);
             _detail = new PlayerDetailView(_root, _manager, ReleasePlayer, BeginSwapFrom);
@@ -86,6 +89,7 @@ namespace DailyFranchise.App
             _manager.SeasonRolledOver += OnSeasonRolledOver;
             _manager.NewsChanged += OnNewsChanged;
             _manager.PostseasonAdvanced += Render;
+            _manager.CampChanged += OnCampChanged;
             _selection.Clear();
             _chemistryKey = null;
             Render();
@@ -96,6 +100,7 @@ namespace DailyFranchise.App
             if (_start != null) _start.clicked -= OnStartClicked;
             if (_mode != null) _mode.clicked -= OnModeClicked;
             if (_scout != null) _scout.clicked -= OnScoutClicked;
+            if (_campClose != null) _campClose.clicked -= CloseCampReport;
             if (_manager != null)
             {
                 _manager.ModeChanged -= Render;
@@ -105,6 +110,7 @@ namespace DailyFranchise.App
                 _manager.SeasonRolledOver -= OnSeasonRolledOver;
                 _manager.NewsChanged -= OnNewsChanged;
                 _manager.PostseasonAdvanced -= Render;
+                _manager.CampChanged -= OnCampChanged;
             }
             _fa?.Detach();
             _fa = null;
@@ -117,6 +123,76 @@ namespace DailyFranchise.App
         }
 
         void OnDatabaseReady() => Render();
+
+        void OnCampChanged() => RenderCampPoints(_manager.Season);
+
+        /// <summary>헤더 캠프 포인트 (Phase 33). 0이면 숨긴다.</summary>
+        void RenderCampPoints(SeasonState season)
+        {
+            var label = Q<Label>("camp-points");
+            label.text = $"캠프 포인트 {season.CampPoints} CP";
+            label.tooltip = $"결산마다 {SpringCamp.PointsPerSeason} CP · 24세 이하 선수 특별 훈련에 1 CP (폼 +1%p)";
+            SetVisible(label, season.CampPoints > 0);
+        }
+
+        /// <summary>스프링캠프 리포트가 떠 있는지 (Phase 33).</summary>
+        public bool CampReportOpen => Q("camp-modal").ClassListContains("camp-modal--open");
+
+        /// <summary>[캠프 시작]: 리포트를 닫는다 (다시 뜨지 않는다).</summary>
+        public void CloseCampReport()
+        {
+            _manager?.DismissCampReport();
+            Q("camp-modal").RemoveFromClassList("camp-modal--open");
+        }
+
+        /// <summary>
+        /// 결산 직후 한 번 뜨는 스프링캠프 리포트 (Phase 33, <see cref="SeasonManager.PendingCampReport"/>):
+        /// 받은 CP, 폭풍 성장(+1.5%p 이상), 노쇠화 주의(32세 이상 하락)·은퇴, 루키 합류. 목록은 칸마다 최대 <see cref="CampRowsShown"/>줄.
+        /// </summary>
+        void RenderCampReport()
+        {
+            var report = _manager.PendingCampReport;
+            var modal = Q("camp-modal");
+            modal.EnableInClassList("camp-modal--open", report != null);
+            if (report == null) return;
+            _detail?.Close();
+            Q<Label>("camp-title").text = $"{report.Year} 스프링캠프 리포트";
+            Q<Label>("camp-cp").text = $"캠프 포인트 +{report.PointsGranted} CP 지급 · 보유 {report.PointsTotal} CP";
+            FillCamp("camp-growth", report.Growth.Select(g =>
+                $"{g.Player.Name} · {g.Player.Position} · {g.Player.Age}세 · {SpringCampReport.DeltaText(g.Delta)} (폼 {AgingCurve.FormText(g.Player.Form)})"),
+                "크게 성장한 선수가 없습니다.");
+            FillCamp("camp-decline", report.Decline.Select(d =>
+                    $"{d.Player.Name} · {d.Player.Position} · {d.Player.Age}세 · {SpringCampReport.DeltaText(d.Delta)} (폼 {AgingCurve.FormText(d.Player.Form)})")
+                .Concat(report.Retired.Select(r => $"{r.Name} · {r.Age}세 · 은퇴")),
+                "눈에 띄게 하락한 베테랑이 없습니다.");
+            FillCamp("camp-rookies", report.Rookies.Select(r =>
+                $"{r.Round}R {r.Player.Name} · {PositionMatcher.Label(r.Player.Position)} · {r.Player.Age}세"),
+                "이번 드래프트 지명이 없습니다.");
+            Q<Label>("camp-hint").text = $"24세 이하 선수를 눌러 [스프링캠프 특별 훈련]에 CP를 쓰세요 (1 CP = 폼 +1%p, 상한 +10%).";
+        }
+
+        public const int CampRowsShown = 6;
+
+        void FillCamp(string container, IEnumerable<string> rows, string empty)
+        {
+            var box = Q(container);
+            box.Clear();
+            var list = rows.ToList();
+            if (list.Count == 0)
+            {
+                var none = Cell(empty, "camp-row");
+                none.AddToClassList("camp-row--empty");
+                box.Add(none);
+                return;
+            }
+            foreach (var r in list.Take(CampRowsShown)) box.Add(Cell(r, "camp-row"));
+            if (list.Count > CampRowsShown)
+            {
+                var more = Cell($"외 {list.Count - CampRowsShown}명", "camp-row");
+                more.AddToClassList("camp-row--empty");
+                box.Add(more);
+            }
+        }
 
         void OnNewsChanged() => RenderNews(_manager.Season);
 
@@ -280,6 +356,7 @@ namespace DailyFranchise.App
             Q<Label>("my-record").text = RecordText(season);
 
             RenderFrontOffice(season);
+            RenderCampPoints(season);
             RenderRoster(season);
             RenderPreview(season);
             RenderDecisions(season);
@@ -317,6 +394,7 @@ namespace DailyFranchise.App
             _scout.SetEnabled(_manager.IsDatabaseReady && season.InProgress == null);
             _mode.text = _manager.FullInningMode ? "진행: 풀 이닝 (1회부터)" : "진행: 퀵 시뮬 (8회부터)";
             _mode.EnableInClassList("btn--active", _manager.FullInningMode);
+            RenderCampReport();
         }
 
         /// <summary>화면 루트에 구단 테마 클래스 하나만 남긴다.</summary>
@@ -543,7 +621,24 @@ namespace DailyFranchise.App
                 : $"퓨처스 신인 {rookies.Count}명 · {rookies[0].Name} {rookies[0].Position} {rookies[0].Age}세"
                   + (rookies.Count > 1 ? $" 외 {rookies.Count - 1}명" : "");
             label.tooltip = string.Join("\n", rookies.Select(p => $"{p.Name} ({p.Memo}) · {PositionMatcher.Label(p.Position)} · {p.Age}세 · {StoveLeague.KeyStat(p)}"));
+
+            // Phase 33: 신인 칩 (최근 지명 먼저, 최대 FuturesChipsShown개) — 누르면 선수 상세 (특별 훈련)
+            var chips = Q("futures-chips");
+            chips.Clear();
+            SetVisible(chips, rookies.Count > 0);
+            foreach (var p in rookies.AsEnumerable().Reverse().Take(FuturesChipsShown))
+            {
+                string id = p.Id;
+                var chip = Cell($"{p.Name} {p.Position} {p.Age}", "futures-chip");
+                chip.name = "fut-" + id;
+                chip.tooltip = $"{p.Memo} · 에이징 폼 {AgingCurve.FormText(p.Form)} · 누르면 선수 상세";
+                chip.RegisterCallback<ClickEvent>(_ => OpenPlayer(id));
+                chips.Add(chip);
+            }
         }
+
+        /// <summary>퓨처스 신인 칩 최대 개수 (두 줄).</summary>
+        public const int FuturesChipsShown = 6;
 
         /// <summary>
         /// 팀 케미스트리 문구. 발동 종류·멤버가 직전과 같으면 아무것도 바꾸지 않는다 (교체해도 결과가 같으면 다시 그리지 않음).

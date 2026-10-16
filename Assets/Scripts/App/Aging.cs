@@ -125,6 +125,8 @@ namespace DailyFranchise.App
         public readonly List<(string Team, PlayerData Player)> Retired = new List<(string, PlayerData)>();
         /// <summary>폭풍 성장 (구단, 선수, 이번 상승폭).</summary>
         public readonly List<(string Team, PlayerData Player, double Gain)> Breakouts = new List<(string, PlayerData, double)>();
+        /// <summary>은퇴하지 않은 선수 전원의 이번 폼 변화 (구단, 새 나이·폼 사본, 변화량) — 스프링캠프 리포트용 (Phase 33).</summary>
+        public readonly List<(string Team, PlayerData Player, double Delta)> FormChanges = new List<(string, PlayerData, double)>();
     }
 
     /// <summary>
@@ -165,6 +167,7 @@ namespace DailyFranchise.App
                 season.SetProgression(new PlayerProgression(p.Id, ageDelta, form, retired, retired ? season.Year : 0));
                 report.Aged++;
                 var aged = p.WithProgression(age, form);
+                if (!retired) report.FormChanges.Add((team, aged, form - oldForm));
                 if (retired) report.Retired.Add((team, aged));
                 else if (form - oldForm >= AgingCurve.BreakoutGrowth) report.Breakouts.Add((team, aged, form - oldForm));
             }

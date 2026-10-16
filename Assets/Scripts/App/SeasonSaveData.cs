@@ -94,6 +94,9 @@ namespace DailyFranchise.App
         /// </summary>
         public List<DailyFranchise.Sim.Data.PlayerData> Rookies = new List<DailyFranchise.Sim.Data.PlayerData>();
 
+        /// <summary>캠프 포인트 (Phase 33). 없는 이전 저장 파일은 0.</summary>
+        public int CampPoints;
+
         /// <summary>시즌 단계 (Phase 32, <see cref="SeasonPhase"/> 정수). 없는 이전 저장 파일은 0 = 정규시즌.</summary>
         public int Phase;
 

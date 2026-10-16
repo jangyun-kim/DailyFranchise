@@ -1416,6 +1416,95 @@ namespace DailyFranchise.UI.Tests
             Object.Destroy(panel);
         }
 
+        [UnityTest]
+        public IEnumerator Phase33_결산하면_스프링캠프_리포트가_뜨고_CP로_퓨처스_신인을_특별_훈련한다()
+        {
+            var manager = SeasonManager.Instance;
+            while (!manager.Season.IsSeasonFinished)
+            {
+                manager.Season.StartNextGame();
+                manager.AdvanceSeason(manager.Season.ScheduleScore(4, 2));
+            }
+            FinishPostseason(manager);
+            yield return RestartFromLobby();
+            manager = SeasonManager.Instance;
+            manager.AgingRandom = new SeededRandom(3333);
+            var lobby = Object.FindAnyObjectByType<LobbyController>();
+            var doc = lobby.GetComponent<UIDocument>();
+            var rt = new RenderTexture(1920, 1080, 24);
+            rt.Create();
+            var panel = Object.Instantiate(doc.panelSettings);
+            panel.targetTexture = rt;
+            doc.panelSettings = panel;
+            yield return null;
+            yield return null;
+            void Layout(string label)
+            {
+                var issues = LayoutChecker.Check(LobbyRoot().Q("screen"));
+                Assert.That(issues, Is.Empty, $"[{label}]\n" + string.Join("\n", issues));
+            }
+            var root = LobbyRoot();
+            Assert.That(lobby.CampReportOpen, Is.False);
+            Assert.That(root.Q<Label>("camp-points").resolvedStyle.display, Is.EqualTo(DisplayStyle.None), "CP 0이면 숨김");
+
+            // 1) 결산 → 스프링캠프 리포트
+            Submit(root.Q<Button>("start-game"));
+            yield return null;
+            Assert.That(lobby.CampReportOpen, Is.True);
+            var camp = manager.LastRollover.Camp;
+            Assert.That(root.Q<Label>("camp-title").text, Is.EqualTo("2027 스프링캠프 리포트"));
+            Assert.That(root.Q<Label>("camp-cp").text, Is.EqualTo("캠프 포인트 +5 CP 지급 · 보유 5 CP"));
+            Assert.That(root.Q("camp-rookies").childCount, Is.EqualTo(camp.Rookies.Count));
+            Assert.That(root.Q("camp-rookies").Q<Label>().text, Does.StartWith($"1R {camp.Rookies[0].Player.Name} · "));
+            Assert.That(root.Q("camp-decline").childCount, Is.GreaterThan(0));
+            Layout("스프링캠프 리포트");
+            Submit(root.Q<Button>("camp-close"));
+            yield return null;
+            Assert.That(lobby.CampReportOpen, Is.False);
+            Assert.That(manager.PendingCampReport, Is.Null, "한 번만");
+
+            // 2) CP 확인 → 퓨처스 신인 칩 → 선수 상세
+            Assert.That(root.Q<Label>("camp-points").text, Is.EqualTo("캠프 포인트 5 CP"));
+            var rookie = manager.Season.Rookies.Last();
+            var chip = root.Q("fut-" + rookie.Id);
+            Assert.That(chip, Is.Not.Null);
+            Click(chip);
+            yield return null;
+            Assert.That(lobby.PlayerDetail.PlayerId, Is.EqualTo(rookie.Id));
+            Assert.That(root.Q<Label>("pd-role").text, Does.StartWith("퓨처스 · 2027 신인"));
+            var train = root.Q<Button>("pd-train");
+            Assert.That((train.resolvedStyle.display, train.enabledSelf), Is.EqualTo((DisplayStyle.Flex, true)));
+            Assert.That(root.Q<Button>("pd-release").enabledSelf, Is.False, "퓨처스는 방출 불가");
+            Assert.That(root.Q<Label>("pd-form").text, Is.EqualTo("에이징 폼 ±0%"));
+            Layout("퓨처스 신인 상세");
+
+            // 3) 특별 훈련 → CP·폼 즉시 갱신
+            Submit(train);
+            yield return null;
+            Assert.That(manager.Season.CampPoints, Is.EqualTo(4));
+            Assert.That(manager.Season.ProgressionOf(rookie.Id).Form, Is.EqualTo(0.01).Within(1e-9));
+            Assert.That(root.Q<Label>("pd-form").text, Is.EqualTo("에이징 폼 +1%"));
+            Assert.That(root.Q("pd-form-fill").ClassListContains("pd-form-fill--up"), Is.True);
+            Assert.That(root.Q<Label>("pd-train-note").text, Does.Contain("보유 4 CP"));
+            Assert.That(root.Q<Label>("camp-points").text, Is.EqualTo("캠프 포인트 4 CP"));
+            Assert.That(lobby.PlayerDetail.IsOpen, Is.True, "모달은 열어 둔다");
+
+            // 24세 넘는 선수는 훈련 버튼이 없다
+            Submit(root.Q<Button>("pd-close"));
+            Click(root.Q("lineup-1"));
+            yield return null;
+            Assert.That(root.Q<Button>("pd-train").resolvedStyle.display, Is.EqualTo(DisplayStyle.None));
+
+            // 재시작해도 CP·폼 유지, 리포트는 다시 뜨지 않는다
+            yield return RestartFromLobby();
+            Assert.That(SeasonManager.Instance.Season.CampPoints, Is.EqualTo(4));
+            Assert.That(SeasonManager.Instance.Rosters.Get("삼성 라이온즈").Reserves.Single(p => p.Id == rookie.Id).Form, Is.EqualTo(0.01).Within(1e-9));
+            Assert.That(Object.FindAnyObjectByType<LobbyController>().CampReportOpen, Is.False);
+            rt.Release();
+            Object.Destroy(rt);
+            Object.Destroy(panel);
+        }
+
         static string[] ConditionClasses(VisualElement container) =>
             container.Query(className: "col-cond").ToList()
                 .Select(c => c.GetClasses().FirstOrDefault(n => n.StartsWith("cond--")) ?? "").ToArray();

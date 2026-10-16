@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using DailyFranchise.Sim;
 using DailyFranchise.Sim.Data;
 using DailyFranchise.UI.Data;
 using UnityEngine.UIElements;
@@ -27,6 +28,7 @@ namespace DailyFranchise.App
         readonly Button _close;
         readonly Button _pickButton;
         readonly Button _releaseButton;
+        readonly Button _trainButton;
         readonly VisualElement _root;
 
         public PlayerDetailView(VisualElement root, SeasonManager manager, Func<string, ReleaseOutcome> release, Action<LineupSpot> pick)
@@ -39,9 +41,11 @@ namespace DailyFranchise.App
             _close = root.Q<Button>("pd-close");
             _pickButton = root.Q<Button>("pd-pick");
             _releaseButton = root.Q<Button>("pd-release");
+            _trainButton = root.Q<Button>("pd-train");
             _close.clicked += Close;
             _pickButton.clicked += OnPick;
             _releaseButton.clicked += OnRelease;
+            _trainButton.clicked += OnTrain;
             _modal.RegisterCallback<ClickEvent>(OnBackdrop);
         }
 
@@ -50,6 +54,7 @@ namespace DailyFranchise.App
             _close.clicked -= Close;
             _pickButton.clicked -= OnPick;
             _releaseButton.clicked -= OnRelease;
+            _trainButton.clicked -= OnTrain;
             _modal.UnregisterCallback<ClickEvent>(OnBackdrop);
         }
 
@@ -73,12 +78,15 @@ namespace DailyFranchise.App
             ReleaseArmed = false;
         }
 
-        /// <summary>내 구단 1군 선수의 상세를 연다. 선수단에 없거나 경기 중이면 열지 않고 false.</summary>
+        /// <summary>1군과 퓨처스 선수 (Phase 33부터 퓨처스도 연다 — 특별 훈련).</summary>
+        static IEnumerable<PlayerData> Everyone(TeamRoster roster) => LeagueRosterBook.AllOf(roster).Concat(roster.Reserves);
+
+        /// <summary>내 구단 1군·퓨처스 선수의 상세를 연다. 선수단에 없거나 경기 중이면 열지 않고 false.</summary>
         public bool Open(string playerId)
         {
             var roster = _manager.MyRoster;
             if (roster == null || playerId == null || _manager.Season.InProgress != null) return false;
-            if (LeagueRosterBook.AllOf(roster).All(p => p.Id != playerId)) return false;
+            if (Everyone(roster).All(p => p.Id != playerId)) return false;
             PlayerId = playerId;
             ReleaseArmed = false;
             _modal.AddToClassList("pd-modal--open");
@@ -98,7 +106,12 @@ namespace DailyFranchise.App
         void Render()
         {
             var roster = _manager.MyRoster;
-            var p = LeagueRosterBook.AllOf(roster).First(x => x.Id == PlayerId);
+            var p = Everyone(roster).FirstOrDefault(x => x.Id == PlayerId);
+            if (p == null)
+            {
+                Close(); // 방출·은퇴 등으로 선수단에서 빠졌다
+                return;
+            }
             var season = _manager.Season;
             int cond = season.ConditionOf(p.Id);
 
@@ -130,11 +143,51 @@ namespace DailyFranchise.App
                 + (Math.Abs(p.Form) >= 0.005 ? $" · 에이징 폼 {AgingCurve.FormText(p.Form)}" : "");
 
             RenderSwap(roster, p);
-            RenderRelease(p);
+            RenderTraining(p);
+            RenderRelease(p, roster.Reserves.Contains(p));
+        }
+
+        /// <summary>
+        /// 에이징 폼 게이지(−10% ~ +10%, 가운데 0)와 스프링캠프 특별 훈련 (Phase 33). 훈련 버튼은 24세 이하만 보이고,
+        /// 막히면 잠그고 이유와 보유 CP를 보인다.
+        /// </summary>
+        void RenderTraining(PlayerData p)
+        {
+            double form = p.Form, max = ProgressionModifier.MaxForm;
+            var label = Q<Label>("pd-form");
+            label.text = "에이징 폼 " + AgingCurve.FormText(form);
+            label.EnableInClassList("pd-form--up", form >= 0.005);
+            label.EnableInClassList("pd-form--down", form <= -0.005);
+            var fill = Q("pd-form-fill");
+            fill.style.width = Length.Percent((float)(100 * (form + max) / (2 * max)));
+            fill.EnableInClassList("pd-form-fill--up", form >= 0.005);
+            fill.EnableInClassList("pd-form-fill--down", form <= -0.005);
+
+            bool young = p.Age > 0 && p.Age <= SpringCamp.MaxTrainingAge;
+            _trainButton.style.display = young ? DisplayStyle.Flex : DisplayStyle.None;
+            var block = SpringCamp.Check(_manager.Season, _manager.Rosters, p.Id);
+            _trainButton.SetEnabled(block == TrainingBlock.None);
+            _trainButton.text = $"스프링캠프 특별 훈련 (CP {SpringCamp.TrainingCost} 소모)";
+            int cp = _manager.Season.CampPoints;
+            Q<Label>("pd-train-note").text = !young ? $"특별 훈련은 {SpringCamp.MaxTrainingAge}세 이하 유망주만 받을 수 있습니다. 보유 {cp} CP"
+                : block == TrainingBlock.None ? $"보유 {cp} CP · 훈련하면 폼 +1%p (상한 +{(int)Math.Round(max * 100)}%)"
+                : $"{SpringCamp.BlockText(block)} 보유 {cp} CP";
+        }
+
+        void OnTrain() => PressTrain();
+
+        /// <summary>[스프링캠프 특별 훈련]: CP 1로 폼 +1%p (SeasonManager가 저장·알림). 모달은 열어 둔 채 다시 그린다.</summary>
+        public TrainingOutcome PressTrain()
+        {
+            if (PlayerId == null) return null;
+            var outcome = _manager.Train(PlayerId);
+            if (IsOpen) Render();
+            return outcome;
         }
 
         static string RoleText(TeamRoster roster, PlayerData p)
         {
+            if (roster.Reserves.Contains(p)) return RookieGenerator.IsRookie(p) ? $"퓨처스 · {p.Memo}" : "퓨처스";
             if (roster.Lineup.Contains(p)) return $"선발 {p.Order}번 타자";
             if (roster.Bench.Contains(p)) return "벤치";
             if (roster.Starters.Contains(p)) return $"선발 로테이션 {p.Order}번";
@@ -200,7 +253,9 @@ namespace DailyFranchise.App
             _pickButton.style.display = spot.HasValue ? DisplayStyle.Flex : DisplayStyle.None;
             if (!spot.HasValue)
             {
-                title.text = "투수는 선발 로테이션 순서대로 등판합니다 (컨디션 보통 미만은 건너뜀).";
+                title.text = roster.Reserves.Contains(p)
+                    ? "퓨처스 선수 · 1군에 빈자리가 나면 같은 수비 위치부터 올라옵니다."
+                    : "투수는 선발 로테이션 순서대로 등판합니다 (컨디션 보통 미만은 건너뜀).";
                 return;
             }
             bool starter = !spot.Value.IsBench;
@@ -241,8 +296,16 @@ namespace DailyFranchise.App
             if (spot.HasValue) _pick(spot.Value);
         }
 
-        void RenderRelease(PlayerData p)
+        void RenderRelease(PlayerData p, bool reserve)
         {
+            if (reserve)
+            {
+                _releaseButton.SetEnabled(false);
+                _releaseButton.EnableInClassList("pd-release--armed", false);
+                _releaseButton.text = "방출";
+                _releaseButton.tooltip = Q<Label>("pd-release-note").text = "퓨처스 선수는 방출할 수 없습니다 (1군 선수만).";
+                return;
+            }
             var block = StoveLeague.CheckRelease(_manager.Season, _manager.Rosters, p.Id);
             long penalty = StoveLeague.ReleasePenalty(_manager.Season, _manager.Rosters, p.Id);
             string penaltyText = FranchiseFinance.BudgetDeltaText(-penalty);

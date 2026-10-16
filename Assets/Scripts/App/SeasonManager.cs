@@ -325,6 +325,32 @@ namespace DailyFranchise.App
         /// <summary>마지막 오프시즌 결산 요약. 이번 실행에서 아직 없으면 null.</summary>
         public SeasonRollover LastRollover { get; private set; }
 
+        /// <summary>
+        /// 결산 직후 로비가 한 번 띄울 스프링캠프 리포트 (Phase 33). 닫으면(<see cref="DismissCampReport"/>) null. 저장하지 않는다.
+        /// </summary>
+        public SpringCampReport PendingCampReport { get; private set; }
+
+        public void DismissCampReport() => PendingCampReport = null;
+
+        /// <summary>캠프 포인트·특별 훈련이 바뀌었다 (로비 헤더·선수 상세 다시 그리기용, Phase 33).</summary>
+        public event Action CampChanged;
+
+        /// <summary>
+        /// 스프링캠프 특별 훈련 (Phase 33, <see cref="SpringCamp.Train"/>): CP 1로 24세 이하 내 선수의 폼 +1%p.
+        /// 훈련했으면 장부를 다시 짜고 바로 저장한 뒤 알린다. 막히면 아무것도 바꾸지 않는다.
+        /// </summary>
+        public TrainingOutcome Train(string playerId)
+        {
+            if (_loading || Rosters == null) return new TrainingOutcome { PlayerId = playerId, Block = TrainingBlock.InGame, PointsLeft = Season.CampPoints };
+            var outcome = SpringCamp.Train(Season, Rosters, playerId);
+            if (!outcome.Trained) return outcome;
+            _ = Rosters; // 폼을 덧씌운 장부로
+            Saves.Save(Season);
+            LineupChanged?.Invoke();
+            CampChanged?.Invoke();
+            return outcome;
+        }
+
         /// <summary>CPU끼리의 한국시리즈 결과 시뮬레이션 난수 (Phase 32, 다른 난수와 분리). 테스트는 고정 Seed를 넣는다.</summary>
         public IRandomSource PostseasonRandom { get; set; } = SeededRandom.FromClock();
 
@@ -356,6 +382,7 @@ namespace DailyFranchise.App
             if (_loading || Season.InProgress != null || Season.Phase != SeasonPhase.OffSeason) return null;
             // 선수 DB를 읽었으면 에이징 커브·은퇴까지 (Phase 29). 장부는 결산 직전 것 (나이·폼 덧씌운 상태).
             LastRollover = Season.TransitionToNextSeason(Rosters, AgingRandom);
+            PendingCampReport = LastRollover.Camp;
             LastReport = null; // 직전 경기 재정 변화는 지난 시즌 것
             LastScore = null;
             _ = Rosters; // 캡 기준·페이롤 다시 맞추기 (선수단은 그대로)

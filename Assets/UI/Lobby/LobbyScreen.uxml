@@ -56,6 +56,7 @@
             <ui:VisualElement class="header__time">
                 <ui:Label name="season-title" class="season-title" text="—" />
                 <ui:Label name="game-day" class="game-day" text="—" />
+                <ui:Label name="camp-points" class="camp-points" text="" />
             </ui:VisualElement>
         </ui:VisualElement>
 
@@ -71,6 +72,8 @@
                 <ui:Label name="bench-title" class="section-title bench-title" text="벤치" />
                 <ui:VisualElement name="bench" />
                 <ui:Label name="futures-rookies" class="futures-rookies" text="" />
+                <!-- Phase 33: 퓨처스 신인 칩 (누르면 선수 상세 · 특별 훈련) -->
+                <ui:VisualElement name="futures-chips" class="futures-chips" />
                 <ui:Label name="lineup-hint" class="lineup-hint" text="" />
             </ui:VisualElement>
 
@@ -271,10 +274,46 @@
                 <ui:Label name="pd-swap-title" class="section-title pd-swap-title" text="" />
                 <ui:VisualElement name="pd-swap" class="pd-swap" />
                 <ui:Button name="pd-pick" class="btn pd-pick" text="라인업에서 직접 골라 맞바꾸기" />
+                <!-- Phase 33: 에이징 폼 게이지와 스프링캠프 특별 훈련 (24세 이하) -->
+                <ui:VisualElement name="pd-train-row" class="pd-train-row">
+                    <ui:Label name="pd-form" class="pd-form" text="—" />
+                    <ui:VisualElement class="pd-form-track">
+                        <ui:VisualElement name="pd-form-fill" class="pd-form-fill" />
+                        <ui:VisualElement class="pd-form-zero" />
+                    </ui:VisualElement>
+                    <ui:Button name="pd-train" class="btn pd-train" text="스프링캠프 특별 훈련 (CP 1 소모)" />
+                </ui:VisualElement>
+                <ui:Label name="pd-train-note" class="pd-train-note" text="" />
                 <ui:VisualElement class="pd-danger">
                     <ui:Label name="pd-release-note" class="pd-release-note" text="" />
                     <ui:Button name="pd-release" class="btn pd-release" text="방출" />
                 </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- Phase 33: 스프링캠프 리포트 (결산 직후 한 번) -->
+        <ui:VisualElement name="camp-modal" class="camp-modal">
+            <ui:VisualElement name="camp-window" class="camp-window">
+                <ui:VisualElement class="camp-head">
+                    <ui:Label name="camp-title" class="camp-title" text="스프링캠프 리포트" />
+                    <ui:Label name="camp-cp" class="camp-cp" text="" />
+                </ui:VisualElement>
+                <ui:VisualElement class="camp-columns">
+                    <ui:VisualElement class="camp-section">
+                        <ui:Label class="camp-section__title camp-section__title--up" text="폭풍 성장" />
+                        <ui:VisualElement name="camp-growth" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="camp-section">
+                        <ui:Label class="camp-section__title camp-section__title--down" text="노쇠화 주의 · 은퇴" />
+                        <ui:VisualElement name="camp-decline" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="camp-section camp-section--last">
+                        <ui:Label class="camp-section__title camp-section__title--new" text="루키 합류 (퓨처스)" />
+                        <ui:VisualElement name="camp-rookies" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+                <ui:Label name="camp-hint" class="camp-hint" text="" />
+                <ui:Button name="camp-close" class="btn btn--primary camp-close" text="캠프 시작" />
             </ui:VisualElement>
         </ui:VisualElement>
     </ui:VisualElement>

@@ -1458,3 +1458,197 @@ Label {
 .unity-button.pd-release:disabled {
     opacity: 0.35;
 }
+
+/* ───────── 스프링캠프 (Phase 33) ───────── */
+.camp-points {
+    height: 22px;
+    font-size: 13px;
+    color: var(--good);
+    -unity-font-style: bold;
+    -unity-text-align: middle-right;
+}
+
+.futures-chips {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 4px;
+}
+
+.futures-chip {
+    height: 24px;
+    margin: 0 6px 4px 0;
+    padding: 0 8px;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: var(--good);
+    font-size: 12px;
+    color: var(--good);
+    -unity-text-align: middle-center;
+}
+
+.futures-chip:hover {
+    background-color: var(--panel-2);
+}
+
+.pd-train-row {
+    height: 40px;
+    margin-top: 12px;
+    flex-direction: row;
+    align-items: center;
+}
+
+.pd-form {
+    width: 150px;
+    font-size: 15px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.pd-form--up { color: var(--good); }
+.pd-form--down { color: var(--danger); }
+
+.pd-form-track {
+    flex-grow: 1;
+    height: 12px;
+    margin-right: 14px;
+    border-radius: 6px;
+    background-color: var(--line);
+    overflow: hidden;
+}
+
+.pd-form-fill {
+    height: 12px;
+    border-radius: 6px;
+    background-color: var(--muted);
+}
+
+.pd-form-fill--up { background-color: var(--good); }
+.pd-form-fill--down { background-color: var(--danger); }
+
+.pd-form-zero {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    width: 2px;
+    height: 12px;
+    background-color: var(--text);
+}
+
+.unity-button.pd-train {
+    width: 280px;
+    height: 36px;
+    margin: 0;
+    padding: 0;
+    font-size: 14px;
+    border-color: var(--good);
+    color: var(--good);
+}
+
+.pd-train-note {
+    height: 22px;
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+.camp-modal {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.7);
+}
+
+.camp-modal--open {
+    display: flex;
+}
+
+.camp-window {
+    width: 1180px;
+    padding: 22px 26px;
+    border-top-width: 4px;
+    border-radius: 10px;
+    border-color: var(--good);
+    background-color: var(--panel);
+}
+
+.camp-head {
+    height: 48px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.camp-title {
+    font-size: 28px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.camp-cp {
+    font-size: 17px;
+    color: var(--good);
+    -unity-font-style: bold;
+    -unity-text-align: middle-right;
+}
+
+.camp-columns {
+    margin-top: 14px;
+    flex-direction: row;
+}
+
+.camp-section {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 220px;
+    margin-right: 14px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    background-color: var(--panel-2);
+}
+
+.camp-section--last {
+    margin-right: 0;
+}
+
+.camp-section__title {
+    height: 28px;
+    font-size: 17px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.camp-section__title--up { color: var(--good); }
+.camp-section__title--down { color: var(--danger); }
+.camp-section__title--new { color: var(--cool); }
+
+.camp-row {
+    height: 26px;
+    font-size: 14px;
+    -unity-text-align: middle-left;
+}
+
+.camp-row--empty {
+    color: var(--muted);
+}
+
+.camp-hint {
+    height: 24px;
+    margin-top: 14px;
+    font-size: 14px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+.unity-button.camp-close {
+    width: 240px;
+    height: 48px;
+    margin: 12px 0 0 0;
+    padding: 0;
+    align-self: flex-end;
+}

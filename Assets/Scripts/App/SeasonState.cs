@@ -516,6 +516,20 @@ namespace DailyFranchise.App
             return true;
         }
 
+        /// <summary>캠프 포인트 CP (Phase 33, <see cref="SpringCamp"/>). 결산마다 지급, 특별 훈련에 쓴다. 0 이상. 시즌과 함께 저장된다.</summary>
+        public int CampPoints { get; private set; }
+
+        /// <summary>CP를 정한다 (불러오기·테스트용, 음수는 0).</summary>
+        public void SetCampPoints(int points) => CampPoints = Math.Max(0, points);
+
+        /// <summary>CP를 쓴다. 모자라면 아무것도 하지 않고 false.</summary>
+        public bool SpendCampPoints(int points)
+        {
+            if (points < 0 || CampPoints < points) return false;
+            CampPoints -= points;
+            return true;
+        }
+
         /// <summary>리그 뉴스 보관 개수 (Phase 28). 넘치면 오래된 뉴스부터 버린다 — 저장 파일이 커지지 않게.</summary>
         public const int MaxNews = 15;
 
@@ -881,6 +895,9 @@ namespace DailyFranchise.App
                 DropRetiredFromLineup();
                 summary.Draft = RookieDraft.Process(this, league, agingRandom);
             }
+            // 스프링캠프 (Phase 33): 캠프 포인트 지급과 내 구단 리포트
+            CampPoints += SpringCamp.PointsPerSeason;
+            summary.Camp = SpringCampReport.Build(MyTeam, Year, SpringCamp.PointsPerSeason, CampPoints, summary.Aging, summary.Draft);
             return summary;
         }
 
@@ -950,6 +967,7 @@ namespace DailyFranchise.App
                 }).ToList(),
                 Rookies = _rookies.ToList(),
                 Phase = (int)Phase,
+                CampPoints = CampPoints,
                 Postseason = Postseason == null ? new PostseasonData() : new PostseasonData
                 {
                     TopSeed = Postseason.TopSeed,
@@ -1063,6 +1081,8 @@ namespace DailyFranchise.App
             // 시즌 단계가 없는 이전 저장 파일(Phase 32 이전)은 정규시즌. 정규시즌을 다 치른 파일은 SeasonManager가 불러온 뒤
             // 한국시리즈를 연다 (BeginPostseasonIfDue). 단계와 맞지 않는 시리즈 기록(팀이 순위표에 없음 등)은 버리고 정규시즌 끝에서 다시 연다.
             season.RestorePhase(data);
+            // 캠프 포인트가 없는 이전 저장 파일(Phase 33 이전)은 0.
+            season.SetCampPoints(data.CampPoints);
             // 신인이 없는 이전 저장 파일(Phase 30 이전)은 빈 목록. ID·구단이 빈 항목과 중복 ID는 건너뛴다.
             if (data.Rookies != null)
                 foreach (var r in data.Rookies)
@@ -1229,6 +1249,8 @@ namespace DailyFranchise.App
         public bool InChampionship { get; internal set; }
         /// <summary>내 구단이 한국시리즈에서 우승했는지.</summary>
         public bool WonChampionship { get; internal set; }
+        /// <summary>스프링캠프 리포트 (Phase 33): 받은 CP, 내 구단 성장·노쇠화·은퇴·신인.</summary>
+        public SpringCampReport Camp { get; internal set; }
 
         /// <summary>"2026 시즌 최종 3위 · 78승 64패 2무 · 은퇴 2명 · 신인 4명" (무승부·은퇴·신인이 없으면 생략, 신인은 내 구단 지명 수).</summary>
         public string Text
