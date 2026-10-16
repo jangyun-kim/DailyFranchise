@@ -92,6 +92,12 @@ namespace DailyFranchise.App
         /// </summary>
         public static bool LoadDatabaseSynchronously { get; set; }
 
+        /// <summary>
+        /// 선수 DB 재지정 (테스트용 — 다구단 트레이드를 실제 화면에서 검증할 때 TestLeague_TwoTeams를 넣는다). null이면 Resources.
+        /// SeasonManager가 만들어지기 전에 정해야 한다.
+        /// </summary>
+        public static MasterDatabase DatabaseOverride { get; set; }
+
         /// <summary>선수·구단 마스터 데이터. 아직 읽는 중이면 null.</summary>
         public MasterDatabase Database { get; private set; }
 
@@ -182,6 +188,36 @@ namespace DailyFranchise.App
             return outcome;
         }
 
+        /// <summary>타 구단 명단 (Phase 34, 트레이드 대상 — 구단 이름 순, 1군 먼저·가치 순). DB를 읽기 전이면 빈 목록.</summary>
+        public IReadOnlyList<TradeTarget> TradeTargets => TradeDesk.Targets(Rosters, Season.MyTeam, Season.Signings);
+
+        /// <summary>트레이드로 보낼 수 있는 내 선수 (1군 먼저, 그다음 퓨처스). DB를 읽기 전이면 빈 목록.</summary>
+        public IReadOnlyList<TradeTarget> TradeOffers => TradeDesk.Offers(Rosters, Season.MyTeam, Season.Signings);
+
+        /// <summary>트레이드 사전 평가 (아무것도 바꾸지 않는다). DB를 읽기 전이면 null.</summary>
+        public TradeQuote QuoteTrade(string myPlayerId, string theirPlayerId) =>
+            Rosters == null ? null : TradeDesk.Quote(Season, Rosters, myPlayerId, theirPlayerId);
+
+        /// <summary>
+        /// 1:1 트레이드 제안 (Phase 34, <see cref="TradeDesk.Propose"/>). 거절·차단이면 아무것도 바꾸지 않는다.
+        /// 성사되면 장부·페이롤을 다시 짜고, 사용자 라인업 카드를 고쳐(내준 선발 타자 자리는 같은 수비 위치 선수로) 저장한 뒤 알린다.
+        /// </summary>
+        public TradeOutcome ProposeTrade(string myPlayerId, string theirPlayerId)
+        {
+            if (_loading || Rosters == null) return new TradeOutcome { Quote = new TradeQuote { Block = TradeBlock.InGame } };
+            var chemistry = ChemistryKinds();
+            var outcome = TradeDesk.Propose(Season, Rosters, myPlayerId, theirPlayerId); // [오피셜] 트레이드 뉴스 발행
+            if (!outcome.Accepted) return outcome;
+            _ = Rosters; // 장부·페이롤 다시 짜기
+            if (Season.MyLineup != null) Season.MyLineup = CurrentLineup;
+            PublishChemistry(chemistry);
+            Saves.Save(Season);
+            StoveChanged?.Invoke();
+            LineupChanged?.Invoke();
+            NewsChanged?.Invoke();
+            return outcome;
+        }
+
         /// <summary>내 구단이 경기를 치를 수 없는 선수단이면 이유 (<see cref="RosterLimits.GameReadinessProblem"/>), 아니면 null.</summary>
         public string RosterProblem => RosterLimits.GameReadinessProblem(MyRoster);
 
@@ -245,7 +281,8 @@ namespace DailyFranchise.App
             LoadStatus = status;
             // 정규시즌을 다 치른 이전 저장 파일(Phase 32 이전)은 한국시리즈부터 이어간다.
             if (Season.BeginPostseasonIfDue()) Saves.Save(Season);
-            if (LoadDatabaseSynchronously) SetDatabase(MasterDatabase.LoadFromResources());
+            if (DatabaseOverride != null) SetDatabase(DatabaseOverride);
+            else if (LoadDatabaseSynchronously) SetDatabase(MasterDatabase.LoadFromResources());
             else StartCoroutine(MasterDatabase.LoadFromResourcesAsync(SetDatabase));
             SceneManager.sceneLoaded += OnSceneLoaded;
             SceneManager.sceneUnloaded += OnSceneUnloaded;

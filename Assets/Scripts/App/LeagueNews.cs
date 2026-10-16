@@ -40,6 +40,8 @@ namespace DailyFranchise.App
         Postseason = 13,
         /// <summary>한국시리즈 우승 (Phase 32).</summary>
         Championship = 14,
+        /// <summary>1:1 트레이드 성사 (Phase 34).</summary>
+        Trade = 15,
     }
 
     /// <summary>
@@ -189,6 +191,10 @@ namespace DailyFranchise.App
             new NewsItem(NewsKind.Signing, OfficialTag, team, ceiling
                 ? $"{team}, 확정 영입 카드로 {playerName} 영입! (연봉 {FranchiseFinance.BudgetText(salary)})"
                 : $"{team}, FA 시장에서 {WaGwa(playerName)} {FranchiseFinance.BudgetText(salary)}에 전격 계약!", year, date);
+
+        /// <summary>1:1 트레이드: "삼성 라이온즈, LG 트윈스와 1:1 대형 트레이드 성사! (A <-> B)" (A = 보낸 선수).</summary>
+        public static NewsItem Traded(string team, string partner, string sentName, string receivedName, int year, string date) =>
+            new NewsItem(NewsKind.Trade, OfficialTag, team, $"{team}, {WaGwa(partner)} 1:1 대형 트레이드 성사! ({sentName} <-> {receivedName})", year, date);
 
         public static NewsItem NegotiationFailed(string team, string playerName, int year, string date) =>
             new NewsItem(NewsKind.NegotiationFailed, BreakingTag, team, $"{playerName}, {team}의 제안 거절… 협상 결렬", year, date);

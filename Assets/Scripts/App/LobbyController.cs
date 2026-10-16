@@ -80,8 +80,8 @@ namespace DailyFranchise.App
             _campClose = _root.Q<Button>("camp-close");
             _campClose.clicked += CloseCampReport;
             _manager = SeasonManager.EnsureExists();
-            _fa = new FaMarketView(_root, _manager);
-            _detail = new PlayerDetailView(_root, _manager, ReleasePlayer, BeginSwapFrom);
+            _fa = new FaMarketView(_root, _manager, OpenPlayer);
+            _detail = new PlayerDetailView(_root, _manager, ReleasePlayer, BeginSwapFrom, TradePlayer);
             _manager.ModeChanged += Render;
             _manager.DatabaseReady += OnDatabaseReady;
             _manager.LineupChanged += OnLineupChanged;
@@ -306,7 +306,7 @@ namespace DailyFranchise.App
             OpenPlayer(_card?.PlayerAt(spot));
         }
 
-        /// <summary>선수 상세 모달을 연다 (내 구단 1군 선수). 열었으면 true.</summary>
+        /// <summary>선수 상세 모달을 연다 (내 구단 1군·퓨처스 선수, 또는 FA 모달 타 구단 명단의 선수). 열었으면 true.</summary>
         public bool OpenPlayer(string playerId)
         {
             if (_detail == null || playerId == null) return false;
@@ -795,6 +795,28 @@ namespace DailyFranchise.App
                 ? $"방출 · {name} → FA 시장 (위약금 {FranchiseFinance.BudgetDeltaText(-outcome.Penalty)})"
                   + (filler != null ? $" · {PositionMatcher.Label(filler.Position)} 자리: {filler.Name}" : "")
                 : StoveLeague.ReleaseBlockText(outcome.Block);
+            RenderSelection();
+            return outcome;
+        }
+
+        /// <summary>
+        /// 1:1 트레이드 제안 (선수 상세 모달에서 보낼 선수를 골랐을 때, Phase 34). 결과는 FA 모달의 트레이드 데스크에 남고,
+        /// 성사되면 라인업 안내 줄에도 보인다. 선발 타자를 내줬으면 그 타순을 누가 메웠는지도 ("유격수 자리: 이재현").
+        /// </summary>
+        public TradeOutcome TradePlayer(string myPlayerId, string theirPlayerId)
+        {
+            if (_manager == null) return null;
+            int slot = _manager.CurrentLineup?.Batting.Select(s => s.PlayerId).ToList().IndexOf(myPlayerId) ?? -1;
+            _selection.Clear();
+            var outcome = _manager.ProposeTrade(myPlayerId, theirPlayerId);
+            if (outcome.Accepted)
+            {
+                var q = outcome.Quote;
+                var filler = slot >= 0 ? _manager.MyRoster?.AtOrder(slot + 1) : null;
+                _notice = $"트레이드 성사 · {q.Mine.Name} <-> {q.Theirs.Name} ({q.Partner}) · {q.Theirs.Name} {TradeDesk.ArrivalText(q.Arrival)} 합류"
+                          + (filler != null ? $" · {PositionMatcher.Label(filler.Position)} 자리: {filler.Name}" : "");
+            }
+            _fa?.ReportTrade(outcome);
             RenderSelection();
             return outcome;
         }

@@ -18,6 +18,9 @@ namespace DailyFranchise.App
     /// - 교체: 선발 타자는 벤치 선수, 벤치 선수는 선발 타자와 바로 맞바꾸는 버튼 (같은 수비군·컨디션 좋은 순).
     ///   [직접 고르기]는 모달을 닫고 로비의 Click-to-Swap 선택 상태로 넘긴다.
     /// - 방출 (위험 구역): 첫 누름은 확인 상태(위약금 표시)로만 바뀌고, 한 번 더 눌러야 방출한다. 막히면 잠그고 이유를 보인다.
+    /// - 타 구단 선수 (Phase 34, FA 모달의 타 구단 명단에서): 기록·컨디션만 보이고 교체·훈련·방출 대신 [트레이드 제안].
+    ///   누르면 보낼 내 선수 목록(1군 타자 · 투수 · 퓨처스, 가치·차단 이유)이 열리고, 고르면 즉시 평가한다.
+    ///   거절·차단이면 모달을 열어 둔 채 이유를 보이고, 성사되면 닫는다 (로비가 결과를 안내).
     /// </summary>
     public sealed class PlayerDetailView
     {
@@ -29,14 +32,37 @@ namespace DailyFranchise.App
         readonly Button _pickButton;
         readonly Button _releaseButton;
         readonly Button _trainButton;
+        readonly Button _tradeButton;
+        readonly Button[] _offerGroups;
+        readonly Button _offerPrev;
+        readonly Button _offerNext;
+        readonly Func<string, string, TradeOutcome> _trade;
         readonly VisualElement _root;
+        readonly VisualElement _window;
 
-        public PlayerDetailView(VisualElement root, SeasonManager manager, Func<string, ReleaseOutcome> release, Action<LineupSpot> pick)
+        string _themeClass;
+        string _tradeText = "";
+        bool _tradeRejected;
+
+        /// <param name="trade">[트레이드 제안]에서 보낼 선수를 골랐을 때 (내 선수 ID, 받을 선수 ID) — 로비가 SeasonManager에 제안하고 결과를 안내한다.</param>
+        public PlayerDetailView(VisualElement root, SeasonManager manager, Func<string, ReleaseOutcome> release, Action<LineupSpot> pick,
+            Func<string, string, TradeOutcome> trade)
         {
             _root = root ?? throw new ArgumentNullException(nameof(root));
             _manager = manager ?? throw new ArgumentNullException(nameof(manager));
             _release = release ?? throw new ArgumentNullException(nameof(release));
             _pick = pick ?? throw new ArgumentNullException(nameof(pick));
+            _trade = trade ?? throw new ArgumentNullException(nameof(trade));
+            _window = root.Q("pd-window");
+            _tradeButton = root.Q<Button>("pd-trade");
+            _tradeButton.clicked += OnTrade;
+            _offerGroups = Enumerable.Range(0, OfferGroupTitles.Length).Select(i => root.Q<Button>("pd-offer-group-" + i)).ToArray();
+            for (int i = 0; i < _offerGroups.Length; i++) _offerGroups[i].userData = i;
+            foreach (var b in _offerGroups) b.clicked += GroupHandler(b);
+            _offerPrev = root.Q<Button>("pd-offer-prev");
+            _offerNext = root.Q<Button>("pd-offer-next");
+            _offerPrev.clicked += PrevOfferPage;
+            _offerNext.clicked += NextOfferPage;
             _modal = root.Q("player-modal");
             _close = root.Q<Button>("pd-close");
             _pickButton = root.Q<Button>("pd-pick");
@@ -55,8 +81,55 @@ namespace DailyFranchise.App
             _pickButton.clicked -= OnPick;
             _releaseButton.clicked -= OnRelease;
             _trainButton.clicked -= OnTrain;
+            _tradeButton.clicked -= OnTrade;
+            for (int i = 0; i < _offerGroups.Length; i++) _offerGroups[i].clicked -= _groupHandlers[i];
+            _offerPrev.clicked -= PrevOfferPage;
+            _offerNext.clicked -= NextOfferPage;
             _modal.UnregisterCallback<ClickEvent>(OnBackdrop);
         }
+
+        readonly List<Action> _groupHandlers = new List<Action>();
+
+        Action GroupHandler(Button b)
+        {
+            int group = (int)b.userData;
+            Action handler = () => ShowOfferGroup(group);
+            _groupHandlers.Add(handler);
+            return handler;
+        }
+
+        /// <summary>보낼 선수 묶음 (탭 순서): 1군 타자 · 1군 투수 · 퓨처스.</summary>
+        static readonly string[] OfferGroupTitles = { "1군 타자", "1군 투수", "퓨처스" };
+
+        /// <summary>보낼 선수 한 쪽의 버튼 수 (2열 × 7줄 — 1080p 한 화면, 스크롤 없음).</summary>
+        public const int OfferPageSize = 14;
+
+        /// <summary>보낼 선수 목록의 지금 묶음 (0 1군 타자 · 1 1군 투수 · 2 퓨처스).</summary>
+        public int OfferGroup { get; private set; }
+
+        /// <summary>지금 묶음의 쪽 (0부터).</summary>
+        public int OfferPage { get; private set; }
+
+        void PrevOfferPage() => StepOfferPage(-1);
+        void NextOfferPage() => StepOfferPage(1);
+
+        /// <summary>보낼 선수 묶음을 바꾼다 (첫 쪽부터).</summary>
+        public void ShowOfferGroup(int group)
+        {
+            OfferGroup = Math.Max(0, Math.Min(OfferGroupTitles.Length - 1, group));
+            OfferPage = 0;
+            if (IsOpen) Render();
+        }
+
+        /// <summary>보낼 선수 쪽을 넘긴다 (처음·끝에서 멈춘다 — 그리면서 맞춘다).</summary>
+        public void StepOfferPage(int delta)
+        {
+            OfferPage = Math.Max(0, OfferPage + delta);
+            if (IsOpen) Render();
+        }
+
+        static bool InGroup(TradeTarget o, int group) =>
+            group == 2 ? o.Futures : !o.Futures && o.Player.IsPitcher == (group == 1);
 
         public bool IsOpen => _modal.ClassListContains("pd-modal--open");
 
@@ -65,6 +138,15 @@ namespace DailyFranchise.App
 
         /// <summary>[방출]을 한 번 눌러 확인 상태인지.</summary>
         public bool ReleaseArmed { get; private set; }
+
+        /// <summary>타 구단 선수를 보고 있는지 (Phase 34 — 트레이드 대상).</summary>
+        public bool IsOtherTeam => Team != null;
+
+        /// <summary>보고 있는 타 구단 선수의 소속. 내 선수거나 닫혀 있으면 null.</summary>
+        public string Team { get; private set; }
+
+        /// <summary>[트레이드 제안]을 눌러 보낼 선수를 고르는 중인지.</summary>
+        public bool TradePicking { get; private set; }
 
         void OnBackdrop(ClickEvent e)
         {
@@ -76,19 +158,43 @@ namespace DailyFranchise.App
             _modal.RemoveFromClassList("pd-modal--open");
             PlayerId = null;
             ReleaseArmed = false;
+            Team = null;
+            TradePicking = false;
+            _tradeText = "";
+            SetTheme(null);
+        }
+
+        /// <summary>창 테두리를 그 구단 컬러로 (타 구단 선수). null이면 내 구단 컬러(화면 루트 테마).</summary>
+        void SetTheme(string team)
+        {
+            if (_themeClass != null) _window.RemoveFromClassList(_themeClass);
+            _themeClass = team == null ? null : LobbyBriefing.TeamThemeClass(team);
+            if (_themeClass != null) _window.AddToClassList(_themeClass);
         }
 
         /// <summary>1군과 퓨처스 선수 (Phase 33부터 퓨처스도 연다 — 특별 훈련).</summary>
         static IEnumerable<PlayerData> Everyone(TeamRoster roster) => LeagueRosterBook.AllOf(roster).Concat(roster.Reserves);
 
-        /// <summary>내 구단 1군·퓨처스 선수의 상세를 연다. 선수단에 없거나 경기 중이면 열지 않고 false.</summary>
+        /// <summary>
+        /// 내 구단 1군·퓨처스 선수, 또는 타 구단 선수(Phase 34 — 트레이드 대상)의 상세를 연다.
+        /// 어디에도 없거나(자유계약·대체 선수 포함) 경기 중이면 열지 않고 false.
+        /// </summary>
         public bool Open(string playerId)
         {
             var roster = _manager.MyRoster;
             if (roster == null || playerId == null || _manager.Season.InProgress != null) return false;
-            if (Everyone(roster).All(p => p.Id != playerId)) return false;
+            string team = null;
+            if (Everyone(roster).All(p => p.Id != playerId))
+            {
+                team = _manager.TradeTargets.FirstOrDefault(t => t.Id == playerId)?.Team;
+                if (team == null) return false;
+            }
             PlayerId = playerId;
             ReleaseArmed = false;
+            Team = team;
+            TradePicking = false;
+            _tradeText = "";
+            SetTheme(team);
             _modal.AddToClassList("pd-modal--open");
             Render();
             return true;
@@ -105,11 +211,11 @@ namespace DailyFranchise.App
 
         void Render()
         {
-            var roster = _manager.MyRoster;
-            var p = Everyone(roster).FirstOrDefault(x => x.Id == PlayerId);
+            var roster = IsOtherTeam ? _manager.Rosters?.Get(Team) : _manager.MyRoster;
+            var p = roster == null ? null : Everyone(roster).FirstOrDefault(x => x.Id == PlayerId);
             if (p == null)
             {
-                Close(); // 방출·은퇴 등으로 선수단에서 빠졌다
+                Close(); // 방출·은퇴·트레이드 등으로 선수단에서 빠졌다
                 return;
             }
             var season = _manager.Season;
@@ -121,7 +227,7 @@ namespace DailyFranchise.App
                 p.Number > 0 ? $"No.{p.Number}" : null, p.Age > 0 ? $"{p.Age}세" : null,
                 ScenarioRosterSource.HandednessText(p), PositionMatcher.Label(p.Position),
             }.Where(s => s != null));
-            Q<Label>("pd-role").text = RoleText(roster, p);
+            Q<Label>("pd-role").text = IsOtherTeam ? $"{Team} · {FaMarketView.RoleText(roster, p, roster.Reserves.Contains(p))}" : RoleText(roster, p);
 
             var condition = Q<Label>("pd-condition");
             condition.text = "컨디션 " + PlayerCondition.Label(cond);
@@ -142,10 +248,132 @@ namespace DailyFranchise.App
             Q<Label>("pd-season").text = "지난 시즌 · " + ScenarioRosterSource.SeasonLineText(p)
                 + (Math.Abs(p.Form) >= 0.005 ? $" · 에이징 폼 {AgingCurve.FormText(p.Form)}" : "");
 
+            bool other = IsOtherTeam;
+            Show("pd-swap-title", !other);
+            Show("pd-swap", !other);
+            Show("pd-train-row", !other);
+            Show("pd-train-note", !other);
+            Show("pd-danger", !other);
+            Show("pd-trade-zone", other);
+            if (other)
+            {
+                _pickButton.style.display = DisplayStyle.None;
+                RenderTrade(p);
+                return;
+            }
             RenderSwap(roster, p);
             RenderTraining(p);
             RenderRelease(p, roster.Reserves.Contains(p));
         }
+
+        void Show(string name, bool visible) => Q(name).style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
+
+        /// <summary>트레이드 구역: 이 선수의 가치·연봉·CPU 요구 가치, [트레이드 제안], 고르는 중이면 보낼 내 선수 목록.</summary>
+        void RenderTrade(PlayerData p)
+        {
+            var season = _manager.Season;
+            var target = _manager.TradeTargets.FirstOrDefault(t => t.Id == p.Id);
+            double value = target?.Value ?? 0;
+            Q<Label>("pd-trade-note").text = target == null ? ""
+                : $"트레이드 가치 {TradeEvaluator.ValueText(value)} · 연봉 {Won(target.Salary)} · " +
+                  $"CPU 요구 가치 {TradeEvaluator.ValueText(TradeEvaluator.RequiredValue(value))} 이상 (프리미엄 5%)";
+            _tradeButton.text = TradePicking ? "제안 취소" : "트레이드 제안";
+            _tradeButton.SetEnabled(season.InProgress == null);
+            var result = Q<Label>("pd-trade-result");
+            result.text = _tradeText;
+            result.EnableInClassList("pd-trade__result--rejected", _tradeText.Length > 0 && _tradeRejected);
+            result.EnableInClassList("pd-trade__result--blocked", _tradeText.Length > 0 && !_tradeRejected);
+            result.style.display = _tradeText.Length > 0 ? DisplayStyle.Flex : DisplayStyle.None;
+
+            var list = Q("pd-trade-list");
+            Show("pd-trade-groups", TradePicking);
+            list.style.display = TradePicking ? DisplayStyle.Flex : DisplayStyle.None;
+            list.Clear();
+            if (!TradePicking)
+            {
+                Show("pd-trade-pager", false);
+                return;
+            }
+            var offers = _manager.TradeOffers;
+            var mine = _manager.Rosters?.Get(season.MyTeam);
+            for (int g = 0; g < _offerGroups.Length; g++)
+            {
+                int count = offers.Count(o => InGroup(o, g));
+                _offerGroups[g].text = $"{OfferGroupTitles[g]} ({count})";
+                _offerGroups[g].SetEnabled(count > 0);
+                _offerGroups[g].EnableInClassList("pd-offer-group--active", g == OfferGroup);
+            }
+            var items = offers.Where(o => InGroup(o, OfferGroup)).ToList();
+            int pages = Math.Max(1, (items.Count + OfferPageSize - 1) / OfferPageSize);
+            OfferPage = Math.Min(OfferPage, pages - 1);
+            Show("pd-trade-pager", pages > 1);
+            Q<Label>("pd-offer-page").text = $"{OfferPage + 1} / {pages}쪽";
+            _offerPrev.SetEnabled(OfferPage > 0);
+            _offerNext.SetEnabled(OfferPage < pages - 1);
+            AddOffers(list, items.Skip(OfferPage * OfferPageSize).Take(OfferPageSize), mine, p);
+        }
+
+        void AddOffers(VisualElement list, IEnumerable<TradeTarget> offers, TeamRoster mine, PlayerData theirs)
+        {
+            foreach (var o in offers)
+            {
+                var q = _manager.QuoteTrade(o.Id, theirs.Id);
+                string id = o.Id;
+                var button = new Button(() => ProposeTrade(id))
+                {
+                    name = "pd-offer-" + id,
+                    text = $"{o.Player.Name} · {FaMarketView.RoleText(mine, o.Player, o.Futures)} · {o.Player.Position}" +
+                           (o.Player.Age > 0 ? $" · {o.Player.Age}세" : "") + $" · 가치 {TradeEvaluator.ValueText(o.Value)}",
+                };
+                button.AddToClassList("btn");
+                button.AddToClassList("pd-offer");
+                bool open = q != null && q.Block == TradeBlock.None;
+                button.SetEnabled(open);
+                button.EnableInClassList("pd-offer--enough", open && q.WouldAccept);
+                button.tooltip = q == null ? "" : !open ? TradeDesk.BlockText(q.Block)
+                    : $"연봉 {Won(q.MySalary)} · 페이롤 {FranchiseFinance.BudgetDeltaText(q.PayrollDelta)} · {theirs.Name} → {TradeDesk.ArrivalText(q.Arrival)}";
+                list.Add(button);
+            }
+        }
+
+        void OnTrade() => PressTrade();
+
+        /// <summary>[트레이드 제안] / [제안 취소]: 보낼 내 선수 목록을 열고 닫는다. 타 구단 선수가 아니면 false.</summary>
+        public bool PressTrade()
+        {
+            if (!IsOtherTeam || PlayerId == null) return false;
+            TradePicking = !TradePicking;
+            _tradeText = "";
+            OfferGroup = 0;
+            OfferPage = 0;
+            Render();
+            return true;
+        }
+
+        /// <summary>
+        /// 보낼 내 선수를 골라 제안한다 (로비 → SeasonManager). 거절("[거절] …")·차단이면 모달을 열어 둔 채 이유를 보이고,
+        /// 성사되면 모달을 닫는다. 타 구단 선수를 보고 있지 않으면 null.
+        /// </summary>
+        public TradeOutcome ProposeTrade(string myPlayerId)
+        {
+            if (!IsOtherTeam || PlayerId == null) return null;
+            var outcome = _trade(myPlayerId, PlayerId);
+            if (outcome == null) return null;
+            if (outcome.Accepted)
+            {
+                Close();
+                return outcome;
+            }
+            _tradeText = outcome.Rejected ? TradeDesk.RejectedText : TradeDesk.BlockText(outcome.Block);
+            _tradeRejected = outcome.Rejected;
+            if (IsOpen) Render();
+            return outcome;
+        }
+
+        /// <summary>마지막 제안 결과 문구 (거절·차단). 없으면 "".</summary>
+        public string TradeResultText => _tradeText;
+
+        static string Won(long won) => (won < 0 ? "−₩" : "₩") + FranchiseFinance.Won(won);
 
         /// <summary>
         /// 에이징 폼 게이지(−10% ~ +10%, 가운데 0)와 스프링캠프 특별 훈련 (Phase 33). 훈련 버튼은 24세 이하만 보이고,

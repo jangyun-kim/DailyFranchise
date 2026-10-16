@@ -147,6 +147,8 @@ namespace DailyFranchise.App
         public string FromTeam;
         public string ToTeam;
         public long Salary;
+        /// <summary>1:1 트레이드의 한쪽 (Phase 34 — 연달아 저장된 두 기록이 한 건). 없는 이전 파일은 false.</summary>
+        public bool Trade;
     }
 
     [Serializable]

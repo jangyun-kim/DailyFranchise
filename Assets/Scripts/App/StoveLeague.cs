@@ -14,7 +14,8 @@ namespace DailyFranchise.App
     /// </summary>
     public sealed class SigningRecord
     {
-        public SigningRecord(string playerId, string fromTeam, string toTeam, long salary)
+        /// <param name="trade">1:1 트레이드의 한쪽 (Phase 34). 연달아 놓인 두 기록(서로 맞바꾼 구단)을 장부가 함께 적용한다.</param>
+        public SigningRecord(string playerId, string fromTeam, string toTeam, long salary, bool trade = false)
         {
             if (string.IsNullOrEmpty(playerId)) throw new ArgumentException("선수 ID가 비어 있다.", nameof(playerId));
             if (string.IsNullOrEmpty(fromTeam) || string.IsNullOrEmpty(toTeam)) throw new ArgumentException("구단이 비어 있다.");
@@ -22,7 +23,11 @@ namespace DailyFranchise.App
             FromTeam = fromTeam;
             ToTeam = toTeam;
             Salary = Math.Max(0, salary);
+            IsTrade = trade;
         }
+
+        /// <summary>1:1 트레이드의 한쪽인지 (Phase 34).</summary>
+        public bool IsTrade { get; }
 
         public string PlayerId { get; }
         public string FromTeam { get; }
@@ -44,6 +49,14 @@ namespace DailyFranchise.App
 
         public static int CountOf(TeamRoster r) =>
             r == null ? 0 : r.Lineup.Count + r.Bench.Count + r.Starters.Count + r.Bullpen.Count;
+
+        /// <summary>1군에 이 선수(투수면 불펜, 타자면 벤치)가 들어갈 빈자리가 있는지.</summary>
+        public static bool HasFirstTeamRoom(TeamRoster r, bool pitcher) =>
+            r != null && CountOf(r) < MaxRoster && (pitcher ? r.Bullpen.Count < MaxBullpen : r.Bench.Count < MaxBench);
+
+        /// <summary>1군 정원·벤치·불펜 한도를 넘었는지.</summary>
+        public static bool IsOverLimit(TeamRoster r) =>
+            r != null && (CountOf(r) > MaxRoster || r.Bench.Count > MaxBench || r.Bullpen.Count > MaxBullpen);
 
         /// <summary>
         /// 경기를 치를 수 없는 선수단이면 이유 (선발 타순 9명이 아님 · 선발 투수 없음), 괜찮으면 null.
@@ -130,21 +143,95 @@ namespace DailyFranchise.App
                 }
             if (rookies != null) AddRookies(rosters, rookies);
             rosters[FreeAgentTeam] = new TeamRoster(FreeAgentTeam, null, null, null, null);
-            var book = new LeagueRosterBook(rosters, new List<SigningRecord>());
             var applied = new List<SigningRecord>();
-            foreach (var s in signings ?? Enumerable.Empty<SigningRecord>())
+            ApplySignings(rosters, signings, applied);
+            if (progression != null && progression.Count > 0) ApplyProgression(rosters, progression);
+            return new LeagueRosterBook(rosters, applied);
+        }
+
+        /// <summary>
+        /// 지금 장부에 이적 기록을 더 적용한 새 장부 (Phase 34 — 트레이드 사전 검사용 가정 계산). 이 장부는 바꾸지 않는다.
+        /// 맞지 않는 기록은 <see cref="Build"/>처럼 건너뛰므로, 적용됐는지는 <see cref="Applied"/> 수로 본다.
+        /// </summary>
+        public LeagueRosterBook With(IEnumerable<SigningRecord> extra)
+        {
+            var rosters = new Dictionary<string, TeamRoster>(_rosters);
+            var applied = Applied.ToList();
+            ApplySignings(rosters, extra, applied);
+            return new LeagueRosterBook(rosters, applied);
+        }
+
+        /// <summary>
+        /// 이적 기록을 차례로 적용한다. 1군뿐 아니라 퓨처스 선수도 옮길 수 있다 (Phase 34 트레이드).
+        /// 트레이드 한 쌍(연달아 놓인, 서로 구단을 맞바꾼 두 기록)은 함께 적용하고, 한쪽이라도 맞지 않으면 둘 다 건너뛴다.
+        /// </summary>
+        static void ApplySignings(Dictionary<string, TeamRoster> rosters, IEnumerable<SigningRecord> signings, List<SigningRecord> applied)
+        {
+            var list = (signings ?? Enumerable.Empty<SigningRecord>()).ToList();
+            for (int i = 0; i < list.Count; i++)
             {
+                var s = list[i];
                 if (s == null || s.FromTeam == s.ToTeam) continue;
-                var from = book.Get(s.FromTeam);
-                var to = book.Get(s.ToTeam);
-                var player = from == null ? null : AllOf(from).FirstOrDefault(p => p.Id == s.PlayerId);
-                if (to == null || player == null || IsReplacement(player)) continue;
+                if (s.IsTrade && i + 1 < list.Count && IsTradePair(s, list[i + 1]))
+                {
+                    if (ApplyTrade(rosters, s, list[i + 1]))
+                    {
+                        applied.Add(s);
+                        applied.Add(list[i + 1]);
+                    }
+                    i++;
+                    continue;
+                }
+                if (!rosters.TryGetValue(s.FromTeam, out var from) || !rosters.TryGetValue(s.ToTeam, out var to)) continue;
+                var player = Movable(from, s.PlayerId);
+                if (player == null) continue;
                 rosters[s.FromTeam] = Remove(from, player);
                 rosters[s.ToTeam] = Add(to, player);
                 applied.Add(s);
             }
-            if (progression != null && progression.Count > 0) ApplyProgression(rosters, progression);
-            return new LeagueRosterBook(rosters, applied);
+        }
+
+        static bool IsTradePair(SigningRecord a, SigningRecord b) =>
+            b != null && b.IsTrade && a.FromTeam == b.ToTeam && a.ToTeam == b.FromTeam && a.PlayerId != b.PlayerId;
+
+        /// <summary>옮길 수 있는 선수 (1군·퓨처스, 대체 선수 제외). 없으면 null.</summary>
+        static PlayerData Movable(TeamRoster from, string playerId)
+        {
+            var p = AllOf(from).Concat(from.Reserves).FirstOrDefault(x => x.Id == playerId);
+            return p == null || IsReplacement(p) ? null : p;
+        }
+
+        static bool ApplyTrade(Dictionary<string, TeamRoster> rosters, SigningRecord a, SigningRecord b)
+        {
+            if (!rosters.TryGetValue(a.FromTeam, out var x) || !rosters.TryGetValue(b.FromTeam, out var y)) return false;
+            var pa = Movable(x, a.PlayerId);
+            var pb = Movable(y, b.PlayerId);
+            if (pa == null || pb == null) return false;
+            rosters[a.FromTeam] = Swap(x, pa, pb);
+            rosters[b.FromTeam] = Swap(y, pb, pa);
+            return true;
+        }
+
+        /// <summary>
+        /// 트레이드 한쪽 (Phase 34): <paramref name="outgoing"/>을 내주고 <paramref name="incoming"/>을 받는다.
+        /// - 내준 선수가 선발 타자: 빈 타순을 김헌곤 룰로 메우되 받은 선수를 맨 앞 후보로 본다 (같은 위치면 받은 선수가 바로 선발,
+        ///   구단에 같은 위치가 없으면 같은 수비군인 받은 선수가 먼저).
+        /// - 내준 선수가 선발 로테이션 투수이고 받은 선수가 투수: 받은 투수가 그 순번을 잇는다.
+        /// - 그 밖에는 내준 뒤의 1군 빈자리(타자 벤치·투수 불펜), 없으면 퓨처스.
+        /// </summary>
+        static TeamRoster Swap(TeamRoster from, PlayerData outgoing, PlayerData incoming)
+        {
+            var arriving = incoming.CloneAs(incoming.IsPitcher ? RosterRole.Bullpen : RosterRole.Bench, 0, incoming.Position);
+            arriving.Team = from.Team;
+            int rotation = from.Starters.ToList().FindIndex(p => p.Id == outgoing.Id);
+            if (rotation >= 0 && incoming.IsPitcher)
+            {
+                var starters = from.Starters.ToList();
+                starters[rotation] = arriving.CloneAs(RosterRole.Starter, outgoing.Order, outgoing.Position);
+                return new TeamRoster(from.Team, from.Lineup, from.Bench, starters, from.Bullpen, from.Reserves);
+            }
+            var removed = Remove(from, outgoing, arriving, out bool started);
+            return started ? removed : Add(removed, arriving, futuresWhenFull: true);
         }
 
         static void AddRookies(Dictionary<string, TeamRoster> rosters, IEnumerable<PlayerData> rookies)
@@ -183,9 +270,18 @@ namespace DailyFranchise.App
                 ? p.WithProgression(p.Age > 0 ? p.Age + d.AgeDelta : 0, d.Form)
                 : p).ToList();
 
-        /// <summary>새 구단 소속 사본을 타자는 벤치 끝, 투수는 불펜 끝에 넣는다.</summary>
-        static TeamRoster Add(TeamRoster to, PlayerData player)
+        /// <summary>
+        /// 새 구단 소속 사본을 타자는 벤치 끝, 투수는 불펜 끝에 넣는다. 영입·방출 기록은 정원을 보지 않는다 (정원은 협상 단계에서).
+        /// <paramref name="futuresWhenFull"/>(Phase 34 트레이드)이면 1군 정원·벤치·불펜이 찼을 때 퓨처스 끝으로 간다.
+        /// </summary>
+        static TeamRoster Add(TeamRoster to, PlayerData player, bool futuresWhenFull = false)
         {
+            if (futuresWhenFull && !RosterLimits.HasFirstTeamRoom(to, player.IsPitcher))
+            {
+                var reserve = player.CloneAs(player.IsPitcher ? RosterRole.Bullpen : RosterRole.Bench, to.Reserves.Count + 1, player.Position);
+                reserve.Team = to.Team;
+                return new TeamRoster(to.Team, to.Lineup, to.Bench, to.Starters, to.Bullpen, to.Reserves.Append(reserve).ToList());
+            }
             var moved = player.CloneAs(player.IsPitcher ? RosterRole.Bullpen : RosterRole.Bench,
                 (player.IsPitcher ? to.Bullpen.Count : to.Bench.Count) + 1, player.Position);
             moved.Team = to.Team;
@@ -194,20 +290,25 @@ namespace DailyFranchise.App
                 : new TeamRoster(to.Team, to.Lineup, to.Bench.Append(moved).ToList(), to.Starters, to.Bullpen, to.Reserves);
         }
 
-        static TeamRoster Remove(TeamRoster from, PlayerData player)
+        static TeamRoster Remove(TeamRoster from, PlayerData player) => Remove(from, player, null, out _);
+
+        /// <param name="preferred">빈 타순의 맨 앞 후보 (트레이드로 받은 선수, 아직 선수단 밖). 그 선수가 메웠으면 <paramref name="preferredStarted"/>.</param>
+        static TeamRoster Remove(TeamRoster from, PlayerData player, PlayerData preferred, out bool preferredStarted)
         {
+            preferredStarted = false;
             var lineup = from.Lineup.ToList();
             var bench = from.Bench.Where(p => p.Id != player.Id).ToList();
             var starters = from.Starters.Where(p => p.Id != player.Id).ToList();
             var bullpen = from.Bullpen.Where(p => p.Id != player.Id).ToList();
-            var reserves = from.Reserves.ToList();
+            var reserves = from.Reserves.Where(p => p.Id != player.Id).ToList();
 
             int hole = lineup.FindIndex(p => p.Id == player.Id);
             if (hole >= 0)
             {
                 var gone = lineup[hole];
-                var pick = PositionMatcher.Pick(gone.Position, bench, reserves);
-                if (pick != null)
+                var pick = PositionMatcher.Pick(gone.Position, preferred == null ? null : new[] { preferred }, bench, reserves);
+                if (pick != null && pick == preferred) preferredStarted = true;
+                else if (pick != null)
                 {
                     bench.Remove(pick);
                     reserves.Remove(pick);

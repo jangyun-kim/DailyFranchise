@@ -950,7 +950,7 @@ namespace DailyFranchise.App
                 FandomSlots = (int)UnlockedSlots,
                 Signings = _signings.Select(s => new SigningData
                 {
-                    PlayerId = s.PlayerId, FromTeam = s.FromTeam, ToTeam = s.ToTeam, Salary = s.Salary,
+                    PlayerId = s.PlayerId, FromTeam = s.FromTeam, ToTeam = s.ToTeam, Salary = s.Salary, Trade = s.IsTrade,
                 }).ToList(),
                 HasTrust = true,
                 TrustPoints = TrustPoints,
@@ -1063,7 +1063,7 @@ namespace DailyFranchise.App
             if (data.Signings != null)
                 foreach (var s in data.Signings)
                     if (s != null && !string.IsNullOrEmpty(s.PlayerId) && !string.IsNullOrEmpty(s.FromTeam) && !string.IsNullOrEmpty(s.ToTeam))
-                        season._signings.Add(new SigningRecord(s.PlayerId, s.FromTeam, s.ToTeam, Scaled(s.Salary, money)));
+                        season._signings.Add(new SigningRecord(s.PlayerId, s.FromTeam, s.ToTeam, Scaled(s.Salary, money), s.Trade));
             // 컨디션 목록이 없는 이전 저장 파일(Phase 21 이전)은 전원 보통(3)에서 시작한다 (기록 없음 = 보통).
             // ID가 빈 항목은 건너뛰고, 범위 밖 값은 1~5로 맞춘다.
             if (data.Conditions != null)
