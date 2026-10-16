@@ -57,8 +57,9 @@ namespace DailyFranchise.UI.Tests
                 s.FinishCurrentGame(new GameScore(3, 3), new SeededRandom(1));
             }
             Assert.That(s.IsSeasonFinished, Is.True);
-            Assert.That(s.NextGame, Is.Null);
-            Assert.Throws<InvalidOperationException>(() => s.StartNextGame());
+            Assert.That(s.Phase, Is.EqualTo(SeasonPhase.PostSeason), "Phase 32: 정규시즌 뒤 한국시리즈");
+            Assert.That(s.NextGame, Is.SameAs(s.InPostseason ? s.Postseason.NextGame : null), "정규시즌 일정은 더 없다");
+            if (!s.InPostseason) Assert.Throws<InvalidOperationException>(() => s.StartNextGame());
         }
 
         [Test]

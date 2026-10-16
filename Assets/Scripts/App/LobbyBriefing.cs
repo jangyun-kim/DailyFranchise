@@ -56,12 +56,21 @@ namespace DailyFranchise.App
         {
             if (season == null) throw new ArgumentNullException(nameof(season));
             var items = new List<BriefingItem>();
-            if (season.IsSeasonFinished)
-                items.Add(new BriefingItem("offseason", BriefingSeverity.Info, $"{season.Year} 정규시즌 종료",
+            var series = season.Postseason;
+            if (season.Phase == SeasonPhase.PostSeason && series != null)
+                items.Add(season.InPostseason
+                    ? new BriefingItem("postseason", BriefingSeverity.Info, $"한국시리즈 · {series.RecordText(season.MyTeam)}",
+                        $"{PostseasonSeries.WinsToClinch}승 선착 팀이 우승합니다. 지친 선수를 쉬게 하세요.")
+                    : new BriefingItem("postseason", BriefingSeverity.Info, "가을야구 탈락",
+                        "[가을야구 결과 시뮬레이션]으로 한국시리즈 결과를 보고 결산하세요"));
+            if (season.Phase == SeasonPhase.OffSeason)
+                items.Add(new BriefingItem("offseason", BriefingSeverity.Info,
+                    series?.Champion != null ? $"{season.Year} 시즌 종료 · {series.Champion} 우승" : $"{season.Year} 시즌 종료",
                     $"결산하고 {season.Year + 1} 시즌을 준비하세요 (에이징·은퇴·드래프트)"));
             if (rosterProblem != null)
                 items.Add(new BriefingItem("roster", BriefingSeverity.Danger, "경기를 시작할 수 없습니다", rosterProblem));
-            if (lineup == null) return items;
+            // 오프시즌에는 치를 경기가 없어 컨디션 경고를 내지 않는다 (결산 때 컨디션은 보통 이상으로 돌아간다).
+            if (lineup == null || season.Phase == SeasonPhase.OffSeason) return items;
 
             var fresh = lineup.Bench.Where(p => season.ConditionOf(p.Id) > WarnCondition)
                 .OrderByDescending(p => season.ConditionOf(p.Id)).ThenBy(p => p.Order).ToList();
@@ -118,9 +127,20 @@ namespace DailyFranchise.App
             return d == 0 ? $"시즌 상대 전적 {w}승 {l}패" : $"시즌 상대 전적 {w}승 {l}패 {d}무";
         }
 
-        /// <summary>헤더 게임 내 날짜 줄: "다음 경기 5.15 (토)" / "정규시즌 종료".</summary>
-        public static string GameDayText(SeasonState season) =>
-            season.NextGame == null ? "정규시즌 종료" : $"다음 경기 {season.NextGame.Date}";
+        /// <summary>헤더 게임 내 날짜 줄: "다음 경기 5.15 (토)" / "한국시리즈 3차전 5.30 (토)" / "시즌 종료 · 스토브리그".</summary>
+        public static string GameDayText(SeasonState season)
+        {
+            var next = season.NextGame;
+            switch (season.Phase)
+            {
+                case SeasonPhase.PostSeason:
+                    return next != null ? $"한국시리즈 {next.Number}차전 {next.Date}" : "한국시리즈 진행 중";
+                case SeasonPhase.OffSeason:
+                    return "시즌 종료 · 스토브리그";
+                default:
+                    return next == null ? "정규시즌 종료" : $"다음 경기 {next.Date}";
+            }
+        }
 
         /// <summary>KBO 구단 테마 클래스 (팀 컬러, USS <c>team--samsung</c> 등). 모르는 구단은 기본 블루.</summary>
         public static string TeamThemeClass(string team)

@@ -64,8 +64,14 @@ namespace DailyFranchise.UI.Tests
                 s.StartNextGame();
                 s.FinishCurrentGame(s.ScheduleScore(2, 1), random);
             }
+            // Phase 32: 정규시즌 뒤 한국시리즈 → 우승 팀이 정해지면 결산
+            var ks = LobbyBriefing.Decisions(s, null, null, null).Single();
+            Assert.That((ks.Key, ks.Severity), Is.EqualTo(("postseason", BriefingSeverity.Info)));
+            Assert.That(ks.Title, Is.EqualTo(s.InPostseason ? $"한국시리즈 · {s.Postseason.RecordText(s.MyTeam)}" : "가을야구 탈락"));
+            s.SimulatePostseason(new SeededRandom(2));
             var done = LobbyBriefing.Decisions(s, null, null, null).Single();
-            Assert.That((done.Key, done.Severity, done.Title), Is.EqualTo(("offseason", BriefingSeverity.Info, "2026 정규시즌 종료")));
+            Assert.That((done.Key, done.Severity, done.Title),
+                Is.EqualTo(("offseason", BriefingSeverity.Info, $"2026 시즌 종료 · {s.Postseason.Champion} 우승")));
         }
 
         [Test]

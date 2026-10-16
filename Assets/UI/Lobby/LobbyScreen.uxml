@@ -79,7 +79,7 @@
                 <ui:VisualElement class="center-row center-row--top">
                     <ui:VisualElement name="preview" class="panel card card--preview">
                         <ui:VisualElement class="card__head">
-                            <ui:Label class="panel-title card__title" text="다음 경기" />
+                            <ui:Label name="pv-title" class="panel-title card__title" text="다음 경기" />
                             <ui:Label name="pv-meta" class="card__meta" text="—" />
                         </ui:VisualElement>
                         <ui:VisualElement class="pv-teams">
@@ -174,7 +174,7 @@
                 </ui:VisualElement>
                 <!-- Phase 31: 일정은 오른쪽 아래 작은 목록 (구장은 툴팁) -->
                 <ui:VisualElement class="panel card card--flat schedule-panel">
-                    <ui:Label class="panel-title" text="일정" />
+                    <ui:Label name="schedule-title" class="panel-title" text="일정" />
                     <ui:VisualElement name="schedule" />
                 </ui:VisualElement>
             </ui:VisualElement>

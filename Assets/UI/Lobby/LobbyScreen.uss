@@ -171,7 +171,7 @@ Label {
 
 .season-title {
     height: 34px;
-    font-size: 24px;
+    font-size: 22px;
     -unity-font-style: bold;
     -unity-text-align: middle-right;
 }
@@ -387,7 +387,7 @@ Label {
 }
 
 .news-tag {
-    width: 72px;
+    width: 86px;
     height: 20px;
     font-size: 13px;
     -unity-font-style: bold;
@@ -399,6 +399,34 @@ Label {
 .news-tag--exclusive { color: #FF6B6B; }
 .news-tag--breaking { color: #F5C451; }
 .news-tag--walkoff { color: #4FC3F7; }
+.news-tag--postseason { color: #E8B04A; }
+.news-tag--champion { color: #FFD24A; }
+
+/* ───────── 가을야구 테마 (Phase 32): 한국시리즈 중·우승 직후 금색 ───────── */
+.ps-theme .header {
+    border-color: #D4A017;
+}
+
+.ps-theme .card--preview {
+    border-color: #D4A017;
+    background-color: #2A2210;
+}
+
+.ps-theme .card--preview .card__title {
+    color: #F2C14E;
+}
+
+.ps-theme .pv-side--mine {
+    border-color: #F2C14E;
+}
+
+.ps-theme .app-title {
+    color: #F2C14E;
+}
+
+.ps-theme .lobby-row--next {
+    border-color: #F2C14E;
+}
 
 .news-text {
     flex-grow: 1;
@@ -679,7 +707,7 @@ Label {
 
 .last-result {
     height: 32px;
-    font-size: 17px;
+    font-size: 15px;
     -unity-text-align: middle-left;
 }
 
@@ -689,7 +717,7 @@ Label {
 
 .next-game {
     height: 32px;
-    font-size: 18px;
+    font-size: 16px;
     -unity-font-style: bold;
     -unity-text-align: middle-left;
 }
@@ -806,7 +834,7 @@ Label {
 .fo-fill--season { background-color: var(--team-light); }
 
 .fo-percent {
-    width: 56px;
+    width: 62px;
     margin-left: 10px;
     font-size: 20px;
     -unity-font-style: bold;
@@ -814,7 +842,7 @@ Label {
 }
 
 .fo-percent--wide {
-    width: 92px;
+    width: 100px;
     font-size: 17px;
 }
 

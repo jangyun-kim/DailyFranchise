@@ -46,8 +46,11 @@ namespace DailyFranchise.UI.Tests
             }
             Assert.That(s.IsSeasonFinished, Is.True);
             Assert.That(s.NextIndex, Is.EqualTo(s.Schedule.Count));
-            Assert.That(s.SeasonTitle, Is.EqualTo("2026 시즌 · 정규시즌 종료"));
-            Assert.Throws<InvalidOperationException>(() => s.StartNextGame(), "일정 종료 뒤 경기 진입 차단");
+            // Phase 32: 정규시즌이 끝나면 곧바로 한국시리즈 단계 — 정규시즌 일정으로는 더 들어가지 않는다
+            Assert.That(s.Phase, Is.EqualTo(SeasonPhase.PostSeason));
+            Assert.That(s.SeasonTitle, Is.EqualTo("2026 시즌 · 한국시리즈"));
+            Assert.That(s.NextGame, Is.SameAs(s.InPostseason ? s.Postseason.Games[0] : null), "다음 경기는 한국시리즈뿐");
+            if (!s.InPostseason) Assert.Throws<InvalidOperationException>(() => s.StartNextGame(), "탈락하면 경기 진입 차단");
         }
 
         [Test]

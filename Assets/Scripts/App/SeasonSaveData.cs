@@ -93,6 +93,24 @@ namespace DailyFranchise.App
         /// 없는 이전 저장 파일은 빈 목록.
         /// </summary>
         public List<DailyFranchise.Sim.Data.PlayerData> Rookies = new List<DailyFranchise.Sim.Data.PlayerData>();
+
+        /// <summary>시즌 단계 (Phase 32, <see cref="SeasonPhase"/> 정수). 없는 이전 저장 파일은 0 = 정규시즌.</summary>
+        public int Phase;
+
+        /// <summary>한국시리즈 (Phase 32). 정규시즌이거나 없는 이전 저장 파일은 비어 있다.</summary>
+        public PostseasonData Postseason = new PostseasonData();
+    }
+
+    [Serializable]
+    public sealed class PostseasonData
+    {
+        /// <summary>정규시즌 1위 (비어 있으면 시리즈 없음).</summary>
+        public string TopSeed;
+        public string SecondSeed;
+        /// <summary>치른 경기 수 (읽을 때는 앞에서부터 이어진 종료 경기 수로 다시 센다).</summary>
+        public int NextIndex;
+        /// <summary>시리즈 경기 (우승이 정해지면 남은 경기는 지워져 저장되지 않는다).</summary>
+        public List<ScheduledGameData> Games = new List<ScheduledGameData>();
     }
 
     [Serializable]

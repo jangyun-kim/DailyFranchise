@@ -243,6 +243,8 @@ namespace DailyFranchise.App
             Saves = new SaveManager(SavePathOverride ?? SaveManager.DefaultPath);
             Season = Saves.LoadOrCreate(SeasonState.CreateDummy, out var status);
             LoadStatus = status;
+            // 정규시즌을 다 치른 이전 저장 파일(Phase 32 이전)은 한국시리즈부터 이어간다.
+            if (Season.BeginPostseasonIfDue()) Saves.Save(Season);
             if (LoadDatabaseSynchronously) SetDatabase(MasterDatabase.LoadFromResources());
             else StartCoroutine(MasterDatabase.LoadFromResourcesAsync(SetDatabase));
             SceneManager.sceneLoaded += OnSceneLoaded;
@@ -323,6 +325,26 @@ namespace DailyFranchise.App
         /// <summary>마지막 오프시즌 결산 요약. 이번 실행에서 아직 없으면 null.</summary>
         public SeasonRollover LastRollover { get; private set; }
 
+        /// <summary>CPU끼리의 한국시리즈 결과 시뮬레이션 난수 (Phase 32, 다른 난수와 분리). 테스트는 고정 Seed를 넣는다.</summary>
+        public IRandomSource PostseasonRandom { get; set; } = SeededRandom.FromClock();
+
+        /// <summary>한국시리즈가 결과만으로 진행됐다 (로비 다시 그리기용, Phase 32).</summary>
+        public event Action PostseasonAdvanced;
+
+        /// <summary>
+        /// [가을야구 결과 시뮬레이션] (Phase 32): 내 구단이 탈락한 한국시리즈를 결과만으로 끝내고(<see cref="SeasonState.SimulatePostseason"/>)
+        /// 오프시즌으로 넘긴 뒤 바로 저장한다. 내 구단이 나가는 시리즈는 직접 치러야 하므로 false. 포스트시즌이 아니거나 경기 중이어도 false.
+        /// </summary>
+        public bool SimulatePostseason()
+        {
+            if (_loading || Season.InProgress != null || Season.Phase != SeasonPhase.PostSeason || Season.InPostseason) return false;
+            if (!Season.SimulatePostseason(PostseasonRandom)) return false;
+            Saves.Save(Season);
+            NewsChanged?.Invoke();
+            PostseasonAdvanced?.Invoke();
+            return true;
+        }
+
         /// <summary>
         /// 시즌 결산 및 다음 시즌 준비 (Phase 27, <see cref="SeasonState.TransitionToNextSeason"/>): 연도를 넘기고 전적·일정을
         /// 새로 짠 뒤 바로 저장한다. 예산·팬 만족도·TP·팬덤 슬롯·선수단(이적 기록)은 이월된다.
@@ -330,7 +352,8 @@ namespace DailyFranchise.App
         /// </summary>
         public SeasonRollover TransitionToNextSeason()
         {
-            if (_loading || Season.InProgress != null || !Season.IsSeasonFinished) return null;
+            // Phase 32: 한국시리즈 우승 팀이 정해진 오프시즌에만 결산한다.
+            if (_loading || Season.InProgress != null || Season.Phase != SeasonPhase.OffSeason) return null;
             // 선수 DB를 읽었으면 에이징 커브·은퇴까지 (Phase 29). 장부는 결산 직전 것 (나이·폼 덧씌운 상태).
             LastRollover = Season.TransitionToNextSeason(Rosters, AgingRandom);
             LastReport = null; // 직전 경기 재정 변화는 지난 시즌 것

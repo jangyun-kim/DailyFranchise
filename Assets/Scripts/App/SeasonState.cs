@@ -182,6 +182,8 @@ namespace DailyFranchise.App
         {
             get
             {
+                if (Phase == SeasonPhase.PostSeason) return $"{Year} 시즌 · {PostseasonSeries.Title}";
+                if (Phase == SeasonPhase.OffSeason) return $"{Year} 시즌 · 시즌 종료";
                 if (IsSeasonFinished) return $"{Year} 시즌 · 정규시즌 종료";
                 int? month = MonthDayOf(NextGame?.Date)?.Month;
                 return month.HasValue ? $"{Year} 시즌 · {month}월" : $"{Year} 시즌";
@@ -229,6 +231,18 @@ namespace DailyFranchise.App
             var to = new DateTime(next, month, day);
             return $"{to.Month}.{to.Day} ({KoreanWeekdays[(int)to.DayOfWeek]})";
         }
+        /// <summary>일정 날짜 표기("5.26 (화)")를 그해 날짜로. 읽을 수 없거나 그해에 없는 날짜면 null.</summary>
+        public static DateTime? DateOf(string date, int year)
+        {
+            var md = MonthDayOf(date);
+            if (md == null || year < 1 || year > 9999) return null;
+            var (month, day) = md.Value;
+            return day > DateTime.DaysInMonth(year, month) ? (DateTime?)null : new DateTime(year, month, day);
+        }
+
+        /// <summary>날짜 표기 "5.28 (목)".</summary>
+        public static string DateText(DateTime day) => $"{day.Month}.{day.Day} ({KoreanWeekdays[(int)day.DayOfWeek]})";
+
         public string MyTeam { get; }
         public IReadOnlyList<ScheduledGame> Schedule => _schedule;
         public IReadOnlyList<StandingRow> Standings => _standings;
@@ -522,7 +536,7 @@ namespace DailyFranchise.App
         }
 
         /// <summary>로비에서 일어난 일(영입·방출 등)의 뉴스 날짜: 다음 경기일, 시즌이 끝났으면 마지막 경기일.</summary>
-        public string NewsDate => NextGame?.Date ?? LastFinished?.Date ?? "";
+        public string NewsDate => NextGame?.Date ?? Postseason?.LastPlayed?.Date ?? LastFinished?.Date ?? "";
 
         /// <summary>내 구단 현재 연승(+)·연패(−). 무승부나 치른 경기가 없으면 0.</summary>
         public int MyStreak()
@@ -551,9 +565,104 @@ namespace DailyFranchise.App
         /// <summary>가장 최근에 끝난 내 경기. 없으면 null.</summary>
         public ScheduledGame LastFinished => NextIndex > 0 ? _schedule[NextIndex - 1] : null;
 
-        public ScheduledGame NextGame => NextIndex < _schedule.Count ? _schedule[NextIndex] : null;
-        /// <summary>정규시즌 일정을 모두 치렀다 (다음 경기 인덱스 ≥ 일정 수). 로비는 [다음 경기] 대신 시즌 결산을 띄운다.</summary>
+        /// <summary>
+        /// 다음에 치를 내 경기: 정규시즌이면 일정의 다음 경기, 포스트시즌이면 내 구단이 나가는 한국시리즈의 다음 경기
+        /// (Phase 32 — 탈락했거나 시리즈가 끝났으면 null), 오프시즌이면 null.
+        /// </summary>
+        public ScheduledGame NextGame =>
+            Phase == SeasonPhase.RegularSeason ? (NextIndex < _schedule.Count ? _schedule[NextIndex] : null)
+            : Phase == SeasonPhase.PostSeason && Postseason != null && Postseason.Involves(MyTeam) ? Postseason.NextGame
+            : null;
+
+        /// <summary>정규시즌 일정을 모두 치렀다 (다음 경기 인덱스 ≥ 일정 수). 포스트시즌·오프시즌에도 true.</summary>
         public bool IsSeasonFinished => NextIndex >= _schedule.Count;
+
+        /// <summary>정규시즌 일정을 모두 치렀다 (<see cref="IsSeasonFinished"/>와 같다 — Phase 32에서 뜻을 분명히 한 이름).</summary>
+        public bool IsRegularSeasonFinished => IsSeasonFinished;
+
+        /// <summary>시즌 진행 단계 (Phase 32). 시즌과 함께 저장된다 (없는 이전 파일은 정규시즌).</summary>
+        public SeasonPhase Phase { get; private set; } = SeasonPhase.RegularSeason;
+
+        /// <summary>이번 시즌 한국시리즈. 정규시즌 중이면 null. 결산하면 비운다.</summary>
+        public PostseasonSeries Postseason { get; private set; }
+
+        /// <summary>내 구단이 한국시리즈에 나가는지 (포스트시즌·오프시즌).</summary>
+        public bool InPostseason => Postseason != null && Postseason.Involves(MyTeam);
+
+        /// <summary>한국시리즈 우승 상금 (Phase 32, 내 구단이 우승하면 예산에 바로 더한다).</summary>
+        public const long ChampionPrize = 2_000_000_000;
+
+        /// <summary>이번 실행에서 내 구단이 받은 우승 보상 (예산·팬 만족도 실제 변화). 없으면 null.</summary>
+        public FinanceChange? ChampionAward { get; private set; }
+
+        /// <summary>가장 최근 시리즈 경기 처리로 시즌이 발행한 뉴스 (경기 결과·우승). PostGameProcessor가 보고서에 싣는다.</summary>
+        public IReadOnlyList<NewsItem> LastPostseasonNews => _lastPostseasonNews;
+        readonly List<NewsItem> _lastPostseasonNews = new List<NewsItem>();
+
+        /// <summary>
+        /// 정규시즌 일정을 다 치렀으면 한국시리즈를 연다 (Phase 32): 순위표 1·2위의 7전 4선승제, [가을야구] 개막 뉴스.
+        /// 경기 중이거나 이미 열었으면 아무것도 하지 않고 false. 순위표 팀이 둘 미만이면 바로 오프시즌.
+        /// 마지막 정규시즌 경기 처리(<see cref="FinishCurrentGame"/>)와 이전 저장 파일 불러오기 뒤(SeasonManager)에 부른다.
+        /// </summary>
+        public bool BeginPostseasonIfDue()
+        {
+            if (Phase != SeasonPhase.RegularSeason || !IsRegularSeasonFinished || InProgress != null) return false;
+            if (_standings.Count < 2)
+            {
+                Phase = SeasonPhase.OffSeason;
+                return true;
+            }
+            Postseason = PostseasonSeries.Create(_standings[0].Team, _standings[1].Team, Year, _schedule[_schedule.Count - 1].Date, KboStadiums);
+            Phase = SeasonPhase.PostSeason;
+            AddNews(NewsWriter.PostseasonBegins(Postseason, MyTeam, Year));
+            return true;
+        }
+
+        /// <summary>
+        /// 남은 한국시리즈를 결과만 빠르게 정한다 (Phase 32 — 내 구단이 탈락했을 때 로비 [가을야구 결과 시뮬레이션]).
+        /// 경기마다 무승부 없는 점수(승 1~10점 차)를 반반 확률로 정하고, 우승이 정해지면 오프시즌으로 넘긴다.
+        /// 포스트시즌이 아니거나 경기 중이면 false.
+        /// </summary>
+        public bool SimulatePostseason(IRandomSource random)
+        {
+            if (random == null) throw new ArgumentNullException(nameof(random));
+            if (Phase != SeasonPhase.PostSeason || Postseason == null || InProgress != null) return false;
+            while (!Postseason.IsOver)
+            {
+                int loser = random.Next(7);
+                int winner = loser + 1 + random.Next(5);
+                Postseason.Record(random.NextDouble() < 0.5 ? new GameScore(winner, loser) : new GameScore(loser, winner));
+            }
+            ConcludePostseason();
+            return true;
+        }
+
+        /// <summary>우승 팀 결정: [챔피언] 뉴스, 내 구단 우승이면 상금(₩20억)과 팬 만족도 100%, 오프시즌으로.</summary>
+        void ConcludePostseason()
+        {
+            Phase = SeasonPhase.OffSeason;
+            string champion = Postseason.Champion;
+            var news = NewsWriter.Champion(champion, Postseason, Year);
+            AddNews(news);
+            _lastPostseasonNews.Add(news);
+            if (champion == MyTeam)
+                ChampionAward = ApplyFinance(new FinanceChange(ChampionPrize, FranchiseFinance.MaxFanApproval - FanApproval));
+        }
+
+        /// <summary>진행 중인 한국시리즈 경기를 끝낸다 (정규시즌 순위표·타 구단 경기는 건드리지 않는다).</summary>
+        void FinishPostseasonGame(GameScore score, int finalInning, bool walkOff)
+        {
+            var game = InProgress;
+            _lastDay.Clear();
+            _lastDay.Add(new GameRecord { AwayTeam = game.AwayTeam, HomeTeam = game.HomeTeam, Score = score });
+            _lastPostseasonNews.Clear();
+            Postseason.Record(score);
+            InProgress = null;
+            var news = NewsWriter.SeriesGame(MyTeam, game, Postseason, finalInning, walkOff, Year);
+            AddNews(news);
+            _lastPostseasonNews.Add(news);
+            if (Postseason.IsOver) ConcludePostseason();
+        }
         public int GamesPlayed => NextIndex;
 
         public StandingRow MyStanding => StandingOf(MyTeam);
@@ -614,10 +723,17 @@ namespace DailyFranchise.App
         /// </summary>
         /// <param name="score">내 경기 최종 점수 (일정의 원정 : 홈 기준).</param>
         /// <param name="random">타 구단 대진·결과용 난수. 테스트는 고정 Seed를 넣는다.</param>
-        public void FinishCurrentGame(GameScore score, IRandomSource random)
+        /// <param name="finalInning">경기가 끝난 이닝 (한국시리즈 뉴스용, 모르면 0).</param>
+        /// <param name="walkOff">끝내기로 끝났는지 (한국시리즈 뉴스용).</param>
+        public void FinishCurrentGame(GameScore score, IRandomSource random, int finalInning = 0, bool walkOff = false)
         {
             if (InProgress == null) throw new InvalidOperationException("진행 중인 경기가 없다.");
             if (random == null) throw new ArgumentNullException(nameof(random));
+            if (Phase == SeasonPhase.PostSeason && Postseason != null && ReferenceEquals(InProgress, Postseason.NextGame))
+            {
+                FinishPostseasonGame(score, finalInning, walkOff);
+                return;
+            }
 
             var game = InProgress;
             _lastDay.Clear();
@@ -635,6 +751,7 @@ namespace DailyFranchise.App
             game.Status = GameStatus.Final;
             InProgress = null;
             NextIndex++;
+            BeginPostseasonIfDue(); // 마지막 정규시즌 경기면 한국시리즈 개막 (Phase 32)
         }
 
         /// <summary>내 경기 두 팀을 뺀 구단을 무작위로 짝지어 경기 결과를 만든다. 홀수면 한 팀은 쉰다.</summary>
@@ -705,13 +822,26 @@ namespace DailyFranchise.App
         /// 그 뒤 신인 드래프트 (Phase 30, <see cref="RookieDraft"/>): 선수단이 있는 구단마다 신인 3~5명을 퓨처스에 넣는다.
         /// </param>
         /// <returns>끝난 시즌 요약.</returns>
-        public SeasonRollover TransitionToNextSeason(LeagueRosterBook league = null, IRandomSource agingRandom = null)
+        /// <param name="postseasonRandom">
+        /// 한국시리즈가 아직 끝나지 않았을 때 남은 경기를 정할 난수 (Phase 32). 정상 흐름(로비)은 오프시즌에서만 결산하므로 쓰지 않는다.
+        /// 정규시즌만 치르고 바로 결산하는 경우(이전 저장 파일·테스트)를 위한 것으로, null이면 연도로 시드를 정한 난수를 쓴다
+        /// (에이징 난수와 분리 — 에이징·드래프트 결과가 흔들리지 않게).
+        /// </param>
+        public SeasonRollover TransitionToNextSeason(LeagueRosterBook league = null, IRandomSource agingRandom = null,
+            IRandomSource postseasonRandom = null)
         {
             if (InProgress != null) throw new InvalidOperationException($"경기 중에는 시즌을 넘기지 않는다: {InProgress.Number}");
             if (!IsSeasonFinished) throw new InvalidOperationException($"정규시즌이 끝나지 않았다: {NextIndex} / {_schedule.Count}");
+            BeginPostseasonIfDue();
+            if (Phase == SeasonPhase.PostSeason) SimulatePostseason(postseasonRandom ?? new SeededRandom(Year * 7919 + 32));
 
             var me = MyStanding;
-            var summary = new SeasonRollover(Year, me?.Rank ?? 0, me?.Wins ?? 0, me?.Losses ?? 0, me?.Draws ?? 0, CapFlex);
+            var summary = new SeasonRollover(Year, me?.Rank ?? 0, me?.Wins ?? 0, me?.Losses ?? 0, me?.Draws ?? 0, CapFlex)
+            {
+                Champion = Postseason?.Champion,
+                InChampionship = InPostseason,
+                WonChampionship = Postseason?.Champion == MyTeam,
+            };
 
             var schedule = _schedule.Select(g => new ScheduledGame
             {
@@ -740,6 +870,9 @@ namespace DailyFranchise.App
             _lastStarters.Clear();
 
             CloseTrustSeason();
+            Phase = SeasonPhase.RegularSeason;
+            Postseason = null;
+            ChampionAward = null;
             Year++;
             AddNews(NewsWriter.SeasonClosed(MyTeam, summary)); // 지난 시즌 뉴스는 지우지 않는다 (보관 개수로만 밀려난다)
             if (league != null && agingRandom != null)
@@ -816,6 +949,18 @@ namespace DailyFranchise.App
                     Id = p.PlayerId, AgeDelta = p.AgeDelta, Form = p.Form, Retired = p.Retired, RetiredYear = p.RetiredYear,
                 }).ToList(),
                 Rookies = _rookies.ToList(),
+                Phase = (int)Phase,
+                Postseason = Postseason == null ? new PostseasonData() : new PostseasonData
+                {
+                    TopSeed = Postseason.TopSeed,
+                    SecondSeed = Postseason.SecondSeed,
+                    NextIndex = Postseason.NextIndex,
+                    Games = Postseason.Games.Select(g => new ScheduledGameData
+                    {
+                        Number = g.Number, Date = g.Date, AwayTeam = g.AwayTeam, HomeTeam = g.HomeTeam, Stadium = g.Stadium,
+                        Final = g.Status == GameStatus.Final, AwayScore = g.Score?.Away ?? 0, HomeScore = g.Score?.Home ?? 0,
+                    }).ToList(),
+                },
                 News = _news.Select(n => new NewsData
                 {
                     Kind = (int)n.Kind, Tag = n.Tag, Team = n.Team, Headline = n.Headline, Year = n.Year, Date = n.Date,
@@ -915,6 +1060,9 @@ namespace DailyFranchise.App
                 foreach (var p in data.Progression)
                     if (p != null && !string.IsNullOrEmpty(p.Id))
                         season.SetProgression(new PlayerProgression(p.Id, p.AgeDelta, p.Form, p.Retired, p.RetiredYear));
+            // 시즌 단계가 없는 이전 저장 파일(Phase 32 이전)은 정규시즌. 정규시즌을 다 치른 파일은 SeasonManager가 불러온 뒤
+            // 한국시리즈를 연다 (BeginPostseasonIfDue). 단계와 맞지 않는 시리즈 기록(팀이 순위표에 없음 등)은 버리고 정규시즌 끝에서 다시 연다.
+            season.RestorePhase(data);
             // 신인이 없는 이전 저장 파일(Phase 30 이전)은 빈 목록. ID·구단이 빈 항목과 중복 ID는 건너뛴다.
             if (data.Rookies != null)
                 foreach (var r in data.Rookies)
@@ -927,6 +1075,28 @@ namespace DailyFranchise.App
                         season.AddNews(new NewsItem(Enum.IsDefined(typeof(NewsKind), n.Kind) ? (NewsKind)n.Kind : NewsKind.General,
                             n.Tag, n.Team, n.Headline, n.Year, n.Date));
             return season;
+        }
+
+        void RestorePhase(SeasonSaveData data)
+        {
+            var phase = Enum.IsDefined(typeof(SeasonPhase), data.Phase) ? (SeasonPhase)data.Phase : SeasonPhase.RegularSeason;
+            if (phase == SeasonPhase.RegularSeason || !IsRegularSeasonFinished) return;
+            var ps = data.Postseason;
+            bool valid = ps != null && !string.IsNullOrEmpty(ps.TopSeed) && !string.IsNullOrEmpty(ps.SecondSeed) && ps.TopSeed != ps.SecondSeed
+                && StandingOf(ps.TopSeed) != null && StandingOf(ps.SecondSeed) != null && ps.Games != null && ps.Games.Count > 0
+                && ps.Games.All(g => g != null && (g.AwayTeam == ps.TopSeed || g.AwayTeam == ps.SecondSeed)
+                                     && (g.HomeTeam == ps.TopSeed || g.HomeTeam == ps.SecondSeed) && g.AwayTeam != g.HomeTeam);
+            if (!valid) return; // 정규시즌 끝 상태로 두고 다시 연다
+            var games = ps.Games.Select(g => new ScheduledGame
+            {
+                Number = g.Number, Date = g.Date, AwayTeam = g.AwayTeam, HomeTeam = g.HomeTeam, Stadium = g.Stadium,
+                Status = g.Final ? GameStatus.Final : GameStatus.Scheduled,
+                Score = g.Final ? new GameScore(Math.Max(0, g.AwayScore), Math.Max(0, g.HomeScore)) : (GameScore?)null,
+            }).ToList();
+            int next = games.TakeWhile(g => g.Status == GameStatus.Final).Count();
+            Postseason = new PostseasonSeries(Year, ps.TopSeed, ps.SecondSeed, games, next);
+            // 저장된 단계보다 시리즈 기록을 믿는다: 우승 팀이 있으면 오프시즌, 없으면 포스트시즌
+            Phase = Postseason.IsOver ? SeasonPhase.OffSeason : SeasonPhase.PostSeason;
         }
 
         /// <summary>이전 단위 금액 변환. 넘치면 long 끝값으로 맞춘다.</summary>
@@ -1053,6 +1223,12 @@ namespace DailyFranchise.App
         public AgingReport Aging { get; internal set; }
         /// <summary>신인 드래프트 결과 (Phase 30). 장부 없이 결산했으면 null.</summary>
         public DraftReport Draft { get; internal set; }
+        /// <summary>한국시리즈 우승 팀 (Phase 32). 시리즈가 없었으면 null.</summary>
+        public string Champion { get; internal set; }
+        /// <summary>내 구단이 한국시리즈에 나갔는지.</summary>
+        public bool InChampionship { get; internal set; }
+        /// <summary>내 구단이 한국시리즈에서 우승했는지.</summary>
+        public bool WonChampionship { get; internal set; }
 
         /// <summary>"2026 시즌 최종 3위 · 78승 64패 2무 · 은퇴 2명 · 신인 4명" (무승부·은퇴·신인이 없으면 생략, 신인은 내 구단 지명 수).</summary>
         public string Text
@@ -1061,6 +1237,7 @@ namespace DailyFranchise.App
             {
                 string record = Draws == 0 ? $"{Wins}승 {Losses}패" : $"{Wins}승 {Losses}패 {Draws}무";
                 string text = Rank > 0 ? $"{Year} 시즌 최종 {Rank}위 · {record}" : $"{Year} 시즌 · {record}";
+                if (InChampionship) text += WonChampionship ? " · 한국시리즈 우승" : " · 한국시리즈 준우승";
                 if (Aging != null && Aging.Retired.Count > 0) text += $" · 은퇴 {Aging.Retired.Count}명";
                 int mine = Draft?.MyPicks.Count ?? 0;
                 return mine > 0 ? $"{text} · 신인 {mine}명" : text;

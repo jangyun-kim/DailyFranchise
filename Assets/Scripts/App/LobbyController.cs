@@ -85,6 +85,7 @@ namespace DailyFranchise.App
             _manager.StoveChanged += OnStoveChanged;
             _manager.SeasonRolledOver += OnSeasonRolledOver;
             _manager.NewsChanged += OnNewsChanged;
+            _manager.PostseasonAdvanced += Render;
             _selection.Clear();
             _chemistryKey = null;
             Render();
@@ -103,6 +104,7 @@ namespace DailyFranchise.App
                 _manager.StoveChanged -= OnStoveChanged;
                 _manager.SeasonRolledOver -= OnSeasonRolledOver;
                 _manager.NewsChanged -= OnNewsChanged;
+                _manager.PostseasonAdvanced -= Render;
             }
             _fa?.Detach();
             _fa = null;
@@ -155,6 +157,8 @@ namespace DailyFranchise.App
                 case NewsWriter.ExclusiveTag: return "news-tag--exclusive";
                 case NewsWriter.BreakingTag: return "news-tag--breaking";
                 case NewsWriter.WalkOffTag: return "news-tag--walkoff";
+                case NewsWriter.PostseasonTag: return "news-tag--postseason";
+                case NewsWriter.ChampionTag: return "news-tag--champion";
                 default: return null;
             }
         }
@@ -245,10 +249,16 @@ namespace DailyFranchise.App
         {
             var manager = SeasonManager.Instance;
             if (manager == null) return;
-            // 일정을 모두 치렀으면 같은 버튼이 시즌 결산 (결산 뒤 SeasonRolledOver로 다시 그린다).
-            if (manager.Season.IsSeasonFinished)
+            // 우승 팀이 정해졌으면 같은 버튼이 시즌 결산 (결산 뒤 SeasonRolledOver로 다시 그린다).
+            if (manager.Season.Phase == SeasonPhase.OffSeason)
             {
                 manager.TransitionToNextSeason();
+                return;
+            }
+            // 내 구단이 탈락한 한국시리즈는 결과만 시뮬레이션 (Phase 32, PostseasonAdvanced로 다시 그린다).
+            if (manager.Season.Phase == SeasonPhase.PostSeason && !manager.Season.InPostseason)
+            {
+                manager.SimulatePostseason();
                 return;
             }
             // 씬 로드 전에 두 번 눌리지 않도록 즉시 잠근다.
@@ -260,6 +270,9 @@ namespace DailyFranchise.App
             _ = _manager.Rosters; // 선수단 장부·페이롤·캡 기준을 먼저 맞춘다 (헤더 유지비 표기가 페이롤을 쓴다)
             var season = _manager.Season;
             ApplyTeamTheme(season.MyTeam);
+            // 가을야구 테마 (Phase 32): 한국시리즈 중, 그리고 내 구단이 우승한 오프시즌에 금색 강조
+            Q("screen").EnableInClassList("ps-theme", season.Phase == SeasonPhase.PostSeason
+                || (season.Phase == SeasonPhase.OffSeason && season.Postseason?.Champion == season.MyTeam));
             Q<Label>("season-title").text = season.SeasonTitle;
             Q<Label>("game-day").text = LobbyBriefing.GameDayText(season);
             Q<Label>("my-team").text = season.MyTeam;
@@ -282,18 +295,24 @@ namespace DailyFranchise.App
             Q<Label>("last-finance").text = _manager.LastReport?.FinanceText ?? "";
 
             var next = season.NextGame;
-            bool finished = season.IsSeasonFinished;
-            Q<Label>("next-game").text = finished
-                ? $"{season.Year} 정규시즌 일정이 모두 끝났습니다. 결산 후 {season.Year + 1} 시즌으로 넘어갑니다."
-                : $"경기 {next.Number} · {next.Date} · {next.MatchupText} · {next.Stadium}";
-            string problem = _manager.IsDatabaseReady && !finished ? _manager.RosterProblem : null;
-            _start.text = finished ? OffseasonButtonText(season) : !_manager.IsDatabaseReady ? "선수 데이터 불러오는 중…"
-                : problem != null ? "선수단 확인 필요" : "다음 경기 시작";
-            _start.EnableInClassList("btn--offseason", finished);
-            // 결산은 선수 DB 없이도 할 수 있다 (예산·TP·이적 기록만 넘긴다).
-            _start.SetEnabled(season.InProgress == null && (finished || (_manager.IsDatabaseReady && problem == null)));
-            _start.tooltip = finished
+            bool offseason = season.Phase == SeasonPhase.OffSeason;
+            bool skipPostseason = season.Phase == SeasonPhase.PostSeason && !season.InPostseason;
+            Q<Label>("next-game").text = NextGameText(season);
+            string problem = _manager.IsDatabaseReady && next != null ? _manager.RosterProblem : null;
+            _start.text = offseason ? OffseasonButtonText(season)
+                : skipPostseason ? PostseasonSkipButtonText
+                : !_manager.IsDatabaseReady ? "선수 데이터 불러오는 중…"
+                : problem != null ? "선수단 확인 필요"
+                : next == null ? "다음 경기 없음"
+                : season.Phase == SeasonPhase.PostSeason ? $"한국시리즈 {next.Number}차전 시작"
+                : "다음 경기 시작";
+            _start.EnableInClassList("btn--offseason", offseason || skipPostseason);
+            // 결산·가을야구 시뮬레이션은 선수 DB 없이도 할 수 있다.
+            _start.SetEnabled(season.InProgress == null
+                && (offseason || skipPostseason || (_manager.IsDatabaseReady && problem == null && next != null)));
+            _start.tooltip = offseason
                 ? "전적·일정을 새로 짜고 예산·팬 만족도·신뢰도·선수단은 그대로 넘깁니다. 신뢰 대출의 50%는 새 시즌 캡에서 빠집니다."
+                : skipPostseason ? "내 구단이 탈락한 한국시리즈의 결과를 바로 정하고 결산 단계로 넘어갑니다."
                 : problem ?? "";
             _scout.SetEnabled(_manager.IsDatabaseReady && season.InProgress == null);
             _mode.text = _manager.FullInningMode ? "진행: 풀 이닝 (1회부터)" : "진행: 퀵 시뮬 (8회부터)";
@@ -309,15 +328,55 @@ namespace DailyFranchise.App
             screen.AddToClassList(LobbyBriefing.TeamThemeClass(team));
         }
 
+        /// <summary>내 구단이 탈락한 포스트시즌의 시작 버튼 문구 (Phase 32).</summary>
+        public const string PostseasonSkipButtonText = "가을야구 결과 시뮬레이션";
+
+        /// <summary>
+        /// 하단 다음 경기 줄: 정규시즌 "경기 3 · 5.17 (일) · KIA vs 삼성 · 구장", 한국시리즈 "한국시리즈 2차전 · 날짜 · 대진 · 구장",
+        /// 탈락 "2026 한국시리즈 KIA 타이거즈 vs LG 트윈스 · 삼성 라이온즈 가을야구 탈락", 오프시즌 "… 우승. 결산 후 2027 시즌".
+        /// </summary>
+        public static string NextGameText(SeasonState season)
+        {
+            var next = season.NextGame;
+            var ps = season.Postseason;
+            switch (season.Phase)
+            {
+                case SeasonPhase.PostSeason when next != null:
+                    return $"한국시리즈 {next.Number}차전 · {next.Date} · {next.MatchupText}"; // 구장은 프리뷰에
+                case SeasonPhase.PostSeason:
+                    return ps == null ? $"{season.Year} 한국시리즈 진행 중"
+                        : $"{season.Year} 한국시리즈 {ps.TopSeed} vs {ps.SecondSeed} · {season.MyTeam} 가을야구 탈락";
+                case SeasonPhase.OffSeason:
+                    return ps?.Champion != null
+                        ? $"{season.Year} 한국시리즈 {ps.Champion} 우승. 결산 후 {season.Year + 1} 시즌으로 넘어갑니다."
+                        : $"{season.Year} 시즌이 끝났습니다. 결산 후 {season.Year + 1} 시즌으로 넘어갑니다.";
+                default:
+                    return next == null
+                        ? $"{season.Year} 정규시즌 일정이 모두 끝났습니다."
+                        : $"경기 {next.Number} · {next.Date} · {next.MatchupText} · {next.Stadium}";
+            }
+        }
+
         /// <summary>정규시즌 종료 뒤 시작 버튼 문구: "시즌 결산 및 2027 시즌 준비".</summary>
         public static string OffseasonButtonText(SeasonState season) => $"시즌 결산 및 {season.Year + 1} 시즌 준비";
 
-        static string RecordText(SeasonState season)
+        /// <summary>
+        /// 헤더 성적 줄. 정규시즌 "3위 · 23승 18패 0무 · 승률 · 진행", 한국시리즈 "한국시리즈 삼성 2승 - 1승 LG · 정규시즌 1위",
+        /// 우승 "한국시리즈 우승 · 삼성 4승 - 1승 LG", 탈락 "정규시즌 3위 · 23승 18패 0무 · 가을야구 탈락".
+        /// </summary>
+        public static string RecordText(SeasonState season)
         {
             var me = season.MyStanding;
-            return me == null
-                ? "—"
-                : $"{me.Rank}위 · {me.Wins}승 {me.Losses}패 {me.Draws}무 · 승률 {me.WinPctText} · 진행 {season.GamesPlayed} / {season.Schedule.Count}경기";
+            if (me == null) return "—";
+            var ps = season.Postseason;
+            if (season.Phase != SeasonPhase.RegularSeason && ps != null)
+            {
+                if (!ps.Involves(season.MyTeam)) return $"정규시즌 {me.Rank}위 · {me.Wins}승 {me.Losses}패 {me.Draws}무 · 가을야구 탈락";
+                if (ps.Champion == season.MyTeam) return $"한국시리즈 우승 · {ps.RecordText(season.MyTeam)}";
+                if (ps.IsOver) return $"한국시리즈 준우승 · {ps.RecordText(season.MyTeam)}";
+                return $"한국시리즈 {ps.RecordText(season.MyTeam)} · 정규시즌 {me.Rank}위";
+            }
+            return $"{me.Rank}위 · {me.Wins}승 {me.Losses}패 {me.Draws}무 · 승률 {me.WinPctText} · 진행 {season.GamesPlayed} / {season.Schedule.Count}경기";
         }
 
         // ---------- 다음 경기 프리뷰 / 오늘의 결정 ----------
@@ -331,6 +390,14 @@ namespace DailyFranchise.App
             var game = season.NextGame;
             var away = Q("pv-away");
             var home = Q("pv-home");
+            var ps = season.Postseason;
+            Q<Label>("pv-title").text = season.Phase == SeasonPhase.RegularSeason ? "다음 경기"
+                : season.Phase == SeasonPhase.PostSeason ? "KOREAN SERIES · 한국시리즈" : "한국시리즈 결과";
+            if (season.Phase != SeasonPhase.RegularSeason && ps != null)
+            {
+                RenderSeriesPreview(season, ps, game);
+                return;
+            }
             if (game == null)
             {
                 Q<Label>("pv-meta").text = "정규시즌 종료";
@@ -351,6 +418,27 @@ namespace DailyFranchise.App
             var l10 = season.MyRecentForm();
             Q<Label>("pv-note").text = LobbyBriefing.HeadToHeadText(season, opponent)
                 + (l10.Games > 0 ? $" · 최근 {l10.Games}경기 {l10.Text}" : "");
+        }
+
+        /// <summary>
+        /// 한국시리즈 프리뷰 (Phase 32): 두 팀의 시리즈 승수와 정규시즌 순위, 다음 경기 선발(내 구단이 나갈 때), 시리즈 전적 줄.
+        /// 다음 경기가 없으면(탈락·종료) 1위 팀을 원정 칸이 아니라 왼쪽에, 2위 팀을 오른쪽에 둔다.
+        /// </summary>
+        void RenderSeriesPreview(SeasonState season, PostseasonSeries ps, ScheduledGame game)
+        {
+            string left = game?.AwayTeam ?? ps.TopSeed, right = game?.HomeTeam ?? ps.SecondSeed;
+            bool ready = _manager.IsDatabaseReady && game != null;
+            Q<Label>("pv-meta").text = game != null ? $"{game.Number}차전 · {game.Date} · {game.Stadium}"
+                : ps.IsOver ? $"{ps.Champion} 우승" : "내 구단 탈락 · 결과 시뮬레이션 대기";
+            SetSide("away", left, season, ready ? _manager.GameRosterOf(left)?.StartingPitcher : null, ready);
+            SetSide("home", right, season, ready ? _manager.GameRosterOf(right)?.StartingPitcher : null, ready);
+            Q<Label>("pv-away-standing").text = $"시리즈 {ps.WinsOf(left)}승 · 정규시즌 {season.StandingOf(left)?.Rank ?? 0}위";
+            Q<Label>("pv-home-standing").text = $"시리즈 {ps.WinsOf(right)}승 · 정규시즌 {season.StandingOf(right)?.Rank ?? 0}위";
+            Q("pv-away").EnableInClassList("pv-side--mine", left == season.MyTeam);
+            Q("pv-home").EnableInClassList("pv-side--mine", right == season.MyTeam);
+            Q<Label>("pv-note").text = ps.IsOver
+                ? $"{ps.RecordText(season.MyTeam)} · {ps.Champion} 우승"
+                : $"{ps.RecordText(season.MyTeam)} · {PostseasonSeries.WinsToClinch}승 선착 팀 우승";
         }
 
         void SetSide(string side, string team, SeasonState season, PlayerData starter, bool ready)
@@ -375,7 +463,7 @@ namespace DailyFranchise.App
             container.Clear();
             var roster = _manager.IsDatabaseReady ? _manager.MyRoster : null;
             var today = roster == null ? null : _manager.GameRosterOf(season.MyTeam)?.StartingPitcher;
-            string problem = _manager.IsDatabaseReady && !season.IsSeasonFinished ? _manager.RosterProblem : null;
+            string problem = _manager.IsDatabaseReady && season.NextGame != null ? _manager.RosterProblem : null;
             var items = LobbyBriefing.Decisions(season, roster, today, problem);
             Q<Label>("decisions-count").text = items.Count > DecisionsShown ? $"{items.Count}건 중 {DecisionsShown}건 · 외 {items.Count - DecisionsShown}건"
                 : items.Count > 0 ? $"{items.Count}건" : "";
@@ -715,6 +803,14 @@ namespace DailyFranchise.App
             var container = Q("schedule");
             container.Clear();
             var next = season.NextGame;
+            var ps = season.Postseason;
+            if (season.Phase != SeasonPhase.RegularSeason && ps != null)
+            {
+                Q<Label>("schedule-title").text = $"{PostseasonSeries.Title} 일정 · {ps.RecordText(season.MyTeam)}";
+                RenderSeriesSchedule(season, ps, next);
+                return;
+            }
+            Q<Label>("schedule-title").text = "일정";
             foreach (var g in season.Schedule)
             {
                 string status = g.Status == GameStatus.Final ? FinalText(season, g)
@@ -735,6 +831,43 @@ namespace DailyFranchise.App
                 row.EnableInClassList("lobby-row--next", g == next);
                 container.Add(row);
             }
+        }
+
+        /// <summary>한국시리즈 일정 행 (ks-1 …): 차전 · 날짜 · 대진(내 구단 기준 vs/@, 아니면 원정 @ 홈) · 결과(승리 팀 약칭 + 점수).</summary>
+        void RenderSeriesSchedule(SeasonState season, PostseasonSeries ps, ScheduledGame next)
+        {
+            var container = Q("schedule");
+            foreach (var g in ps.Games)
+            {
+                bool mine = ps.Involves(season.MyTeam);
+                bool home = g.HomeTeam == season.MyTeam;
+                string matchup = mine ? (home ? "vs " : "@ ") + (home ? g.AwayTeam : g.HomeTeam)
+                    : $"{Short(g.AwayTeam)} @ {Short(g.HomeTeam)}";
+                string status = g.Status == GameStatus.Final
+                    ? (mine ? FinalText(season, g) : WinnerText(g))
+                    : g.Status == GameStatus.InProgress ? "진행 중" : g == next ? "다음 경기" : "예정";
+                var row = Row("lobby-row",
+                    Cell(g.Number + "차", "col-no"),
+                    Cell(g.Date, "col-date"),
+                    Cell(matchup, "col-opp"),
+                    Cell(status, "col-status"));
+                row.name = "ks-" + g.Number;
+                row.tooltip = $"한국시리즈 {g.Number}차전 · {g.MatchupText} · {g.Stadium}";
+                row.AddToClassList("lobby-row--schedule");
+                row.EnableInClassList("lobby-row--final", g.Status == GameStatus.Final);
+                row.EnableInClassList("lobby-row--next", g == next);
+                container.Add(row);
+            }
+        }
+
+        static string Short(string team) => LobbyBriefing.TeamMark(team);
+
+        /// <summary>내 구단 경기가 아닌 시리즈 경기 결과: "KIA 5:3" (무승부는 "무 3:3").</summary>
+        static string WinnerText(ScheduledGame g)
+        {
+            var s = g.Score.Value;
+            if (s.Away == s.Home) return $"무 {s}";
+            return $"{Short(s.Away > s.Home ? g.AwayTeam : g.HomeTeam)} {Math.Max(s.Away, s.Home)}:{Math.Min(s.Away, s.Home)}";
         }
 
         void RenderStandings(SeasonState season)
@@ -767,6 +900,19 @@ namespace DailyFranchise.App
         /// </summary>
         public static string LastResultText(SeasonState season)
         {
+            // 한국시리즈 (Phase 32): 내 구단이 나갔으면 "한국시리즈 3차전 · 승 2:5 · 삼성 2승 - 1승 LG", 아니면 "한국시리즈 · KIA 4승 - 2승 LG".
+            var ps = season.Postseason;
+            var lastKs = ps?.LastPlayed;
+            if (lastKs != null)
+            {
+                string series = ps.Involves(season.MyTeam)
+                    ? $"한국시리즈 {lastKs.Number}차전 · {FinalText(season, lastKs)} · {ps.RecordText(season.MyTeam)}"
+                    : $"한국시리즈 · {ps.RecordText()}";
+                return !ps.IsOver ? series
+                    : ps.Champion == season.MyTeam ? series + " · 우승!"
+                    : ps.Involves(season.MyTeam) ? series + " · 준우승"
+                    : $"{series} · {Short(ps.Champion)} 우승";
+            }
             var last = season.LastFinished;
             if (last == null) return "—";
             string text = $"경기 {last.Number} · {last.MatchupText} · {FinalText(season, last)}";
@@ -821,7 +967,8 @@ namespace DailyFranchise.App
             Q<VisualElement>("fo-season-fill").style.width = Length.Percent(total == 0 ? 0 : 100f * played / total);
             Q<Label>("fo-season").text = $"{played} / {total}경기";
             var next = season.NextGame;
-            Q<Label>("fo-season-next").text = next == null ? "시즌 종료" : $"다음 경기일 {next.Date} · 남은 {total - played}경기";
+            Q<Label>("fo-season-next").text = season.Phase == SeasonPhase.PostSeason ? $"한국시리즈 {season.Postseason?.RecordText(season.MyTeam)}"
+                : next == null ? "시즌 종료" : $"다음 경기일 {next.Date} · 남은 {total - played}경기";
         }
 
         /// <summary>프런트 신뢰도 TP 게이지(0~200)와 팬덤 특전 슬롯 해금/잠김.</summary>

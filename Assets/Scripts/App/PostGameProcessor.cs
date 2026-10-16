@@ -48,6 +48,12 @@ namespace DailyFranchise.App
         public IReadOnlyList<ConditionChange> Conditions = new List<ConditionChange>();
         /// <summary>이 경기로 발행한 리그 뉴스 (Phase 28, 발행 순). 저장 전에 시즌 뉴스에 들어간다.</summary>
         public IReadOnlyList<NewsItem> News = new List<NewsItem>();
+        /// <summary>한국시리즈 경기였는지 (Phase 32 — 정규시즌 순위표·타 구단 경기는 바뀌지 않는다).</summary>
+        public bool Postseason;
+        /// <summary>이 경기로 한국시리즈 우승 팀이 정해졌으면 그 팀, 아니면 null.</summary>
+        public string Champion;
+        /// <summary>내 구단이 우승해 받은 보상 (상금·팬 만족도 실제 변화). 없으면 null.</summary>
+        public FinanceChange? ChampionAward;
         /// <summary>바로 저장에 성공했는지. 디스크 오류면 false (진행 상황은 메모리에 남아 다음 저장 때 다시 쓴다).</summary>
         public bool Saved;
     }
@@ -84,20 +90,25 @@ namespace DailyFranchise.App
             if (season == null) throw new ArgumentNullException(nameof(season));
             var game = season.InProgress ?? throw new InvalidOperationException("진행 중인 경기가 없다.");
             int rankBefore = season.MyStanding?.Rank ?? 0;
-
-            season.FinishCurrentGame(finalScore, leagueRandom);
-            var mine = season.LastDayResults[0];
-            var outcome = mine.OutcomeFor(season.MyTeam);
+            bool postseason = season.Phase == SeasonPhase.PostSeason;
+            // 경기 전 재정 (한국시리즈 우승 상금이 경기 정산의 팬 구간을 바꾸지 않도록 먼저 읽는다)
             long budgetBefore = season.Budget;
             int fanBefore = season.FanApproval;
             var mood = FranchiseFinance.MoodOf(fanBefore);
             var slots = season.UnlockedSlots;
+
+            season.FinishCurrentGame(finalScore, leagueRandom, finalInning, walkOff);
+            var mine = season.LastDayResults[0];
+            var outcome = mine.OutcomeFor(season.MyTeam);
+            string champion = postseason && season.Phase == SeasonPhase.OffSeason ? season.Postseason?.Champion : null;
             var income = FranchiseFinance.For(outcome, mood, slots);
             long expense = FranchiseFinance.PayrollPerGame(season.Payroll);
             var finance = season.ApplyFinance(new FinanceChange(income.BudgetDelta - expense, income.FanDelta));
             var unlocked = season.UpdateFandomUnlocks();
             var conditions = participation == null ? new List<ConditionChange>() : season.ApplyConditions(participation, conditionRandom);
-            var news = PublishNews(season, game, mine, rankBefore, unlocked, finalInning, walkOff);
+            var news = postseason
+                ? PublishPostseasonNews(season, game, unlocked)
+                : PublishNews(season, game, mine, rankBefore, unlocked, finalInning, walkOff);
 
             return new PostGameReport
             {
@@ -121,8 +132,25 @@ namespace DailyFranchise.App
                 RankBefore = rankBefore,
                 RankAfter = season.MyStanding?.Rank ?? 0,
                 DayResults = new List<GameRecord>(season.LastDayResults),
+                Postseason = postseason,
+                Champion = champion,
+                ChampionAward = champion != null && champion == season.MyTeam ? season.ChampionAward : null,
                 Saved = saves != null && saves.Save(season),
             };
+        }
+
+        /// <summary>한국시리즈 경기: 시즌이 낸 경기 결과·우승 뉴스에 새 팬덤 특전 뉴스만 더한다 (선두 등극·타 구단 소식 없음).</summary>
+        static List<NewsItem> PublishPostseasonNews(SeasonState season, ScheduledGame game, FandomSlot unlocked)
+        {
+            var news = new List<NewsItem>(season.LastPostseasonNews);
+            foreach (var slot in FandomRules.Slots)
+                if ((unlocked & slot) != 0)
+                {
+                    var n = NewsWriter.FandomUnlocked(season.MyTeam, slot, season.Year, game.Date);
+                    season.AddNews(n);
+                    news.Add(n);
+                }
+            return news;
         }
 
         static List<NewsItem> PublishNews(SeasonState season, ScheduledGame game, GameRecord mine, int rankBefore, FandomSlot unlocked,

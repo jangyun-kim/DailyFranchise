@@ -36,6 +36,10 @@ namespace DailyFranchise.App
         Breakout = 11,
         /// <summary>신인 드래프트 (Phase 30).</summary>
         Draft = 12,
+        /// <summary>한국시리즈 개막·경기 결과 (Phase 32).</summary>
+        Postseason = 13,
+        /// <summary>한국시리즈 우승 (Phase 32).</summary>
+        Championship = 14,
     }
 
     /// <summary>
@@ -89,6 +93,8 @@ namespace DailyFranchise.App
         public const string RetirementTag = "[은퇴]";
         public const string BreakoutTag = "[성장]";
         public const string DraftTag = "[드래프트]";
+        public const string PostseasonTag = "[한국시리즈]";
+        public const string ChampionTag = "[챔피언]";
 
         /// <summary>두 팀 득점 합이 이 이상이면 난타전.</summary>
         public const int SlugfestRuns = 15;
@@ -224,6 +230,43 @@ namespace DailyFranchise.App
             new NewsItem(NewsKind.Draft, DraftTag, team,
                 $"{team}, {round}라운드에서 {(round <= 1 ? "특급 유망주" : "유망주")} {playerName}({PositionMatcher.Label(position)}) 지명!",
                 year, StoveLeagueDate);
+
+        /// <summary>
+        /// 한국시리즈 개막: 내 구단이 나가면 "삼성 라이온즈, 2026 한국시리즈 진출! LG 트윈스와 7전 4선승제 격돌",
+        /// 아니면 "2026 한국시리즈 개막: KIA 타이거즈 vs LG 트윈스 · 삼성 라이온즈 가을야구 탈락".
+        /// </summary>
+        public static NewsItem PostseasonBegins(PostseasonSeries series, string myTeam, int year)
+        {
+            string date = series.Games.Count > 0 ? series.Games[0].Date : StoveLeagueDate;
+            return series.Involves(myTeam)
+                ? new NewsItem(NewsKind.Postseason, PostseasonTag, myTeam,
+                    $"{myTeam}, {year} 한국시리즈 진출! {WaGwa(series.OpponentOf(myTeam))} 7전 4선승제 격돌", year, date)
+                : new NewsItem(NewsKind.Postseason, PostseasonTag, series.TopSeed,
+                    $"{year} 한국시리즈 개막: {series.TopSeed} vs {series.SecondSeed} · {myTeam} 가을야구 탈락", year, date);
+        }
+
+        /// <summary>
+        /// 내 한국시리즈 경기 결과: "삼성 라이온즈, 한국시리즈 3차전 LG 트윈스에 5:3 승리 · 시리즈 2승 1패"
+        /// (끝내기면 "9회말 끝내기 승리", 무승부면 "무승부").
+        /// </summary>
+        public static NewsItem SeriesGame(string myTeam, ScheduledGame game, PostseasonSeries series, int finalInning, bool walkOff, int year)
+        {
+            var record = new GameRecord { AwayTeam = game.AwayTeam, HomeTeam = game.HomeTeam, Score = game.Score.Value };
+            string opp = game.AwayTeam == myTeam ? game.HomeTeam : game.AwayTeam;
+            var outcome = record.OutcomeFor(myTeam);
+            string s = ScoreText(record.RunsFor(myTeam), record.RunsAgainst(myTeam));
+            string result = outcome == GameOutcome.Draw ? $"{WaGwa(opp)} {s} 무승부"
+                : walkOff ? $"{opp}에 {finalInning}회말 {s} 끝내기 {(outcome == GameOutcome.Win ? "승리" : "패배")}"
+                : $"{opp}에 {s} {(outcome == GameOutcome.Win ? "승리" : "패배")}";
+            int mine = series.WinsOf(myTeam), theirs = series.WinsOf(opp);
+            return new NewsItem(NewsKind.Postseason, PostseasonTag, myTeam,
+                $"{myTeam}, 한국시리즈 {game.Number}차전 {result} · 시리즈 {mine}승 {theirs}패", year, game.Date);
+        }
+
+        /// <summary>우승: "삼성 라이온즈, 2026 시즌 대망의 한국시리즈 우승!".</summary>
+        public static NewsItem Champion(string champion, PostseasonSeries series, int year) =>
+            new NewsItem(NewsKind.Championship, ChampionTag, champion, $"{champion}, {year} 시즌 대망의 한국시리즈 우승!",
+                year, series?.LastPlayed?.Date ?? StoveLeagueDate);
 
         /// <summary>시즌 결산: "2026 시즌 종료! 2027 스토브리그 개막 · 삼성 라이온즈 최종 3위".</summary>
         public static NewsItem SeasonClosed(string myTeam, SeasonRollover summary) =>

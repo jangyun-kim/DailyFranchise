@@ -175,12 +175,23 @@ namespace DailyFranchise.UI.Tests
             var root = LobbyRoot();
             var start = root.Q<Button>("start-game");
             Assert.That(manager.Season.IsSeasonFinished, Is.True);
-            Assert.That(root.Q<Label>("season-title").text, Is.EqualTo("2026 시즌 · 정규시즌 종료"));
+            // Phase 32: 정규시즌 뒤에는 한국시리즈 — 나가면 1차전 버튼, 탈락이면 결과 시뮬레이션 버튼
+            Assert.That(manager.Season.Phase, Is.EqualTo(SeasonPhase.PostSeason));
+            Assert.That(root.Q<Label>("season-title").text, Is.EqualTo("2026 시즌 · 한국시리즈"));
+            Assert.That(start.text, Is.EqualTo(manager.Season.InPostseason ? "한국시리즈 1차전 시작" : LobbyController.PostseasonSkipButtonText));
+            FinishPostseason(manager);
+            var lobby = Object.FindAnyObjectByType<LobbyController>();
+            lobby.enabled = false;
+            lobby.enabled = true;
+            yield return null;
+            root = LobbyRoot();
+            start = root.Q<Button>("start-game");
+            Assert.That(root.Q<Label>("season-title").text, Is.EqualTo("2026 시즌 · 시즌 종료"));
             Assert.That(start.text, Is.EqualTo("시즌 결산 및 2027 시즌 준비"));
             Assert.That(start.enabledSelf, Is.True);
             Assert.That(start.ClassListContains("btn--offseason"), Is.True);
-            Assert.That(root.Q<Label>("next-game").text, Does.StartWith("2026 정규시즌 일정이 모두 끝났습니다."));
-            Assert.That(manager.StartNextGame(), Is.False, "일정 종료 뒤 인게임 진입 차단");
+            Assert.That(root.Q<Label>("next-game").text, Does.StartWith("2026 한국시리즈 ").And.Contains(" 우승. 결산 후 2027 시즌"));
+            Assert.That(manager.StartNextGame(), Is.False, "오프시즌에는 인게임 진입 차단");
 
             long budget = manager.Season.Budget;
             int fan = manager.Season.FanApproval;
@@ -228,6 +239,7 @@ namespace DailyFranchise.UI.Tests
                 manager.Season.StartNextGame();
                 manager.AdvanceSeason(manager.Season.ScheduleScore(4, 2));
             }
+            FinishPostseason(manager); // Phase 32: 한국시리즈까지 끝내야 결산
             yield return RestartFromLobby();
             manager = SeasonManager.Instance;
             manager.AgingRandom = new SeededRandom(2027);
@@ -273,6 +285,7 @@ namespace DailyFranchise.UI.Tests
                 manager.Season.StartNextGame();
                 manager.AdvanceSeason(manager.Season.ScheduleScore(4, 2));
             }
+            FinishPostseason(manager); // Phase 32: 한국시리즈까지 끝내야 결산
             yield return RestartFromLobby();
             manager = SeasonManager.Instance;
             manager.AgingRandom = new SeededRandom(3030);
@@ -1288,6 +1301,116 @@ namespace DailyFranchise.UI.Tests
             var benchRow = root.Q("bench").Children().First(r => r.Q<Label>(className: "col-name").text == tired.Name);
             Assert.That(benchRow.Q<Label>(className: "cond-text").resolvedStyle.display, Is.EqualTo(DisplayStyle.None), "보통이라 표시 없음");
             Assert.That(root.Q<Label>("pv-note").text, Does.StartWith("시즌 첫 맞대결").Or.StartWith("시즌 상대 전적"));
+            rt.Release();
+            Object.Destroy(rt);
+            Object.Destroy(panel);
+        }
+
+        /// <summary>한국시리즈를 끝까지 (내 구단이 나가면 4:2로 직접, 탈락이면 결과 시뮬레이션).</summary>
+        static void FinishPostseason(SeasonManager manager)
+        {
+            manager.PostseasonRandom = new SeededRandom(32);
+            while (manager.Season.Phase == SeasonPhase.PostSeason)
+            {
+                if (manager.Season.InPostseason)
+                {
+                    manager.Season.StartNextGame();
+                    manager.AdvanceSeason(manager.Season.ScheduleScore(4, 2));
+                }
+                else Assert.That(manager.SimulatePostseason(), Is.True);
+            }
+            Assert.That(manager.Season.Phase, Is.EqualTo(SeasonPhase.OffSeason));
+        }
+
+        [UnityTest]
+        public IEnumerator Phase32_정규시즌_상위권이면_한국시리즈가_열리고_4승하면_우승_뉴스와_상금을_받고_결산한다()
+        {
+            var manager = SeasonManager.Instance;
+            while (manager.Season.Phase == SeasonPhase.RegularSeason)
+            {
+                manager.Season.StartNextGame();
+                manager.AdvanceSeason(manager.Season.ScheduleScore(6, 1));
+            }
+            yield return RestartFromLobby();
+            manager = SeasonManager.Instance;
+            var season = manager.Season;
+            Assert.That(season.Phase, Is.EqualTo(SeasonPhase.PostSeason));
+            Assert.That(season.InPostseason, Is.True, $"10전 전승이면 상위 2위: {season.Postseason.TopSeed} / {season.Postseason.SecondSeed}");
+            string opp = season.Postseason.OpponentOf(season.MyTeam);
+            string oppShort = opp.Split(' ')[0];
+
+            var doc = Object.FindAnyObjectByType<LobbyController>().GetComponent<UIDocument>();
+            var rt = new RenderTexture(1920, 1080, 24);
+            rt.Create();
+            var panel = Object.Instantiate(doc.panelSettings);
+            panel.targetTexture = rt;
+            doc.panelSettings = panel;
+            yield return null;
+            yield return null;
+            void Layout(string label)
+            {
+                var issues = LayoutChecker.Check(LobbyRoot().Q("screen"));
+                Assert.That(issues, Is.Empty, $"[{label}]\n" + string.Join("\n", issues));
+            }
+
+            // 1) 한국시리즈 로비: 가을야구 테마, 헤더·프리뷰·일정이 시리즈 전적으로
+            var root = LobbyRoot();
+            Assert.That(root.Q("screen").ClassListContains("ps-theme"), Is.True);
+            Assert.That(root.Q<Label>("season-title").text, Is.EqualTo("2026 시즌 · 한국시리즈"));
+            Assert.That(root.Q<Label>("my-record").text, Does.StartWith($"한국시리즈 삼성 0승 - 0승 {oppShort} · 정규시즌 "));
+            Assert.That(root.Q<Label>("pv-title").text, Is.EqualTo("KOREAN SERIES · 한국시리즈"));
+            Assert.That(root.Q<Label>("pv-note").text, Is.EqualTo($"삼성 0승 - 0승 {oppShort} · 4승 선착 팀 우승"));
+            Assert.That(root.Q<Label>("pv-meta").text, Does.StartWith("1차전 · "));
+            Assert.That(root.Q<Label>("game-day").text, Does.StartWith("한국시리즈 1차전 "));
+            Assert.That(root.Q("schedule").childCount, Is.EqualTo(7));
+            Assert.That(root.Q("ks-1"), Is.Not.Null);
+            Assert.That(root.Q<Button>("start-game").text, Is.EqualTo("한국시리즈 1차전 시작"));
+            Assert.That(root.Q("decision-postseason"), Is.Not.Null);
+            Layout("한국시리즈 로비");
+
+            // 2) 1차전은 실제 경기 화면으로
+            yield return PlayGame(null, 0.5);
+            manager = SeasonManager.Instance;
+            Assert.That(manager.LastReport.Postseason, Is.True);
+            Assert.That(manager.Season.Postseason.NextIndex, Is.EqualTo(1));
+            root = LobbyRoot();
+            Assert.That(root.Q("game-1"), Is.Null, "정규시즌 일정 대신 시리즈 일정");
+            Assert.That(root.Q("ks-1").Q<Label>(className: "col-status").text, Does.StartWith("승 ").Or.StartWith("패 ").Or.StartWith("무 "));
+            Assert.That(root.Q<Label>("last-result").text, Does.StartWith("한국시리즈 1차전 · "));
+
+            // 3) 남은 경기를 이겨 우승: [챔피언] 뉴스, 상금 ₩20억, 팬 만족도 100%
+            while (manager.Season.Phase == SeasonPhase.PostSeason)
+            {
+                manager.Season.StartNextGame();
+                manager.AdvanceSeason(manager.Season.ScheduleScore(7, 0));
+            }
+            var report = manager.LastReport;
+            Assert.That(report.Champion, Is.EqualTo(manager.Season.MyTeam));
+            Assert.That(report.ChampionAward.Value.BudgetDelta, Is.EqualTo(SeasonState.ChampionPrize));
+            Assert.That(manager.Season.FanApproval, Is.EqualTo(100));
+            Assert.That(manager.Season.Phase, Is.EqualTo(SeasonPhase.OffSeason));
+            var lobby = Object.FindAnyObjectByType<LobbyController>();
+            lobby.GetComponent<UIDocument>().panelSettings = panel; // 경기 화면을 다녀와 새로 뜬 로비에도 1080p 렌더 대상
+            lobby.enabled = false;
+            lobby.enabled = true;
+            yield return null;
+            yield return null;
+            root = LobbyRoot();
+            var champNews = string.Join(" ", root.Q("news-0").Query<Label>().ToList().Select(l => l.text));
+            Assert.That(champNews, Does.StartWith("[챔피언] 삼성 라이온즈, 2026 시즌 대망의 한국시리즈 우승!"));
+            Assert.That(root.Q<Label>("my-record").text, Does.StartWith("한국시리즈 우승 · 삼성 4승"));
+            Assert.That(root.Q("screen").ClassListContains("ps-theme"), Is.True, "우승 직후에도 금색");
+            Assert.That(root.Q<Button>("start-game").text, Is.EqualTo("시즌 결산 및 2027 시즌 준비"));
+            Assert.That(root.Q<Label>("last-result").text, Does.EndWith(" · 우승!"));
+            Layout("우승 로비");
+
+            // 4) 결산: 2027 정규시즌, 테마 해제, 요약에 우승
+            Submit(root.Q<Button>("start-game"));
+            yield return null;
+            Assert.That((manager.Season.Year, manager.Season.Phase), Is.EqualTo((2027, SeasonPhase.RegularSeason)));
+            Assert.That(root.Q("screen").ClassListContains("ps-theme"), Is.False);
+            Assert.That(root.Q<Label>("last-result").text, Does.Contain("· 한국시리즈 우승"));
+            Assert.That(root.Q("game-1"), Is.Not.Null);
             rt.Release();
             Object.Destroy(rt);
             Object.Destroy(panel);
