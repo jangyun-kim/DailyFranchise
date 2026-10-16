@@ -187,7 +187,8 @@ namespace DailyFranchise.Sim.Tests
             // 두 선수 모두 우(기본값) → 우투 vs 우타 −3%, 득점권 기록 없음 → +5%
             var defaults = new MatchupCalculator(players);
             Assert.That(defaults.Modifiers.Select(m => m.GetType()),
-                Is.EqualTo(new[] { typeof(PlatoonModifier), typeof(ClutchModifier), typeof(StaminaModifier), typeof(ConditionModifier), typeof(ConditionModifier) }));
+                Is.EqualTo(new[] { typeof(PlatoonModifier), typeof(ClutchModifier), typeof(StaminaModifier), typeof(ConditionModifier), typeof(ConditionModifier),
+                    typeof(ProgressionModifier), typeof(ProgressionModifier) }), "Phase 29: 에이징 폼 보정 두 개 추가");
             Assert.That(defaults.HitProbability("b", "p", Corners), Is.EqualTo(raw * 0.97 * 1.05).Within(Eps));
             Assert.That(defaults.HitProbability("b", "p", new MatchupSituation(2, new BaseState("r1", null, null))), Is.EqualTo(raw * 0.97).Within(Eps), "1루만은 득점권 아님");
             // 이전 일괄 득점권 보정도 그대로 끼울 수 있다.

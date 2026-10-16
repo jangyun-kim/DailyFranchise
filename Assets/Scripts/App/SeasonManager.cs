@@ -114,6 +114,7 @@ namespace DailyFranchise.App
         MasterDatabase _bookDatabase;
         SeasonState _bookSeason;
         int _bookSignings = -1;
+        int _bookProgression = -1;
 
         /// <summary>
         /// 리그 선수단 장부 (선수 DB + 영입 기록, Phase 25). 영입 기록이 바뀌었을 때만 다시 짠다. DB를 읽기 전이면 null.
@@ -123,10 +124,11 @@ namespace DailyFranchise.App
             get
             {
                 if (Database == null) return null;
-                if (_book == null || _bookDatabase != Database || _bookSeason != Season || _bookSignings != Season.Signings.Count)
+                if (_book == null || _bookDatabase != Database || _bookSeason != Season || _bookSignings != Season.Signings.Count
+                    || _bookProgression != Season.ProgressionVersion)
                 {
-                    _book = LeagueRosterBook.Build(Database, Season.Signings);
-                    (_bookDatabase, _bookSeason, _bookSignings) = (Database, Season, Season.Signings.Count);
+                    _book = LeagueRosterBook.Build(Database, Season.Signings, Season.Progression);
+                    (_bookDatabase, _bookSeason, _bookSignings, _bookProgression) = (Database, Season, Season.Signings.Count, Season.ProgressionVersion);
                     // 재정 기준 (Phase 26): 캡 기준은 리그 개막 평균 페이롤 × 1.25, 페이롤은 지금 내 구단 1군 연봉 합계.
                     Season.SetSalaryCapBase(StoveLeague.OpeningCap(Database));
                     Season.SetPayroll(StoveLeague.Payroll(_book.Get(Season.MyTeam), Season.Signings));
@@ -306,6 +308,9 @@ namespace DailyFranchise.App
             return true;
         }
 
+        /// <summary>오프시즌 에이징 커브·은퇴 판정 난수 (Phase 29, 다른 난수와 분리). 테스트는 고정 Seed를 넣는다.</summary>
+        public IRandomSource AgingRandom { get; set; } = SeededRandom.FromClock();
+
         /// <summary>오프시즌 결산으로 새 시즌이 시작됐다 (로비 다시 그리기용, Phase 27).</summary>
         public event Action SeasonRolledOver;
 
@@ -320,7 +325,8 @@ namespace DailyFranchise.App
         public SeasonRollover TransitionToNextSeason()
         {
             if (_loading || Season.InProgress != null || !Season.IsSeasonFinished) return null;
-            LastRollover = Season.TransitionToNextSeason();
+            // 선수 DB를 읽었으면 에이징 커브·은퇴까지 (Phase 29). 장부는 결산 직전 것 (나이·폼 덧씌운 상태).
+            LastRollover = Season.TransitionToNextSeason(Rosters, AgingRandom);
             LastReport = null; // 직전 경기 재정 변화는 지난 시즌 것
             LastScore = null;
             _ = Rosters; // 캡 기준·페이롤 다시 맞추기 (선수단은 그대로)

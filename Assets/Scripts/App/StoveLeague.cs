@@ -107,7 +107,12 @@ namespace DailyFranchise.App
 
         public static IEnumerable<PlayerData> AllOf(TeamRoster r) => r.Lineup.Concat(r.Bench).Concat(r.Starters).Concat(r.Bullpen);
 
-        public static LeagueRosterBook Build(MasterDatabase db, IEnumerable<SigningRecord> signings)
+        /// <param name="progression">
+        /// 선수 변동치 (Phase 29, <see cref="SeasonState.Progression"/>). 은퇴 선수는 이적 기록 적용 뒤 빼고(빈자리는 이적과 같은 규칙,
+        /// 퓨처스에서도 뺀다), 변동치가 있는 선수는 나이·폼을 덧씌운 사본으로 바꾼다. 변동치가 없는 구단은 그대로(같은 참조).
+        /// </param>
+        public static LeagueRosterBook Build(MasterDatabase db, IEnumerable<SigningRecord> signings,
+            IReadOnlyDictionary<string, PlayerProgression> progression = null)
         {
             var rosters = new Dictionary<string, TeamRoster>();
             if (db != null)
@@ -130,8 +135,32 @@ namespace DailyFranchise.App
                 rosters[s.ToTeam] = Add(to, player);
                 applied.Add(s);
             }
+            if (progression != null && progression.Count > 0) ApplyProgression(rosters, progression);
             return new LeagueRosterBook(rosters, applied);
         }
+
+        /// <summary>은퇴 선수를 빼고, 변동치가 있는 선수에 나이·폼을 덧씌운다 (Phase 29).</summary>
+        static void ApplyProgression(Dictionary<string, TeamRoster> rosters, IReadOnlyDictionary<string, PlayerProgression> progression)
+        {
+            foreach (var team in rosters.Keys.ToList())
+            {
+                var r = rosters[team];
+                foreach (var gone in AllOf(r).Where(p => progression.TryGetValue(p.Id, out var d) && d.Retired).ToList())
+                    r = Remove(r, AllOf(r).First(p => p.Id == gone.Id));
+                if (r.Reserves.Any(p => progression.TryGetValue(p.Id, out var d) && d.Retired))
+                    r = new TeamRoster(r.Team, r.Lineup, r.Bench, r.Starters, r.Bullpen,
+                        r.Reserves.Where(p => !(progression.TryGetValue(p.Id, out var d) && d.Retired)).ToList());
+                if (AllOf(r).Concat(r.Reserves).Any(p => progression.ContainsKey(p.Id)))
+                    r = new TeamRoster(r.Team, Overlay(r.Lineup, progression), Overlay(r.Bench, progression),
+                        Overlay(r.Starters, progression), Overlay(r.Bullpen, progression), Overlay(r.Reserves, progression));
+                rosters[team] = r;
+            }
+        }
+
+        static List<PlayerData> Overlay(IEnumerable<PlayerData> players, IReadOnlyDictionary<string, PlayerProgression> progression) =>
+            players.Select(p => progression.TryGetValue(p.Id, out var d)
+                ? p.WithProgression(p.Age > 0 ? p.Age + d.AgeDelta : 0, d.Form)
+                : p).ToList();
 
         /// <summary>새 구단 소속 사본을 타자는 벤치 끝, 투수는 불펜 끝에 넣는다.</summary>
         static TeamRoster Add(TeamRoster to, PlayerData player)

@@ -89,6 +89,51 @@ namespace DailyFranchise.Sim
     }
 
     /// <summary>
+    /// 에이징 커브 보정 (Phase 29). 선수의 폼(<see cref="PlayerData.Form"/>, 오프시즌 성장·노쇠화 누적)으로 안타(출루) 확률을 상대 보정한다.
+    /// - 타자: 폼 +3%면 안타 확률 ×1.03.
+    /// - 투수: 폼 +3%면 타자 안타 확률 ×0.97 (투수가 좋아지면 타자에게 불리).
+    /// 폼은 ±<see cref="MaxForm"/>(10%)로 자른다 — 20세가 5년 뒤 괴물이 되거나 35세가 확률 0이 되지 않게.
+    /// 툴팁 예: "타자 성장세 +3%", "투수 노쇠화 +4%".
+    /// </summary>
+    public sealed class ProgressionModifier : IDescribedMatchupModifier
+    {
+        /// <summary>폼 한계 (±10%).</summary>
+        public const double MaxForm = 0.10;
+
+        public static double ClampForm(double form) =>
+            double.IsNaN(form) ? 0 : Math.Max(-MaxForm, Math.Min(MaxForm, form));
+
+        public ProgressionModifier(ConditionSide side)
+        {
+            Side = side;
+        }
+
+        public ConditionSide Side { get; }
+
+        double FormIn(MatchupContext context)
+        {
+            var p = context == null ? null : Side == ConditionSide.Batter ? context.Batter : context.Pitcher;
+            return p == null || MatchupCalculator.IsLeagueAverage(p) ? 0 : ClampForm(p.Form);
+        }
+
+        /// <summary>타자 안타 확률 기준 상대 보정.</summary>
+        public double RelativeBonus(MatchupContext context)
+        {
+            double form = FormIn(context);
+            return Side == ConditionSide.Batter ? form : -form;
+        }
+
+        public double Adjust(double probability, MatchupContext context) => probability * (1 + RelativeBonus(context));
+
+        public string Label(MatchupContext context)
+        {
+            double form = FormIn(context);
+            if (form == 0) return null;
+            return $"{(Side == ConditionSide.Batter ? "타자" : "투수")} {(form > 0 ? "성장세" : "노쇠화")}";
+        }
+    }
+
+    /// <summary>
     /// 상황 보정. 안타(출루) 확률을 받아 보정한 값을 돌려준다. 계산기가 결과를 [0, 1]로 다시 자른다.
     /// 새 보정(예: 2사 보정, 좌우 놀이)은 이 인터페이스로 계산기에 끼운다.
     /// </summary>
@@ -242,7 +287,7 @@ namespace DailyFranchise.Sim
     /// 2) 투수 허용률  P = (피안타율 + 리그 타율 × 평균자책 / 리그 평균자책) / 2
     /// 3) 타석 확률    H = 상황 보정( (B + P) / 2 ), [0, 1]. 기본 보정은 플래툰(<see cref="PlatoonModifier"/>) →
     ///    득점권 클러치(<see cref="ClutchModifier"/>) → 투수 체력(<see cref="StaminaModifier"/>) →
-    ///    타자·투수 컨디션(<see cref="ConditionModifier"/>) 순으로 곱한다.
+    ///    타자·투수 컨디션(<see cref="ConditionModifier"/>) → 타자·투수 에이징 폼(<see cref="ProgressionModifier"/>, Phase 29) 순으로 곱한다.
     ///    체력 보정은 투수 상태 공급자(<see cref="IPitcherStateSource"/>)를 넘겼을 때만 작동한다 (없으면 확률 그대로).
     /// 4) 작전 성공률: 리그 평균 대결(상황 보정 없음)의 확률 H₀ 대비 비율 r = H / H₀ 로 장면 기본 성공률을 늘리고 줄인다.
     ///    강공 = 기본 × r,  스퀴즈(컨택 위주라 덜 민감) = 기본 × (1 + 0.5 × (r − 1)),  [5%, 95%]로 자른다.
@@ -283,14 +328,15 @@ namespace DailyFranchise.Sim
         }
 
         /// <summary>
-        /// 기본 보정: 플래툰 → 득점권 클러치 → 투수 체력 → 타자 컨디션 → 투수 컨디션
-        /// (체력·컨디션은 공급자를 넘겨 상태를 알 때만 작동).
+        /// 기본 보정: 플래툰 → 득점권 클러치 → 투수 체력 → 타자 컨디션 → 투수 컨디션 → 타자 폼 → 투수 폼
+        /// (체력·컨디션은 공급자를 넘겨 상태를 알 때만 작동, 폼은 선수 데이터에 덧씌운 값이 있을 때만).
         /// </summary>
         public static IEnumerable<IMatchupModifier> DefaultModifiers() =>
             new IMatchupModifier[]
             {
                 new PlatoonModifier(), new ClutchModifier(), new StaminaModifier(),
                 new ConditionModifier(ConditionSide.Batter), new ConditionModifier(ConditionSide.Pitcher),
+                new ProgressionModifier(ConditionSide.Batter), new ProgressionModifier(ConditionSide.Pitcher),
             };
 
         public const string AverageBatterId = "league-batter";

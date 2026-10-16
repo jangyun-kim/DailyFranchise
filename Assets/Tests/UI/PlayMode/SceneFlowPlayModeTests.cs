@@ -217,6 +217,53 @@ namespace DailyFranchise.UI.Tests
             Assert.That(SeasonManager.Instance.Season.GamesPlayed, Is.EqualTo(1));
         }
 
+        [UnityTest]
+        public IEnumerator Phase29_시즌_결산_뒤_은퇴_뉴스가_뜨고_라인업_나이가_한_살씩_오른다()
+        {
+            var manager = SeasonManager.Instance;
+            manager.AgingRandom = new SeededRandom(2027);
+            var db = manager.Database;
+            while (!manager.Season.IsSeasonFinished)
+            {
+                manager.Season.StartNextGame();
+                manager.AdvanceSeason(manager.Season.ScheduleScore(4, 2));
+            }
+            yield return RestartFromLobby();
+            manager = SeasonManager.Instance;
+            manager.AgingRandom = new SeededRandom(2027);
+            var root = LobbyRoot();
+            var lineupBefore = manager.MyRoster.Lineup.Select(p => p.Id).ToList();
+            Assert.That(root.Q("lineup-1").Q<Label>(className: "col-age").text, Is.EqualTo(db.FindPlayer(lineupBefore[0]).Age + "세"));
+
+            Submit(root.Q<Button>("start-game")); // [시즌 결산 및 2027 시즌 준비]
+            yield return null;
+
+            Assert.That(manager.Season.Year, Is.EqualTo(2027));
+            var report = manager.LastRollover.Aging;
+            Assert.That(report.Retired.Select(r => r.Player.Name), Does.Contain("오승환"));
+            var newsTexts = Enumerable.Range(0, LobbyController.NewsShown)
+                .Select(i => root.Q("news-" + i)).Where(r => r != null)
+                .Select(r => string.Join(" ", r.Query<Label>().ToList().Select(l => l.text))).ToList();
+            Assert.That(newsTexts.Any(t => t.StartsWith("[은퇴] ") && t.Contains("정든 그라운드를 떠나 현역 은퇴 선언!")), Is.True, string.Join(" | ", newsTexts));
+            Assert.That(root.Q<Label>("last-result").text, Does.Contain($"은퇴 {report.Retired.Count}명"));
+
+            // 라인업·벤치 나이: 원본 + 1 (마스터 DB는 그대로)
+            var mine = manager.MyRoster;
+            for (int i = 0; i < mine.Lineup.Count; i++)
+            {
+                var p = mine.Lineup[i];
+                Assert.That(root.Q("lineup-" + (i + 1)).Q<Label>(className: "col-age").text, Is.EqualTo((db.FindPlayer(p.Id).Age + 1) + "세"), p.Name);
+            }
+            for (int i = 0; i < mine.Bench.Count; i++)
+                Assert.That(root.Q("bench-" + (i + 1)).Q<Label>(className: "col-age").text, Is.EqualTo((db.FindPlayer(mine.Bench[i].Id).Age + 1) + "세"));
+            Assert.That(manager.Rosters.Find(db.Players.First(p => p.Name == "오승환").Id).player, Is.Null, "은퇴 선수는 장부에서 빠진다");
+
+            // 재시작해도 은퇴·나이 유지
+            yield return RestartFromLobby();
+            Assert.That(SeasonManager.Instance.Rosters.Find(db.Players.First(p => p.Name == "오승환").Id).player, Is.Null);
+            Assert.That(SeasonManager.Instance.MyRoster.Lineup[0].Age, Is.EqualTo(SeasonManager.Instance.Database.FindPlayer(SeasonManager.Instance.MyRoster.Lineup[0].Id).Age + 1));
+        }
+
         /// <summary>로비에서 경기를 시작해 승부처까지 간 뒤, 고정 난수로 작전을 고르고 끝까지 보낸 다음 [경기 종료].</summary>
         static IEnumerator PlayGame(TacticKind? tactic, double roll)
         {

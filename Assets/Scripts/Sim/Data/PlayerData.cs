@@ -48,6 +48,12 @@ namespace DailyFranchise.Sim.Data
         /// <summary>기록 연도 (CSV Year/season).</summary>
         public int Year;
         public int Age;
+        /// <summary>
+        /// 에이징 커브 폼 (Phase 29): 안타(출루) 확률 상대 보정, [-<see cref="ProgressionModifier.MaxForm"/>, +MaxForm].
+        /// +면 더 좋은 선수 (타자는 안타 확률 ↑, 투수는 피안타 확률 ↓). 마스터 CSV에는 없고, 시즌 저장의 선수 변동치를
+        /// 선수단 장부가 사본에 덧씌운 값이다 (<see cref="WithProgression"/>). 원본 DB 선수는 늘 0.
+        /// </summary>
+        public double Form;
         /// <summary>등번호 (CSV Back Num.).</summary>
         public int Number;
 
@@ -142,6 +148,15 @@ namespace DailyFranchise.Sim.Data
         public bool IsPitcher => Role == RosterRole.Starter || Role == RosterRole.Bullpen;
 
         /// <summary>모든 기록을 그대로 두고 역할·순서·위치만 바꾼 사본 (라인업 카드 적용용).</summary>
+        /// <summary>나이·폼만 바꾼 사본 (Phase 29 — 원본 DB 선수는 건드리지 않는다).</summary>
+        public PlayerData WithProgression(int age, double form)
+        {
+            var c = (PlayerData)MemberwiseClone();
+            c.Age = age;
+            c.Form = ProgressionModifier.ClampForm(form);
+            return c;
+        }
+
         public PlayerData CloneAs(RosterRole role, int order, string position)
         {
             var c = (PlayerData)MemberwiseClone();

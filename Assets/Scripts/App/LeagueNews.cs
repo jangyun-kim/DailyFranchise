@@ -30,6 +30,10 @@ namespace DailyFranchise.App
         Fandom = 8,
         /// <summary>시즌 결산·오프시즌.</summary>
         Offseason = 9,
+        /// <summary>선수 은퇴 (Phase 29).</summary>
+        Retirement = 10,
+        /// <summary>오프시즌 폭풍 성장 (Phase 29).</summary>
+        Breakout = 11,
     }
 
     /// <summary>
@@ -80,6 +84,8 @@ namespace DailyFranchise.App
         public const string StandingsTag = "[순위]";
         public const string LineupTag = "[라인업]";
         public const string ClubTag = "[구단]";
+        public const string RetirementTag = "[은퇴]";
+        public const string BreakoutTag = "[성장]";
 
         /// <summary>두 팀 득점 합이 이 이상이면 난타전.</summary>
         public const int SlugfestRuns = 15;
@@ -191,6 +197,22 @@ namespace DailyFranchise.App
             return (after?.Kinds ?? new List<ChemistryKind>()).Where(k => !old.Contains(k))
                 .Select(k => ChemistryActivated(team, k, year, date)).ToList();
         }
+
+        /// <summary>
+        /// 은퇴: "삼성 라이온즈의 오승환, 정든 그라운드를 떠나 현역 은퇴 선언!" (자유계약 선수는 "자유계약 신분의 …").
+        /// </summary>
+        public static NewsItem Retired(string team, string playerName, int age, int year) =>
+            new NewsItem(NewsKind.Retirement, RetirementTag, team,
+                team == LeagueRosterBook.FreeAgentTeam
+                    ? $"자유계약 신분의 {playerName}({age}세), 현역 은퇴 선언"
+                    : $"{team}의 {playerName}, 정든 그라운드를 떠나 현역 은퇴 선언!",
+                year, StoveLeagueDate);
+
+        /// <summary>폭풍 성장: "삼성 라이온즈 김영웅, 비시즌 폭풍 성장! 기량 +3%".</summary>
+        public static NewsItem Breakout(string team, string playerName, double gain, int year) =>
+            new NewsItem(NewsKind.Breakout, BreakoutTag, team,
+                $"{(team == LeagueRosterBook.FreeAgentTeam ? "자유계약" : team)} {playerName}, 비시즌 폭풍 성장! 기량 {AgingCurve.FormText(gain)}",
+                year, StoveLeagueDate);
 
         /// <summary>시즌 결산: "2026 시즌 종료! 2027 스토브리그 개막 · 삼성 라이온즈 최종 3위".</summary>
         public static NewsItem SeasonClosed(string myTeam, SeasonRollover summary) =>

@@ -34,6 +34,7 @@ namespace DailyFranchise.App
     /// 선수단이 경기를 치를 수 없으면(타순 9명·선발 투수) [다음 경기 시작]을 잠그고 이유를 보인다.
     /// 오프시즌(Phase 27): 상단 제목은 시즌 연도로 그리고, 정규시즌 일정을 모두 치르면 [다음 경기 시작] 자리에
     /// [시즌 결산 및 2027 시즌 준비]를 띄워 <see cref="SeasonManager.TransitionToNextSeason"/>을 요청한다.
+    /// 에이징(Phase 29): 라인업·벤치 행의 나이 칸("31세", 폼이 오르면 초록 · 내리면 빨강, 툴팁에 에이징 폼), 투타는 이름 툴팁으로.
     /// 리그 뉴스(Phase 28): 일정 아래 [리그 주요 뉴스]에 최신 <see cref="NewsShown"/>건(말머리 색 · 본문 · 날짜).
     /// 경기 뒤 로비 진입, FA 협상·방출·라인업 교체(NewsChanged), 시즌 결산 때 다시 그린다.
     /// </summary>
@@ -407,6 +408,7 @@ namespace DailyFranchise.App
                     name,
                     BadgeCell(TagOf(p)),
                     ConditionCell(_manager.Season.ConditionOf(p.Id)),
+                    AgeCell(p),
                     ReleaseButton(p))
                 : Row("lobby-row",
                     Cell(order, "col-order"),
@@ -414,13 +416,30 @@ namespace DailyFranchise.App
                     name,
                     BadgeCell(TagOf(p)),
                     ConditionCell(_manager.Season.ConditionOf(p.Id)),
-                    Cell(ScenarioRosterSource.HandednessText(p), "col-hand"));
+                    AgeCell(p));
             name.tooltip = ScenarioRosterSource.HandednessText(p);
             row.name = spot.IsBench ? $"bench-{spot.Index + 1}" : $"lineup-{spot.Index + 1}";
             row.userData = spot;
             row.AddToClassList("lobby-row--selectable");
             row.RegisterCallback<ClickEvent>(_ => ClickLineupSpot(spot));
             return row;
+        }
+
+        /// <summary>폼 표시 문턱 (±0.5%p 미만은 변동 없음으로 본다).</summary>
+        const double FormShown = 0.005;
+
+        /// <summary>
+        /// 나이 칸 (Phase 29): 장부가 덧씌운 나이 "31세". 폼이 오르면 col-age--up, 내리면 col-age--down,
+        /// 툴팁 "31세 · 에이징 폼 +3% (안타 확률)".
+        /// </summary>
+        public static Label AgeCell(PlayerData p)
+        {
+            var cell = Cell(p.Age > 0 ? p.Age + "세" : "—", "col-age");
+            cell.name = "age-" + p.Id;
+            cell.EnableInClassList("col-age--up", p.Form >= FormShown);
+            cell.EnableInClassList("col-age--down", p.Form <= -FormShown);
+            cell.tooltip = (p.Age > 0 ? $"{p.Age}세 · " : "") + $"에이징 폼 {AgingCurve.FormText(p.Form)} (안타 확률)";
+            return cell;
         }
 
         /// <summary>[방출] 버튼. 막히면 잠그고 이유를, 아니면 위약금을 툴팁으로 보인다. 행 클릭(교체 선택)으로 번지지 않는다.</summary>

@@ -84,6 +84,21 @@ namespace DailyFranchise.App
 
         /// <summary>최근 리그 뉴스 (Phase 28, 오래된 것부터 최대 <see cref="SeasonState.MaxNews"/>건). 없는 이전 저장 파일은 빈 피드.</summary>
         public List<NewsData> News = new List<NewsData>();
+
+        /// <summary>선수 변동치 (Phase 29, 선수 ID 순). 없는 이전 저장 파일은 모두 원본 그대로 (마스터 CSV는 바꾸지 않는다).</summary>
+        public List<ProgressionData> Progression = new List<ProgressionData>();
+    }
+
+    [Serializable]
+    public sealed class ProgressionData
+    {
+        public string Id;
+        /// <summary>원본 나이에 더할 햇수.</summary>
+        public int AgeDelta;
+        /// <summary>누적 폼 (안타 확률 상대 보정, ±0.10).</summary>
+        public double Form;
+        public bool Retired;
+        public int RetiredYear;
     }
 
     [Serializable]

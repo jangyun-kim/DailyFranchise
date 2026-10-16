@@ -336,6 +336,10 @@ Label {
 .col-pos { width: 54px; color: var(--muted); }
 .col-name { flex-grow: 1; }
 .col-hand { width: 80px; -unity-text-align: middle-right; color: var(--muted); }
+/* 나이 (Phase 29): 폼이 오르면 초록, 내리면 빨강 */
+.lobby-row > Label.col-age { width: 44px; font-size: 14px; -unity-text-align: middle-right; color: var(--muted); }
+.lobby-row > Label.col-age--up { color: #3FB950; }
+.lobby-row > Label.col-age--down { color: #E5534B; }
 
 /* 일정 열 */
 .col-no { width: 70px; padding-left: 8px; }

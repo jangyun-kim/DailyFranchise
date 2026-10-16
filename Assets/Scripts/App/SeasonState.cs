@@ -462,6 +462,28 @@ namespace DailyFranchise.App
             return changes;
         }
 
+        readonly Dictionary<string, PlayerProgression> _progression = new Dictionary<string, PlayerProgression>();
+
+        /// <summary>
+        /// 선수 변동치 (Phase 29, 선수 DB ID → 나이 증가·폼·은퇴). 마스터 CSV는 그대로 두고 이 값만 저장한다.
+        /// 선수단 장부가 덧씌운다 (<see cref="LeagueRosterBook.Build"/>).
+        /// </summary>
+        public IReadOnlyDictionary<string, PlayerProgression> Progression => _progression;
+
+        /// <summary>변동치가 바뀔 때마다 오른다 (선수단 장부를 다시 짤지 판단용, 저장하지 않는다).</summary>
+        public int ProgressionVersion { get; private set; }
+
+        /// <summary>선수 변동치. 없으면 null (원본 그대로).</summary>
+        public PlayerProgression ProgressionOf(string playerId) =>
+            playerId != null && _progression.TryGetValue(playerId, out var p) ? p : null;
+
+        public void SetProgression(PlayerProgression progression)
+        {
+            if (progression == null) throw new ArgumentNullException(nameof(progression));
+            _progression[progression.PlayerId] = progression;
+            ProgressionVersion++;
+        }
+
         /// <summary>리그 뉴스 보관 개수 (Phase 28). 넘치면 오래된 뉴스부터 버린다 — 저장 파일이 커지지 않게.</summary>
         public const int MaxNews = 15;
 
@@ -659,8 +681,12 @@ namespace DailyFranchise.App
         /// TP는 이월 상한까지). 예산·팬 만족도·팬덤 슬롯·이적 기록(영입·방출 = 선수단과 FA 시장)·라인업은 그대로 넘어간다.
         /// 저장은 하지 않는다 (SeasonManager가 바로 저장한다).
         /// </summary>
+        /// <param name="league">
+        /// 지금 리그 선수단 장부 (Phase 29). 난수와 함께 넘기면 모든 선수를 한 살 먹이고 에이징 커브·은퇴를 처리한다
+        /// (<see cref="OffseasonAging"/>). 은퇴 선수가 사용자 라인업 카드에 있으면 벤치에서 빼고, 타순이면 카드를 버린다(기본 라인업).
+        /// </param>
         /// <returns>끝난 시즌 요약.</returns>
-        public SeasonRollover TransitionToNextSeason()
+        public SeasonRollover TransitionToNextSeason(LeagueRosterBook league = null, IRandomSource agingRandom = null)
         {
             if (InProgress != null) throw new InvalidOperationException($"경기 중에는 시즌을 넘기지 않는다: {InProgress.Number}");
             if (!IsSeasonFinished) throw new InvalidOperationException($"정규시즌이 끝나지 않았다: {NextIndex} / {_schedule.Count}");
@@ -697,7 +723,20 @@ namespace DailyFranchise.App
             CloseTrustSeason();
             Year++;
             AddNews(NewsWriter.SeasonClosed(MyTeam, summary)); // 지난 시즌 뉴스는 지우지 않는다 (보관 개수로만 밀려난다)
+            if (league != null && agingRandom != null)
+            {
+                summary.Aging = OffseasonAging.Process(this, league, agingRandom);
+                DropRetiredFromLineup();
+            }
             return summary;
+        }
+
+        void DropRetiredFromLineup()
+        {
+            if (MyLineup == null) return;
+            bool Retired(string id) => ProgressionOf(id)?.Retired == true;
+            if (MyLineup.Batting.Any(s => Retired(s.PlayerId))) MyLineup = null;
+            else if (MyLineup.Bench.Any(Retired)) MyLineup = new LineupCard(MyLineup.Batting, MyLineup.Bench.Where(id => !Retired(id)));
         }
 
         /// <summary>저장용 형태로 바꾼다. 경기 중에는 저장할 수 없다 (로비에서만 저장한다).</summary>
@@ -752,6 +791,10 @@ namespace DailyFranchise.App
                     .Select(kv => new ConditionData { Id = kv.Key, Value = kv.Value }).ToList(),
                 LastStarters = _lastStarters.OrderBy(kv => kv.Key, StringComparer.Ordinal)
                     .Select(kv => new LastStarterData { Team = kv.Key, PlayerId = kv.Value }).ToList(),
+                Progression = _progression.Values.OrderBy(p => p.PlayerId, StringComparer.Ordinal).Select(p => new ProgressionData
+                {
+                    Id = p.PlayerId, AgeDelta = p.AgeDelta, Form = p.Form, Retired = p.Retired, RetiredYear = p.RetiredYear,
+                }).ToList(),
                 News = _news.Select(n => new NewsData
                 {
                     Kind = (int)n.Kind, Tag = n.Tag, Team = n.Team, Headline = n.Headline, Year = n.Year, Date = n.Date,
@@ -846,6 +889,11 @@ namespace DailyFranchise.App
             if (data.LastStarters != null)
                 foreach (var l in data.LastStarters)
                     if (l != null) season.SetLastStarter(l.Team, l.PlayerId);
+            // 선수 변동치가 없는 이전 저장 파일(Phase 29 이전)은 모두 원본 그대로. ID가 빈 항목은 건너뛰고 범위 밖 값은 맞춘다.
+            if (data.Progression != null)
+                foreach (var p in data.Progression)
+                    if (p != null && !string.IsNullOrEmpty(p.Id))
+                        season.SetProgression(new PlayerProgression(p.Id, p.AgeDelta, p.Form, p.Retired, p.RetiredYear));
             // 뉴스가 없는 이전 저장 파일(Phase 28 이전)은 빈 피드. 본문이 빈 항목은 건너뛰고, 모르는 종류는 General,
             // 보관 개수를 넘는 파일은 최근 것만 남는다 (AddNews).
             if (data.News != null)
@@ -976,14 +1024,17 @@ namespace DailyFranchise.App
         public int Draws { get; }
         /// <summary>끝난 시즌에 받은 신뢰 대출 — 50%가 새 시즌 캡에서 빠진다.</summary>
         public long CapFlex { get; }
+        /// <summary>오프시즌 에이징 결과 (Phase 29). 장부 없이 결산했으면 null.</summary>
+        public AgingReport Aging { get; internal set; }
 
-        /// <summary>"2026 시즌 최종 3위 · 78승 64패 2무" (무승부가 없으면 생략).</summary>
+        /// <summary>"2026 시즌 최종 3위 · 78승 64패 2무 · 은퇴 2명" (무승부·은퇴가 없으면 생략).</summary>
         public string Text
         {
             get
             {
                 string record = Draws == 0 ? $"{Wins}승 {Losses}패" : $"{Wins}승 {Losses}패 {Draws}무";
-                return Rank > 0 ? $"{Year} 시즌 최종 {Rank}위 · {record}" : $"{Year} 시즌 · {record}";
+                string text = Rank > 0 ? $"{Year} 시즌 최종 {Rank}위 · {record}" : $"{Year} 시즌 · {record}";
+                return Aging != null && Aging.Retired.Count > 0 ? $"{text} · 은퇴 {Aging.Retired.Count}명" : text;
             }
         }
     }

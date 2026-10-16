@@ -83,7 +83,8 @@ namespace DailyFranchise.Sim.Tests
             var calc = new MatchupCalculator(players, pitcherStates: counts);
             var plain = new MatchupCalculator(players);
             Assert.That(calc.Modifiers.Select(m => m.GetType()),
-                Is.EqualTo(new[] { typeof(PlatoonModifier), typeof(ClutchModifier), typeof(StaminaModifier), typeof(ConditionModifier), typeof(ConditionModifier) }));
+                Is.EqualTo(new[] { typeof(PlatoonModifier), typeof(ClutchModifier), typeof(StaminaModifier), typeof(ConditionModifier), typeof(ConditionModifier),
+                    typeof(ProgressionModifier), typeof(ProgressionModifier) }), "Phase 29: 에이징 폼 보정 두 개 추가");
             Assert.That(plain.Modifiers.Select(m => m.GetType()), Is.EqualTo(calc.Modifiers.Select(m => m.GetType())),
                 "기본 보정 목록은 같다 (공급자가 없으면 체력 보정은 작동하지 않을 뿐)");
 
