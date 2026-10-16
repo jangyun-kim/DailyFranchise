@@ -10,7 +10,7 @@ namespace DailyFranchise.UI.Tests
     /// <summary>샘플 DB 선수 기록으로 승부처 작전 성공률이 계산되고 설명 문구가 만들어지는지 검증.</summary>
     public class MatchupOddsTests
     {
-        static readonly MasterDatabase Db = MasterDatabase.LoadFromResources();
+        static readonly MasterDatabase Db = TestLeague.TwoTeams;
 
         static ScenarioRosterSource Source(Matchup matchup) =>
             new ScenarioRosterSource(new DummyScenarioData(ScenarioCatalog.EighthBottomTactics, matchup), "SampleRoster.csv");
@@ -38,8 +38,8 @@ namespace DailyFranchise.UI.Tests
         [Test]
         public void 서울전_승부처는_성지환_대_염태준_기록으로_계산한다()
         {
-            var source = Source(Matchup.FromNames("서울 블루윙스", "부산 웨이브스", TeamSide.Home,
-                Db.GetRoster("서울 블루윙스"), Db.GetRoster("부산 웨이브스")));
+            var source = Source(Matchup.FromNames("LG 트윈스", "삼성 라이온즈", TeamSide.Home,
+                Db.GetRoster("LG 트윈스"), Db.GetRoster("삼성 라이온즈")));
             var f = ScenarioCatalog.Find(ScenarioCatalog.EighthBottomTactics).Create();
             var calc = new MatchupCalculator(source);
 
@@ -60,7 +60,7 @@ namespace DailyFranchise.UI.Tests
         [Test]
         public void 상대_선수단이_없는_원정_경기는_리그_평균_투수와_대결로_계산한다()
         {
-            var source = Source(Matchup.FromNames("부산 웨이브스", "인천 하버스", TeamSide.Away, Db.GetRoster("부산 웨이브스"), null));
+            var source = Source(Matchup.FromNames("삼성 라이온즈", "SSG 랜더스", TeamSide.Away, Db.GetRoster("삼성 라이온즈"), null));
             var f = ScenarioMirror.Mirror(ScenarioCatalog.Find(ScenarioCatalog.EighthBottomTactics).Create());
             var calc = new MatchupCalculator(source);
 

@@ -14,7 +14,7 @@ namespace DailyFranchise.UI.Tests
         static readonly string[] Ids = ScenarioCatalog.All.Select(e => e.Id).ToArray();
 
         /// <summary>일정 2경기와 같은 원정 경기: 부산(내 구단, 원정) vs 인천(홈).</summary>
-        static Matchup AwayGame => Matchup.FromNames("부산 웨이브스", "인천 하버스", TeamSide.Away);
+        static Matchup AwayGame => Matchup.FromNames("삼성 라이온즈", "SSG 랜더스", TeamSide.Away);
 
         /// <summary>장면의 모든 재생 경로 (일직선 장면은 1개, 분기 장면은 작전 × 성공/실패).</summary>
         static IEnumerable<(string name, IReadOnlyList<PitchEvent> events)> Paths(ScenarioFixture f)
@@ -33,25 +33,26 @@ namespace DailyFranchise.UI.Tests
         }
 
         [Test]
-        public void 대진_약칭은_연고지이고_기본_대진은_서울_원정_부산_홈()
+        public void 대진_약칭은_팀명_앞말이고_단독_실행용_기본_대진은_가상_더미다()
         {
-            var m = Matchup.FromNames("대구 썬더스", "부산 웨이브스", TeamSide.Home);
-            Assert.That(m.Away.ShortName, Is.EqualTo("대구"));
-            Assert.That(m.Home.Name, Is.EqualTo("부산 웨이브스"));
+            var m = Matchup.FromNames("KIA 타이거즈", "삼성 라이온즈", TeamSide.Home);
+            Assert.That(m.Away.ShortName, Is.EqualTo("KIA"));
+            Assert.That(m.Home.Name, Is.EqualTo("삼성 라이온즈"));
+            // 경기 화면 씬을 단독으로 열 때만 쓰는 가상 더미 대진 (시즌 흐름은 항상 일정의 실제 구단으로 연다).
             Assert.That(Matchup.Default.Away.Name, Is.EqualTo("서울 블루윙스"));
             Assert.That(Matchup.Default.Home.Name, Is.EqualTo("부산 웨이브스"));
             Assert.That(Matchup.Default.MySide, Is.EqualTo(TeamSide.Home));
-            Assert.Throws<System.ArgumentException>(() => Matchup.FromNames("", "부산 웨이브스", TeamSide.Home));
+            Assert.Throws<System.ArgumentException>(() => Matchup.FromNames("", "삼성 라이온즈", TeamSide.Home));
         }
 
         [Test]
         public void 홈_경기_대진은_팀명만_바꾸고_뒤집지_않는다()
         {
             var data = new DummyScenarioData(ScenarioCatalog.EighthBottomTactics,
-                Matchup.FromNames("대구 썬더스", "부산 웨이브스", TeamSide.Home));
+                Matchup.FromNames("KIA 타이거즈", "삼성 라이온즈", TeamSide.Home));
             Assert.That(data.Mirrored, Is.False);
             Assert.That(data.MyTeam, Is.EqualTo(TeamSide.Home));
-            Assert.That(data.GetTeam(TeamSide.Away).Name, Is.EqualTo("대구 썬더스"));
+            Assert.That(data.GetTeam(TeamSide.Away).Name, Is.EqualTo("KIA 타이거즈"));
             Assert.That(data.GetPlayer(Fixture8thBottom.Pitcher).Side, Is.EqualTo(TeamSide.Away));
             Assert.That(data.GetLineup(TeamSide.Home).Count, Is.EqualTo(9));
         }
@@ -64,8 +65,8 @@ namespace DailyFranchise.UI.Tests
 
             Assert.That(data.Mirrored, Is.True);
             Assert.That(data.MyTeam, Is.EqualTo(TeamSide.Away));
-            Assert.That(data.GetTeam(TeamSide.Away).Name, Is.EqualTo("부산 웨이브스"));
-            Assert.That(data.GetTeam(TeamSide.Home).Name, Is.EqualTo("인천 하버스"));
+            Assert.That(data.GetTeam(TeamSide.Away).Name, Is.EqualTo("삼성 라이온즈"));
+            Assert.That(data.GetTeam(TeamSide.Home).Name, Is.EqualTo("SSG 랜더스"));
 
             Assert.That(data.GetLineup(TeamSide.Away).Select(r => r.PlayerId),
                 Is.EqualTo(native.GetLineup(TeamSide.Home).Select(r => r.PlayerId)), "내 선수단은 원정 쪽");

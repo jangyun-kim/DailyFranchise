@@ -204,7 +204,7 @@ namespace DailyFranchise.UI.Tests
 
             var root = LobbyRoot();
             Assert.That(root.Q("game-1").Q<Label>(className: "col-status").text, Is.EqualTo("패 3:2"));
-            Assert.That(root.Q<Label>("last-result").text, Does.StartWith("경기 1 · 서울 블루윙스 vs 부산 웨이브스 · 패 3:2 · "));
+            Assert.That(root.Q<Label>("last-result").text, Does.StartWith("경기 1 · LG 트윈스 vs 삼성 라이온즈 · 패 3:2 · "));
             Assert.That(SeasonManager.Instance.LastReport.MyOutcome, Is.EqualTo(GameOutcome.Loss));
             Assert.That(SeasonManager.Instance.LastReport.Saved, Is.True, "로비 복귀 전에 저장");
             Assert.That(root.Q<Label>("next-game").text, Does.StartWith("경기 2 · "), "일정 전진");
@@ -256,7 +256,7 @@ namespace DailyFranchise.UI.Tests
             Assert.That(LobbyRoot().Q("game-1").Q<Label>(className: "col-status").text, Is.EqualTo("무 3:3"));
             Assert.That(me.Draws, Is.EqualTo(d + 1));
 
-            // 2경기: 부산(원정) vs 인천(홈). 화면은 장면을 뒤집어 9회초 부산 공격으로 그리고, 스퀴즈 실패로 2:3 패.
+            // 2경기: 삼성(원정) vs SSG(홈). 화면은 장면을 뒤집어 9회초 삼성 공격으로 그리고, 스퀴즈 실패로 2:3 패.
             yield return PlayGame(TacticKind.SqueezeBunt, 0.99);
             Assert.That(SeasonManager.Instance.LastScore, Is.EqualTo(new GameScore(2, 3)));
             Assert.That(LobbyRoot().Q("game-2").Q<Label>(className: "col-status").text, Is.EqualTo("패 2:3"));
@@ -292,13 +292,14 @@ namespace DailyFranchise.UI.Tests
             Assert.That(game.Matchup.Away.Name, Is.EqualTo(scheduled.AwayTeam));
             Assert.That(game.Matchup.Home.Name, Is.EqualTo(scheduled.HomeTeam));
             Assert.That(game.Matchup.MySide, Is.EqualTo(Data.TeamSide.Away));
-            Assert.That(gameRoot.Q<Label>("away-name").text, Is.EqualTo("부산 웨이브스"));
-            Assert.That(gameRoot.Q<Label>("home-name").text, Is.EqualTo("인천 하버스"));
-            Assert.That(gameRoot.Query<Label>(className: "team-badge").ToList().Select(l => l.text), Is.EqualTo(new[] { "부산", "인천" }));
+            Assert.That(gameRoot.Q<Label>("away-name").text, Is.EqualTo("삼성 라이온즈"));
+            Assert.That(gameRoot.Q<Label>("home-name").text, Is.EqualTo("SSG 랜더스"));
+            Assert.That(gameRoot.Query<Label>(className: "team-badge").ToList().Select(l => l.text), Is.EqualTo(new[] { "삼성", "SSG" }));
             Assert.That(gameRoot.Query<Label>(className: "ls-cell--team").ToList().Select(l => l.text).Where(t => t != ""),
-                Is.EqualTo(new[] { "부산", "인천" }), "스코어보드 행: 원정 → 홈");
-            Assert.That(gameRoot.Q<Label>("roster-title").text, Is.EqualTo("내 선수단 · 부산"));
-            Assert.That(gameRoot.Q<Label>("pitcher-team").text, Does.StartWith("인천 · "), "상대 투수");
+                Is.EqualTo(new[] { "삼성", "SSG" }), "스코어보드 행: 원정 → 홈");
+            Assert.That(gameRoot.Q<Label>("roster-title").text, Is.EqualTo("내 선수단 · 삼성"));
+            Assert.That(gameRoot.Q<Label>("pitcher-team").text, Does.StartWith("SSG · "), "상대 투수");
+            Assert.That(gameRoot.Q<Label>("pitcher-name").text, Is.EqualTo("SSG 선발 투수"), "데이터 없는 상대는 이름을 지어내지 않는다");
             Assert.That(game.Fixture.Events[0].HalfInning, Is.EqualTo(HalfInning.Top), "원정 공격 = 9회초");
 
             // 화면 원정 2 : 홈 3 → 스퀴즈 실패로 그대로 끝나면 일정 기준도 2:3 패.
@@ -366,7 +367,7 @@ namespace DailyFranchise.UI.Tests
         public IEnumerator 경기_화면의_좌측_선수단과_타석_카드가_DB_선수_이름으로_표시된다()
         {
             var db = SeasonManager.Instance.Database;
-            var mine = db.GetRoster("부산 웨이브스");
+            var mine = db.GetRoster("삼성 라이온즈");
             Submit(LobbyRoot().Q<Button>("start-game"));
             yield return WaitForScene(SeasonManager.GameScene);
             var game = Object.FindAnyObjectByType<GameScreenController>();
@@ -378,20 +379,22 @@ namespace DailyFranchise.UI.Tests
                 Is.EqualTo(mine.Lineup.Select(p => p.Name)), "좌측 라인업 = DB 타순");
             Assert.That(root.Q("lineup").Query<Label>(className: "roster-pos").ToList().Select(l => l.text),
                 Is.EqualTo(mine.Lineup.Select(p => p.Position)));
-            Assert.That(root.Q<Label>("batter-name").text, Is.EqualTo("성지환"), "타석 카드: 최도윤 → 성지환");
-            Assert.That(root.Q<Label>("batter-team").text, Does.Contain("좌투좌타").And.Contain("RF"));
-            Assert.That(root.Q<Label>("pitcher-name").text, Is.EqualTo("염태준"), "상대 선발: 강민혁 → 염태준");
-            Assert.That(root.Q<Label>("featured-name").text, Does.StartWith("성지환"));
-            Assert.That(root.Q<Label>("roster-source").text, Is.EqualTo($"표시 데이터: {MasterDatabase.RosterFileName} (2026)"));
+            Assert.That(root.Q<Label>("batter-name").text, Is.EqualTo("김영웅"), "타석 카드: 삼성 3번 타자 (실제 2024 데이터)");
+            Assert.That(root.Q<Label>("batter-team").text, Does.Contain("우투좌타").And.Contain("3B"));
+            Assert.That(root.Q<Label>("pitcher-name").text, Is.EqualTo("LG 선발 투수"), "선수 데이터가 없는 상대: 구단 약칭 + 자리");
+            Assert.That(root.Q<Label>("pitcher-season").text, Is.EqualTo(Data.ScenarioRosterSource.NoDataLine));
+            Assert.That(root.Q<Label>("featured-name").text, Does.StartWith("김영웅"));
+            Assert.That(root.Q<Label>("roster-source").text, Is.EqualTo($"표시 데이터: {MasterDatabase.RosterFileName} (2024)"));
+            Assert.That(root.Q("bench").Query<Label>(className: "roster-name").ToList().Select(l => l.text),
+                Is.EqualTo(mine.Bench.Select(p => p.Name)), "1군 벤치 5명 전원");
+            Assert.That(root.Q("bullpen").Query<Label>(className: "roster-name").ToList().Select(l => l.text),
+                Is.EqualTo(mine.Bullpen.Select(p => p.Name)), "1군 불펜 7명 전원 (장면 자리 3개에 묶이지 않는다)");
 
-            // Phase 18: 카드 확장 지표 (등번호·나이, 타자 wRC+·WAR, 투수 WHIP·FIP·승패세홀)
-            var batter = db.FindPlayer("WV003");
-            var pitcher = db.FindPlayer("BW010");
+            // Phase 18: 카드 확장 지표 (등번호·나이, 타자 wRC+·WAR). 데이터 없는 상대 투수는 지표·전적 칩이 없다.
+            var batter = db.FindPlayer("p_삼성_2024_김영웅");
             Assert.That(root.Q<Label>("batter-profile").text, Is.EqualTo($"No.{batter.Number} · {batter.Age}세"));
             Assert.That(ChipTexts(root, "batter-stats"), Is.EqualTo(new[] { $"wRC+ {batter.WrcPlus:0}", $"WAR {batter.War:0.00}" }));
-            Assert.That(ChipTexts(root, "pitcher-stats"), Is.EqualTo(new[] { $"WHIP {pitcher.Whip:0.00}", $"FIP {pitcher.Fip:0.00}" }));
-            Assert.That(root.Q<Label>("pitcher-record").text,
-                Is.EqualTo($"{pitcher.Wins}승 {pitcher.Losses}패 · {pitcher.Saves}세이브 · {pitcher.Holds}홀드"));
+            Assert.That(ChipTexts(root, "pitcher-stats"), Is.Empty);
 
             // 1920×1080 렌더 타깃에서 새 칩·전적 줄이 카드 밖으로 나가거나 잘리지 않는다.
             var doc = game.GetComponent<UIDocument>();
@@ -445,20 +448,19 @@ namespace DailyFranchise.UI.Tests
                 game.PreviewTactic(tactic);
                 yield return null;
                 var desc = root.Q<Label>("tactic-desc").text;
-                Assert.That(desc, Does.Contain("근거 · 성지환 타율 .318 vs 염태준 평균자책 3.21 · 득점권"));
-                Assert.That(desc, Does.Contain("보정 · 플래툰 열세(좌투 vs 좌타) -5% · 득점권 클러치 +7%"), "Phase 17 보정 내역");
+                // Phase 26.5: 김영웅(2024 삼성) vs 선수 데이터가 없는 LG 선발 → 리그 평균 투수로 계산
+                Assert.That(desc, Does.Contain("근거 · 김영웅 타율 .252 vs 리그 평균 투수 평균자책 4.30 · 득점권"));
+                Assert.That(desc, Does.Contain("보정 · 득점권 클러치 +15%"), "득점권 .310 / 타율 .252 → +23%를 +15%로 자른다");
                 Assert.That(desc, Does.EndWith(TacticText.Odds(branch[tactic], rate)));
                 var issues = LayoutChecker.Check(root.Q("screen"));
                 Assert.That(issues, Is.Empty, $"[{tactic} 설명]\n" + string.Join("\n", issues));
             }
-            // Phase 17 기대값 51%에서 Phase 20 체력 저하(염태준 89구, 체력 11% → 피안타 +5%)를 더해 53%.
-            // Phase 24 케미스트리(태그 상위 20%): 1루 주자 하윤재(Speed) 발야구 +4%. 서울은 Glove가 2B·SS·DH라
-            // 센터라인 2명뿐이라 철벽 센터라인이 없고(카운터 없음), 성지환은 태그가 없어 거포 클린업도 없다 → +4%, 55%.
-            // (Phase 23 상위 30%에서는 발야구 +2 · 철벽 −1.5 · 거포 +2 = +2.5%로 같은 55%였다.)
-            Assert.That(root.Q<Label>("tactic-desc").text, Does.EndWith("성공 확률 55% · 실패 45%"),
-                "좌투 vs 좌타 -5%, 클러치 +7%, 체력 저하 +5%, 케미 +4%");
-            Assert.That(root.Q<Label>("tactic-desc").text, Does.Contain("· 케미 발야구 +4%"));
-            Assert.That(root.Q<Label>("tactic-desc").text, Does.Contain("· 체력 저하 +5%").And.Contain("투수 · 염태준 89구 · 체력 11% (저하)"));
+            // 마지막 미리보기는 강공: 클러치 +15% · 체력 저하(89구, 체력 11%) +5% → 58% (스퀴즈는 65%).
+            // 1루 주자 구자욱은 Power라 발야구 없음, 기본 라인업은 케미스트리 없음.
+            Assert.That(root.Q<Label>("tactic-desc").text, Does.EndWith("성공 확률 58% · 실패 42%"), "강공 · 클러치 +15%, 체력 저하 +5%");
+            Assert.That(TacticText.Odds(branch[TacticKind.SqueezeBunt], squeeze), Is.EqualTo("성공 확률 65% · 실패 35%"));
+            Assert.That(root.Q<Label>("tactic-desc").text, Does.Not.Contain("케미"));
+            Assert.That(root.Q<Label>("tactic-desc").text, Does.Contain("· 체력 저하 +5%").And.Contain("투수 · LG 선발 투수 89구 · 체력 11% (저하)"));
             game.PreviewTactic(null);
 
             // 난수 0.6: 고정 60%였다면 실패지만, 계산된 성공률(Phase 17 약 60.4%, 체력 저하 반영 후 더 높음)로는 성공.
@@ -490,25 +492,26 @@ namespace DailyFranchise.UI.Tests
         {
             var root = LobbyRoot();
             Assert.That(root.Q("roster").childCount, Is.EqualTo(9));
-            Assert.That(root.Q("bench").childCount, Is.EqualTo(3));
-            Assert.That(Names(root.Q("roster"))[2], Is.EqualTo("성지환"));
-            Assert.That(Names(root.Q("bench"))[0], Is.EqualTo("소윤호"));
+            Assert.That(root.Q("bench").childCount, Is.EqualTo(5), "1군 벤치 5명 (나머지는 퓨처스)");
+            Assert.That(root.Q<Label>("bench-title").text, Is.EqualTo("벤치 · 퓨처스 35명 대기"));
+            Assert.That(Names(root.Q("roster"))[2], Is.EqualTo("김영웅"));
+            Assert.That(Names(root.Q("bench"))[0], Is.EqualTo("김헌곤"));
 
             // 1) 3번 타자 클릭 → 강조
             Click(root.Q("lineup-3"));
             yield return null;
             Assert.That(root.Q("lineup-3").ClassListContains("lobby-row--selected"), Is.True);
             Assert.That(root.Q("bench-1").ClassListContains("lobby-row--swappable"), Is.True);
-            Assert.That(root.Q<Label>("lineup-hint").text, Does.StartWith("성지환 선택됨"));
+            Assert.That(root.Q<Label>("lineup-hint").text, Does.StartWith("김영웅 선택됨"));
 
             // 2) 벤치 1번 클릭 → 맞바꾸고 바로 다시 그림
             Click(root.Q("bench-1"));
             yield return null;
-            Assert.That(Names(root.Q("roster"))[2], Is.EqualTo("소윤호"));
-            Assert.That(root.Q("lineup-3").Q<Label>(className: "col-pos").text, Is.EqualTo("RF"));
-            Assert.That(Names(root.Q("bench"))[0], Is.EqualTo("성지환"));
+            Assert.That(Names(root.Q("roster"))[2], Is.EqualTo("김헌곤"));
+            Assert.That(root.Q("lineup-3").Q<Label>(className: "col-pos").text, Is.EqualTo("3B"));
+            Assert.That(Names(root.Q("bench"))[0], Is.EqualTo("김영웅"));
             Assert.That(root.Query(className: "lobby-row--selected").ToList(), Is.Empty, "교체 후 선택 해제");
-            Assert.That(File.ReadAllText(TestSavePath), Does.Contain("WV010"), "세이브 파일에 덮어씀");
+            Assert.That(File.ReadAllText(TestSavePath), Does.Contain("p_삼성_2024_김헌곤"), "세이브 파일에 덮어씀");
 
             // 벤치끼리는 바꾸지 않고 선택만 옮긴다.
             Click(root.Q("bench-1"));
@@ -516,14 +519,14 @@ namespace DailyFranchise.UI.Tests
             yield return null;
             Assert.That(root.Q("bench-2").ClassListContains("lobby-row--selected"), Is.True);
             Assert.That(root.Q("bench-1").ClassListContains("lobby-row--selected"), Is.False);
-            Assert.That(Names(root.Q("bench")), Is.EqualTo(new[] { "성지환", "피준서", "국태민" }));
+            Assert.That(Names(root.Q("bench")), Is.EqualTo(new[] { "김영웅", "김현준", "윤정빈", "이병헌", "안주형" }));
             Click(root.Q("bench-2")); // 취소
             yield return null;
 
             // 껐다 켜도 유지
             yield return RestartFromLobby();
             root = LobbyRoot();
-            Assert.That(Names(root.Q("roster"))[2], Is.EqualTo("소윤호"));
+            Assert.That(Names(root.Q("roster"))[2], Is.EqualTo("김헌곤"));
             Assert.That(SeasonManager.Instance.Season.MyLineup, Is.Not.Null);
 
             // 3) 경기 진입: 좌측 타순과 타석 카드
@@ -535,10 +538,10 @@ namespace DailyFranchise.UI.Tests
             var gameRoot = game.GetComponent<UIDocument>().rootVisualElement;
             var lineupNames = gameRoot.Q("lineup").Query<Label>(className: "roster-name").ToList().Select(l => l.text).ToArray();
             Assert.That(lineupNames, Is.EqualTo(SeasonManager.Instance.MyRoster.Lineup.Select(p => p.Name)));
-            Assert.That(lineupNames[2], Is.EqualTo("소윤호"));
-            Assert.That(gameRoot.Q("bench").Query<Label>(className: "roster-name").First().text, Is.EqualTo("성지환"));
-            Assert.That(gameRoot.Q<Label>("batter-name").text, Is.EqualTo("소윤호"), "장면의 3번 타자 자리");
-            Assert.That(game.Calculator.DecisionContext(game.Fixture.Branch, game.Fixture.Events).Batter.Name, Is.EqualTo("소윤호"));
+            Assert.That(lineupNames[2], Is.EqualTo("김헌곤"));
+            Assert.That(gameRoot.Q("bench").Query<Label>(className: "roster-name").First().text, Is.EqualTo("김영웅"));
+            Assert.That(gameRoot.Q<Label>("batter-name").text, Is.EqualTo("김헌곤"), "장면의 3번 타자 자리");
+            Assert.That(game.Calculator.DecisionContext(game.Fixture.Branch, game.Fixture.Events).Batter.Name, Is.EqualTo("김헌곤"));
         }
 
         [UnityTest]
@@ -803,11 +806,11 @@ namespace DailyFranchise.UI.Tests
             var last = game.Events[game.Events.Count - 1];
             Assert.That((last.Inning, last.HalfInning), Is.EqualTo((PlayByPlayGenerator.MaxInnings, HalfInning.Bottom)));
 
-            // CPU 선발이 108구로 고갈되자 상대 DB 불펜 투수로 바뀐다.
+            // CPU 선발이 108구로 고갈되자 상대 불펜으로 바뀐다. 상대(LG)는 선수 데이터가 없어 "LG 불펜 N"으로 보인다.
             var cpu = game.PitchingChanges.Single(c => c.ByCpu);
-            var opponentBullpen = manager.Database.GetRoster(opponent).Bullpen.Select(p => p.Name).ToArray();
             Assert.That(cpu.Reason, Is.EqualTo("체력 고갈"));
-            Assert.That(opponentBullpen, Has.Member(game.Roster.GetPlayer(cpu.To).Name));
+            Assert.That(manager.Database.GetRoster(opponent), Is.Null);
+            Assert.That(game.Roster.GetPlayer(cpu.To).Name, Does.StartWith("LG 불펜 "));
 
             Submit(root.Q<Button>("ctl-game-end"));
             yield return WaitForScene(SeasonManager.LobbyScene);
@@ -841,14 +844,14 @@ namespace DailyFranchise.UI.Tests
             Assert.That(root.Q<Label>("today").text, Is.EqualTo("오늘 " + FranchiseFinance.TodayText(System.DateTime.Now)));
             Assert.That(root.Q<Label>("fo-budget").text, Is.EqualTo("₩ 50억"), "Phase 26: 억·만 단위 표기");
             Assert.That(root.Q<Label>("fo-budget").tooltip, Is.EqualTo("₩5,000,000,000"));
-            Assert.That(manager.Season.Payroll, Is.EqualTo(4_020_000_000L), "로비가 열리면 페이롤이 선수단에 맞춰진다");
-            Assert.That(manager.Season.SalaryCap, Is.EqualTo(4_686_562_500L), "캡 기준 = 리그 개막 평균 페이롤 × 1.25");
+            Assert.That(manager.Season.Payroll, Is.EqualTo(6_294_000_000L), "로비가 열리면 페이롤이 삼성 1군 26명 연봉에 맞춰진다");
+            Assert.That(manager.Season.SalaryCap, Is.EqualTo(7_867_500_000L), "캡 기준 = 리그 개막 평균 페이롤(데이터 있는 구단 = 삼성) × 1.25");
             Assert.That(root.Q<Label>("fo-fan").text, Is.EqualTo("50%"));
             Assert.That(root.Q("fo-fan-fill").style.width.value, Is.EqualTo(Length.Percent(50)));
             Assert.That(root.Q("fo-fan-fill").ClassListContains("fo-fill--happy") || root.Q("fo-fan-fill").ClassListContains("fo-fill--angry"),
                 Is.False, "50%는 보통");
             Assert.That(root.Q<Label>("fo-season").text, Is.EqualTo("0 / 10경기"));
-            Assert.That(root.Q<Label>("fo-budget-delta").text, Is.EqualTo("승 +₩5,000만 · 유지비 −₩2,791만"), "아직 치른 경기가 없으면 수입·유지비 안내");
+            Assert.That(root.Q<Label>("fo-budget-delta").text, Is.EqualTo("승 +₩5,000만 · 유지비 −₩4,370만"), "아직 치른 경기가 없으면 수입·유지비 안내");
             Assert.That(root.Q<Label>("last-finance").text, Is.Empty);
             yield return CheckLobbyLayout("첫 로비");
 
@@ -866,10 +869,10 @@ namespace DailyFranchise.UI.Tests
             yield return WaitForScene(SeasonManager.LobbyScene);
 
             var report = manager.LastReport;
-            // Phase 26: 관중 수입에서 선수단 유지비(페이롤 40.2억 ÷ 144 = 2,791만 6,666원)를 뺀 순이익이 예산에 반영된다.
+            // Phase 26: 관중 수입에서 선수단 유지비(페이롤 62.94억 ÷ 144 = 4,370만 8,333원)를 뺀 순이익이 예산에 반영된다.
             var income = FranchiseFinance.For(report.MyOutcome);
-            Assert.That((report.Income, report.PayrollExpense), Is.EqualTo((income.BudgetDelta, 27_916_666L)));
-            var change = new FinanceChange(income.BudgetDelta - 27_916_666, income.FanDelta);
+            Assert.That((report.Income, report.PayrollExpense), Is.EqualTo((income.BudgetDelta, 43_708_333L)));
+            var change = new FinanceChange(income.BudgetDelta - 43_708_333, income.FanDelta);
             Assert.That(report.Finance, Is.EqualTo(change));
             root = LobbyRoot();
             Assert.That(root.Q<Label>("fo-budget").text, Is.EqualTo(FranchiseFinance.BudgetText(5_000_000_000 + change.BudgetDelta)), "즉시 갱신");
@@ -878,7 +881,7 @@ namespace DailyFranchise.UI.Tests
             Assert.That(root.Q<Label>("fo-budget-delta").text, Does.Contain("순이익 " + FranchiseFinance.BudgetDeltaText(change.BudgetDelta)));
             Assert.That(root.Q<Label>("fo-budget-delta").tooltip, Is.EqualTo(report.FinanceText));
             Assert.That(root.Q<Label>("last-finance").text, Is.EqualTo(report.FinanceText));
-            Assert.That(report.FinanceText, Does.Contain("유지비 −₩2,791만"));
+            Assert.That(report.FinanceText, Does.Contain("유지비 −₩4,370만"));
             Assert.That(root.Q<Label>("fo-fan-delta").text, Does.EndWith(FranchiseFinance.FanDeltaText(change.FanDelta)));
             Assert.That(root.Q<Label>("fo-season").text, Is.EqualTo("1 / 10경기"));
             Assert.That((manager.Season.Budget, manager.Season.FanApproval), Is.EqualTo((5_000_000_000 + change.BudgetDelta, 50 + change.FanDelta)));
@@ -965,40 +968,47 @@ namespace DailyFranchise.UI.Tests
             var (rt, panel) = RenderAt1080(lobby);
             yield return null;
             var root = LobbyRoot();
+            // 실제 2024 삼성 (태그 상위 20%): 1 구자욱·3 김영웅·7 이성규 Power, 2 김지찬·8 류지혁 Speed, 4 이재현·5 강민호 Glove
+            // → Power가 연속 타순이 아니고 Speed·센터라인 Glove가 2명씩이라 기본 라인업은 케미스트리 없음.
             var active = root.Q<Label>("chem-active");
-            Assert.That(active.text, Is.EqualTo("활성화됨: 발야구"));
-            Assert.That(active.ClassListContains("chem-active--on"), Is.True);
-            Assert.That(root.Q("lineup-1").Q<Label>(className: "chem-badge").text, Is.EqualTo("주"));
-            Assert.That(root.Q("lineup-4").Q<Label>(className: "chem-badge").text, Is.EqualTo("장"));
-            Assert.That(root.Q("lineup-7").Q<Label>(className: "chem-badge").text, Is.EqualTo("수"));
-            Assert.That(root.Q("lineup-3").Q<Label>(className: "chem-badge").ClassListContains("chem-badge--none"), Is.True);
+            Assert.That(active.text, Is.EqualTo("활성화된 케미스트리 없음"));
+            Assert.That(active.ClassListContains("chem-active--on"), Is.False);
+            Assert.That(root.Q("lineup-1").Q<Label>(className: "chem-badge").text, Is.EqualTo("장"));
+            Assert.That(root.Q("lineup-2").Q<Label>(className: "chem-badge").text, Is.EqualTo("주"));
+            Assert.That(root.Q("lineup-4").Q<Label>(className: "chem-badge").text, Is.EqualTo("수"));
+            Assert.That(root.Q("lineup-6").Q<Label>(className: "chem-badge").ClassListContains("chem-badge--none"), Is.True);
             var issues = LayoutChecker.Check(root.Q("screen"));
             Assert.That(issues, Is.Empty, string.Join("\n", issues));
             int renders = lobby.ChemistryRenderCount;
 
-            // 태그 없는 3번·5번 타순 맞바꿈 → 케미스트리 그대로, 다시 그리지 않는다.
-            lobby.ClickLineupSpot(LineupSpot.Batting(3));
-            lobby.ClickLineupSpot(LineupSpot.Batting(5));
+            // 태그 없는 6번 박병호·9번 맥키넌 맞바꿈 → 케미스트리 그대로, 다시 그리지 않는다.
+            lobby.ClickLineupSpot(LineupSpot.Batting(6));
+            lobby.ClickLineupSpot(LineupSpot.Batting(9));
             yield return null;
-            Assert.That(LobbyRoot().Q("lineup-3").Q<Label>(className: "col-name").text, Is.EqualTo("길태윤"), "교체는 됐다");
+            Assert.That(LobbyRoot().Q("lineup-6").Q<Label>(className: "col-name").text, Is.EqualTo("맥키넌"), "교체는 됐다");
             Assert.That(lobby.ChemistryRenderCount, Is.EqualTo(renders));
 
-            // 8번 여민규(Speed) → 벤치 2번(태그 없음): 발야구 꺼짐
-            lobby.ClickLineupSpot(LineupSpot.Batting(8));
-            lobby.ClickLineupSpot(LineupSpot.Bench(1));
+            // 2번 김지찬 ↔ 3번 김영웅, 3번(김지찬) ↔ 7번 이성규 → 1·2·3번 Power 연속: 거포 클린업 켜짐
+            lobby.ClickLineupSpot(LineupSpot.Batting(2));
+            lobby.ClickLineupSpot(LineupSpot.Batting(3));
+            yield return null;
+            Assert.That(lobby.ChemistryRenderCount, Is.EqualTo(renders), "1·2번 Power 2명 — 아직 없음");
+            lobby.ClickLineupSpot(LineupSpot.Batting(3));
+            lobby.ClickLineupSpot(LineupSpot.Batting(7));
             yield return null;
             active = LobbyRoot().Q<Label>("chem-active");
-            Assert.That(active.text, Is.EqualTo("활성화된 케미스트리 없음"));
-            Assert.That(active.ClassListContains("chem-active--on"), Is.False);
+            Assert.That(active.text, Is.EqualTo("활성화됨: 거포 클린업"));
+            Assert.That(active.ClassListContains("chem-active--on"), Is.True);
             Assert.That(lobby.ChemistryRenderCount, Is.EqualTo(renders + 1));
-            Assert.That(lobby.Chemistry.Kinds, Is.Empty);
+            Assert.That(lobby.Chemistry.Members(ChemistryKind.PowerCleanup),
+                Is.EquivalentTo(new[] { "p_삼성_2024_구자욱", "p_삼성_2024_김영웅", "p_삼성_2024_이성규" }));
 
-            // 대주자 국태민(Speed)을 8번에 넣으면 다시 켜진다.
-            lobby.ClickLineupSpot(LineupSpot.Batting(8));
-            lobby.ClickLineupSpot(LineupSpot.Bench(2));
+            // 1번 구자욱 ↔ 벤치 김헌곤(태그 없음): 연속이 끊겨 꺼진다.
+            lobby.ClickLineupSpot(LineupSpot.Batting(1));
+            lobby.ClickLineupSpot(LineupSpot.Bench(0));
             yield return null;
-            Assert.That(LobbyRoot().Q<Label>("chem-active").text, Is.EqualTo("활성화됨: 발야구"));
-            Assert.That(lobby.Chemistry.Members(ChemistryKind.SpeedBall), Is.EquivalentTo(new[] { "WV001", "WV002", "WV012" }));
+            Assert.That(LobbyRoot().Q<Label>("chem-active").text, Is.EqualTo("활성화된 케미스트리 없음"));
+            Assert.That(lobby.Chemistry.Kinds, Is.Empty);
             Assert.That(lobby.ChemistryRenderCount, Is.EqualTo(renders + 2));
 
             rt.Release();
@@ -1036,19 +1046,19 @@ namespace DailyFranchise.UI.Tests
             var root = LobbyRoot();
 
             Assert.That(ConditionClasses(root.Q("roster")), Is.EqualTo(Enumerable.Repeat("cond--3", 9)), "처음엔 전원 보통");
-            Assert.That(ConditionClasses(root.Q("bench")), Is.EqualTo(Enumerable.Repeat("cond--3", 3)));
+            Assert.That(ConditionClasses(root.Q("bench")), Is.EqualTo(Enumerable.Repeat("cond--3", 5)));
             Assert.That(root.Q("rotation").childCount, Is.EqualTo(5), "선발 5명");
             Assert.That(root.Q("rotation-1").ClassListContains("lobby-row--today"), Is.True);
             Assert.That(root.Q("rotation-1").Query<Label>().ToList().Select(l => l.text), Has.Member("오늘 선발"));
             yield return CheckLobbyLayout("컨디션 첫 로비");
 
-            // 1경기 (부산 홈): 라인업 9명 출장 → 지침, 벤치 → 좋음, 선발 차은호(퀵 시뮬 78구+) → 위험
+            // 1경기 (삼성 홈): 라인업 9명 출장 → 지침, 벤치 → 좋음, 선발 코너(퀵 시뮬 78구+) → 위험
             yield return PlayDefaultGameAndReturn();
             root = LobbyRoot();
             Assert.That(manager.LastReport.Conditions, Is.Not.Empty);
             Assert.That(ConditionClasses(root.Q("roster")), Is.EqualTo(Enumerable.Repeat("cond--2", 9)));
             Assert.That(root.Q("roster").Query<Label>(className: "cond-text").First().text, Is.EqualTo("지침"));
-            Assert.That(ConditionClasses(root.Q("bench")), Is.EqualTo(Enumerable.Repeat("cond--4", 3)));
+            Assert.That(ConditionClasses(root.Q("bench")), Is.EqualTo(Enumerable.Repeat("cond--4", 5)));
             Assert.That(manager.Season.ConditionOf(mine.StartingPitcher.Id), Is.EqualTo(PlayerCondition.Exhausted));
             Assert.That(ConditionClasses(root.Q("rotation")), Is.EqualTo(new[] { "cond--1", "cond--4", "cond--4", "cond--4", "cond--4" }));
             Assert.That(manager.Season.LastStarterOf(manager.Season.MyTeam), Is.EqualTo(mine.Starters[0].Id));

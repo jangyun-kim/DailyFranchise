@@ -137,6 +137,9 @@ namespace DailyFranchise.UI.Data
 
         public TeamInfo GetTeam(TeamSide side) => _matchup.Get(side);
 
+        /// <summary>장면에 정의된 자리인지 (선수단이 늘어난 자리와 구분).</summary>
+        public bool HasPlayer(string playerId) => playerId != null && _players.ContainsKey(playerId);
+
         public PlayerInfo GetPlayer(string playerId)
         {
             if (playerId != null && _players.TryGetValue(playerId, out var p)) return p;

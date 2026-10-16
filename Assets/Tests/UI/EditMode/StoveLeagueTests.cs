@@ -13,9 +13,9 @@ namespace DailyFranchise.UI.Tests
     /// </summary>
     public class StoveLeagueTests
     {
-        static readonly MasterDatabase Db = MasterDatabase.LoadFromResources();
-        const string Busan = "부산 웨이브스";
-        const string Seoul = "서울 블루윙스";
+        static readonly MasterDatabase Db = TestLeague.TwoTeams;
+        const string Busan = "삼성 라이온즈";
+        const string Seoul = "LG 트윈스";
         const string Fa = LeagueRosterBook.FreeAgentTeam;
         const long Budget0 = 5_000_000_000;
 
@@ -368,7 +368,7 @@ namespace DailyFranchise.UI.Tests
             var records = new[]
             {
                 new SigningRecord("nobody", Seoul, Busan, 1),
-                new SigningRecord("BW004", "인천 하버스", Busan, 1), // 원 소속이 틀림
+                new SigningRecord("BW004", "SSG 랜더스", Busan, 1), // 원 소속이 틀림
                 new SigningRecord("BW004", Seoul, Seoul, 1),         // 같은 구단
                 new SigningRecord("BW005", Seoul, Busan, 1),
                 new SigningRecord("BW005", Seoul, Busan, 1),         // 이미 옮김

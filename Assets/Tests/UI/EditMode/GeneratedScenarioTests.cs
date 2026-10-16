@@ -13,8 +13,8 @@ namespace DailyFranchise.UI.Tests
     {
         const int Seed = 20261014;
         static readonly MasterDatabase Db = MasterDatabase.LoadFromResources();
-        static TeamRoster Busan => Db.GetRoster("부산 웨이브스");
-        static TeamRoster Seoul => Db.GetRoster("서울 블루윙스");
+        static TeamRoster Busan => Db.GetRoster("삼성 라이온즈");
+        static TeamRoster Seoul => Db.GetRoster("LG 트윈스");
 
         static GeneratedGame Generate(int seed = Seed) => FixtureGenerator.Generate(Seoul, Busan, new SeededRandom(seed));
 
@@ -22,7 +22,7 @@ namespace DailyFranchise.UI.Tests
         public void 스코어보드_기초값은_생성된_이닝별_득점과_H_E_B다()
         {
             var game = Generate();
-            var data = new DummyScenarioData(game, Matchup.FromNames("서울 블루윙스", "부산 웨이브스", TeamSide.Home));
+            var data = new DummyScenarioData(game, Matchup.FromNames("LG 트윈스", "삼성 라이온즈", TeamSide.Home));
             var away = data.GetBoxSeed(TeamSide.Away);
             var home = data.GetBoxSeed(TeamSide.Home);
 
@@ -40,7 +40,7 @@ namespace DailyFranchise.UI.Tests
         public void 원정_경기는_스코어보드와_장면을_뒤집어도_시작_점수가_맞는다()
         {
             var game = Generate();
-            var data = new DummyScenarioData(game, Matchup.FromNames("부산 웨이브스", "인천 하버스", TeamSide.Away));
+            var data = new DummyScenarioData(game, Matchup.FromNames("삼성 라이온즈", "SSG 랜더스", TeamSide.Away));
             Assert.That(data.Mirrored, Is.True);
             Assert.That(data.GetBoxSeed(TeamSide.Away).RunsByInning, Is.EqualTo(game.HomeRunsByInning), "내 구단은 원정 쪽");
             Assert.That(data.GetBoxSeed(TeamSide.Home).RunsByInning, Is.EqualTo(game.AwayRunsByInning));
@@ -72,7 +72,7 @@ namespace DailyFranchise.UI.Tests
         public void 선수단을_입혀도_생성된_스코어보드를_그대로_쓰고_주자는_DB_타자로_표시된다()
         {
             var game = Generate();
-            var dummy = new DummyScenarioData(game, Matchup.FromNames("서울 블루윙스", "부산 웨이브스", TeamSide.Home, Seoul, Busan));
+            var dummy = new DummyScenarioData(game, Matchup.FromNames("LG 트윈스", "삼성 라이온즈", TeamSide.Home, Seoul, Busan));
             var source = new ScenarioRosterSource(dummy, "SampleRoster.csv");
             Assert.That(source.GetBoxSeed(TeamSide.Home), Is.SameAs(dummy.GetBoxSeed(TeamSide.Home)));
             Assert.That(source.GetBoxSeed(TeamSide.Away), Is.SameAs(dummy.GetBoxSeed(TeamSide.Away)));

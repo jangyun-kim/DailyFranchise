@@ -141,7 +141,7 @@ namespace DailyFranchise.Sim.Data
                 Copy(byId[slot.PlayerId], RosterRole.Lineup, i + 1, slot.Position)).ToList();
             var bench = _bench.Select((id, i) =>
                 Copy(byId[id], RosterRole.Bench, i + 1, i < roster.Bench.Count ? roster.Bench[i].Position : "대타")).ToList();
-            return new TeamRoster(roster.Team, lineup, bench, roster.Starters, roster.Bullpen);
+            return new TeamRoster(roster.Team, lineup, bench, roster.Starters, roster.Bullpen, roster.Reserves);
         }
 
         static PlayerData Copy(PlayerData p, RosterRole role, int order, string position) => p.CloneAs(role, order, position);

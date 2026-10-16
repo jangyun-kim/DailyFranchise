@@ -12,10 +12,10 @@ namespace DailyFranchise.UI.Tests
     /// </summary>
     public class ChemistryDatabaseTests
     {
-        static readonly MasterDatabase Db = MasterDatabase.LoadFromResources();
+        static readonly MasterDatabase Db = TestLeague.TwoTeams;
         static readonly System.Collections.Generic.IReadOnlyDictionary<string, ChemistryTag> Tags = ChemistryTagger.Tag(Db.Players);
-        static TeamRoster Busan => Db.GetRoster("부산 웨이브스");
-        static TeamRoster Seoul => Db.GetRoster("서울 블루윙스");
+        static TeamRoster Busan => Db.GetRoster("삼성 라이온즈");
+        static TeamRoster Seoul => Db.GetRoster("LG 트윈스");
 
         static ActiveChemistry Evaluate(LineupCard card) => ChemistryRules.Evaluate(card.ApplyTo(Busan), Tags);
 
@@ -36,11 +36,11 @@ namespace DailyFranchise.UI.Tests
         public void 기본_라인업은_부산만_발야구이고_서울은_케미스트리가_없다()
         {
             var board = new ChemistryBoard(Tags, Busan, Seoul);
-            var busan = board.ActiveFor("부산 웨이브스");
+            var busan = board.ActiveFor("삼성 라이온즈");
             Assert.That(busan.Kinds, Is.EqualTo(new[] { ChemistryKind.SpeedBall }));
             Assert.That(busan.Members(ChemistryKind.SpeedBall), Is.EquivalentTo(new[] { "WV001", "WV002", "WV008" }));
             // 서울: Glove 2B·SS·DH → 센터라인은 2명, Power 4·5번 → 연속 2명
-            Assert.That(board.ActiveFor("서울 블루윙스").Kinds, Is.Empty);
+            Assert.That(board.ActiveFor("LG 트윈스").Kinds, Is.Empty);
         }
 
         [Test]

@@ -132,7 +132,7 @@ namespace DailyFranchise.UI.Tests
             foreach (var column in MasterHeader.Trim().Split(','))
                 Assert.That(header.Has(column), column);
 
-            var db = MasterDatabase.LoadFromResources();
+            var db = TestLeague.TwoTeams;
             var batter = db.FindPlayer("WV003");
             Assert.That((batter.Name, batter.Number, batter.Age), Is.EqualTo(("성지환", 84, 34)));
             Assert.That((batter.WrcPlus, batter.War, batter.Doubles, batter.RunsBattedIn), Is.EqualTo((140.0, 1.66, 26, 90)));
@@ -154,7 +154,7 @@ namespace DailyFranchise.UI.Tests
         [Test]
         public void 라인업_카드를_적용해도_확장_기록이_유지된다()
         {
-            var roster = MasterDatabase.LoadFromResources().GetRoster("부산 웨이브스");
+            var roster = TestLeague.TwoTeams.GetRoster("삼성 라이온즈");
             var card = LineupCard.FromRoster(roster);
             Assert.That(card.TrySwap(LineupSpot.Batting(3), LineupSpot.Bench(0)), Is.True);
             var applied = card.ApplyTo(roster);
@@ -185,9 +185,9 @@ namespace DailyFranchise.UI.Tests
         [Test]
         public void 경기_화면_선수_정보에_확장_지표가_실린다()
         {
-            var db = MasterDatabase.LoadFromResources();
+            var db = TestLeague.TwoTeams;
             var source = new ScenarioRosterSource(new DummyScenarioData(DailyFranchise.Sim.Fixtures.ScenarioCatalog.EighthBottomTactics,
-                Matchup.FromNames("서울 블루윙스", "부산 웨이브스", TeamSide.Home, db.GetRoster("서울 블루윙스"), db.GetRoster("부산 웨이브스"))),
+                Matchup.FromNames("LG 트윈스", "삼성 라이온즈", TeamSide.Home, db.GetRoster("LG 트윈스"), db.GetRoster("삼성 라이온즈"))),
                 MasterDatabase.RosterFileName);
 
             var batter = source.GetPlayer("home_b3");

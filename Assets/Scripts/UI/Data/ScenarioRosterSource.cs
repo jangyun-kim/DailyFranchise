@@ -11,7 +11,9 @@ namespace DailyFranchise.UI.Data
     /// 장면 투구 이벤트는 고정 선수 ID(home_b3, away_sp …)를 쓰므로, ID를 선수단 자리로 바꿔 그 자리의 선수로 표시한다.
     /// - 선수 데이터에서: 이름, 수비 위치·보직, 투타, 시즌 기록 문구, 벤치 메모
     /// - 장면 데이터 그대로: 소속 쪽(원정/홈), 오늘 기록·투구 수·체력, 스코어보드 기초값, 대진 팀명
-    /// 선수단이 없거나 그 자리에 선수가 없으면 더미 정보를 그대로 쓴다.
+    /// 선수단이 없거나 그 자리에 선수가 없으면 이름을 지어내지 않고 "LG 4번 타자"처럼 구단 약칭 + 자리로 보인다
+    /// (Phase 26.5 — 실제 데이터가 없는 구단에 가상 선수가 그려지지 않게). 확률 계산은 리그 평균 선수로 한다.
+    /// 장면의 오늘 기록·투구 수·체력은 그대로 쓴다.
     ///
     /// 자리 규칙 (home_ = 내 구단, away_ = 상대. 장면이 뒤집혀도 같다):
     ///   bN → 타순 N, phN → 벤치 순서 N(대타), prN → 벤치 순서 2+N(대주자), rpN → 불펜 순서 N, sp → 선발 순서 1
@@ -72,7 +74,17 @@ namespace DailyFranchise.UI.Data
             if (_cache.TryGetValue(key, out var cached)) return cached;
             var scene = _scene.GetPlayer(playerId);
             var data = Resolve(playerId);
-            var info = data == null ? scene : new PlayerInfo
+            if (data != null && !_scene.HasPlayer(playerId))
+            {
+                // 장면에 없는 자리(벤치 4번째·불펜 4번째부터): 쪽은 접두사로, 오늘은 대기 상태로 둔다.
+                bool mine = playerId.StartsWith("home_", StringComparison.Ordinal);
+                scene = new PlayerInfo
+                {
+                    Id = playerId, Side = mine ? MyTeam : MyTeam == TeamSide.Home ? TeamSide.Away : TeamSide.Home,
+                    Position = data.Position, TodayLine = data.IsPitcher ? "불펜 대기" : null, Fitness = 100,
+                };
+            }
+            var info = data == null ? Placeholder(scene, playerId) : new PlayerInfo
             {
                 Id = scene.Id,
                 Name = data.Name,
@@ -100,23 +112,60 @@ namespace DailyFranchise.UI.Data
                 Order = e.Order, Role = GetPlayer(e.PlayerId).Position, PlayerId = e.PlayerId, Note = e.Note,
             }).ToList();
 
-        public IReadOnlyList<RosterEntry> GetBench(TeamSide side) =>
-            _scene.GetBench(side).Select(e =>
-            {
-                var data = Resolve(e.PlayerId);
-                return new RosterEntry
+        /// <summary>
+        /// 벤치. 그 쪽 선수단이 있으면 선수단 벤치 전원을 자리 ph1, ph2, pr1, pr2 … 순으로 (Phase 26.5 — 장면 자리 수(3)에
+        /// 묶이지 않게: 1군 벤치 5명·FA 영입 선수까지 경기에서 쓸 수 있다). 없으면 장면 벤치 그대로.
+        /// </summary>
+        public IReadOnlyList<RosterEntry> GetBench(TeamSide side)
+        {
+            var scene = _scene.GetBench(side);
+            var roster = RosterOn(side);
+            if (roster == null || scene.Count == 0)
+                return scene.Select(e =>
                 {
-                    Order = e.Order, Role = data?.Position ?? e.Role, PlayerId = e.PlayerId,
-                    Note = data == null ? e.Note : BenchNote(data),
-                };
-            }).ToList();
-
-        /// <summary>불펜 칸의 메모는 장면의 체력·준비 상태라 그대로 둔다.</summary>
-        public IReadOnlyList<RosterEntry> GetBullpen(TeamSide side) =>
-            _scene.GetBullpen(side).Select(e => new RosterEntry
+                    var data = Resolve(e.PlayerId);
+                    return new RosterEntry
+                    {
+                        Order = e.Order, Role = data?.Position ?? e.Role, PlayerId = e.PlayerId,
+                        Note = data == null ? e.Note : BenchNote(data),
+                    };
+                }).ToList();
+            string prefix = PrefixOf(side);
+            return roster.Bench.Select((p, i) => new RosterEntry
             {
-                Order = e.Order, Role = Resolve(e.PlayerId)?.Position ?? e.Role, PlayerId = e.PlayerId, Note = e.Note,
+                Role = p.Position, Note = BenchNote(p),
+                PlayerId = prefix + (i < PinchHitterSlots ? $"ph{i + 1}" : $"pr{i + 1 - PinchHitterSlots}"),
             }).ToList();
+        }
+
+        /// <summary>
+        /// 불펜. 그 쪽 선수단이 있으면 선수단 불펜 전원을 자리 rp1, rp2 … 순으로 (장면에 있는 자리는 장면의 준비 상태 메모를,
+        /// 그 뒤 자리는 "대기"). 없으면 장면 불펜 그대로.
+        /// </summary>
+        public IReadOnlyList<RosterEntry> GetBullpen(TeamSide side)
+        {
+            var scene = _scene.GetBullpen(side);
+            var roster = RosterOn(side);
+            if (roster == null || scene.Count == 0)
+                return scene.Select(e => new RosterEntry
+                {
+                    Order = e.Order, Role = Resolve(e.PlayerId)?.Position ?? e.Role, PlayerId = e.PlayerId, Note = e.Note,
+                }).ToList();
+            string prefix = PrefixOf(side);
+            return roster.Bullpen.Select((p, i) => new RosterEntry
+            {
+                Role = p.Position, PlayerId = $"{prefix}rp{i + 1}", Note = i < scene.Count ? scene[i].Note : ExtraBullpenNote,
+            }).ToList();
+        }
+
+        /// <summary>장면에 없는 불펜 자리(4번째부터)의 메모·오늘 기록.</summary>
+        public const string ExtraBullpenNote = "대기";
+
+        /// <summary>화면 쪽의 선수단 (내 구단 쪽이면 내 선수단).</summary>
+        TeamRoster RosterOn(TeamSide side) => side == MyTeam ? _mine : _opponent;
+
+        /// <summary>장면 자리 ID 접두사: 내 구단 home_, 상대 away_ (장면이 뒤집혀도 같다).</summary>
+        string PrefixOf(TeamSide side) => side == MyTeam ? "home_" : "away_";
 
         /// <summary>투수는 "우투", 타자는 "우투좌타" 꼴.</summary>
         public static string HandednessText(PlayerData p) =>
@@ -186,6 +235,47 @@ namespace DailyFranchise.UI.Data
         static string HandText(Hand h) => h == Hand.Left ? "좌" : h == Hand.Switch ? "양" : "우";
 
         static PlayerData At(IReadOnlyList<PlayerData> list, int order) => list.FirstOrDefault(p => p.Order == order);
+
+        /// <summary>데이터가 없는 자리: 구단 약칭 + 자리 이름, 리그 평균 안내. 장면 자리 ID가 아니면 장면 정보 그대로.</summary>
+        PlayerInfo Placeholder(PlayerInfo scene, string playerId)
+        {
+            string label = SlotLabel(playerId);
+            if (label == null) return scene;
+            bool mine = playerId.StartsWith("home_", StringComparison.Ordinal);
+            var team = _scene.GetTeam(mine ? MyTeam : MyTeam == TeamSide.Home ? TeamSide.Away : TeamSide.Home);
+            return new PlayerInfo
+            {
+                Id = scene.Id,
+                Name = $"{team.ShortName} {label}",
+                Side = scene.Side,
+                Position = scene.Position,
+                Handedness = "—",
+                SeasonLine = NoDataLine,
+                TodayLine = scene.TodayLine,
+                TodayAtBats = scene.TodayAtBats,
+                TodayHits = scene.TodayHits,
+                TodayExtra = scene.TodayExtra,
+                PitchesBeforeScene = scene.PitchesBeforeScene,
+                Fitness = scene.Fitness,
+            };
+        }
+
+        public const string NoDataLine = "선수 데이터 없음 · 리그 평균 능력치";
+
+        /// <summary>장면 자리 ID → "4번 타자" / "선발 투수" / "불펜 2" / "대타 1" / "대주자 1". 자리 ID가 아니면 null.</summary>
+        public static string SlotLabel(string playerId)
+        {
+            if (playerId == null) return null;
+            string slot = playerId.StartsWith("home_", StringComparison.Ordinal) ? playerId.Substring(5)
+                : playerId.StartsWith("away_", StringComparison.Ordinal) ? playerId.Substring(5) : null;
+            if (slot == null) return null;
+            if (slot == "sp") return "선발 투수";
+            if (TryIndex(slot, "b", out int n)) return $"{n}번 타자";
+            if (TryIndex(slot, "ph", out n)) return $"대타 {n}";
+            if (TryIndex(slot, "pr", out n)) return $"대주자 {n}";
+            if (TryIndex(slot, "rp", out n)) return $"불펜 {n}";
+            return null;
+        }
 
         static bool TryIndex(string slot, string prefix, out int n)
         {

@@ -140,8 +140,8 @@ namespace DailyFranchise.App
                 (player.IsPitcher ? to.Bullpen.Count : to.Bench.Count) + 1, player.Position);
             moved.Team = to.Team;
             return player.IsPitcher
-                ? new TeamRoster(to.Team, to.Lineup, to.Bench, to.Starters, to.Bullpen.Append(moved).ToList())
-                : new TeamRoster(to.Team, to.Lineup, to.Bench.Append(moved).ToList(), to.Starters, to.Bullpen);
+                ? new TeamRoster(to.Team, to.Lineup, to.Bench, to.Starters, to.Bullpen.Append(moved).ToList(), to.Reserves)
+                : new TeamRoster(to.Team, to.Lineup, to.Bench.Append(moved).ToList(), to.Starters, to.Bullpen, to.Reserves);
         }
 
         static TeamRoster Remove(TeamRoster from, PlayerData player)
@@ -174,7 +174,7 @@ namespace DailyFranchise.App
                 else starters.Add(ReplacementPitcher(from.Team, player));
             }
             return new TeamRoster(from.Team, lineup, Renumber(bench, RosterRole.Bench), Renumber(starters, RosterRole.Starter),
-                Renumber(bullpen, RosterRole.Bullpen));
+                Renumber(bullpen, RosterRole.Bullpen), from.Reserves);
         }
 
         static List<PlayerData> Renumber(List<PlayerData> players, RosterRole role) =>

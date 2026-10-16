@@ -721,14 +721,32 @@ namespace DailyFranchise.App
             }
         }
 
-        /// <summary>가상 구단 10개, 내 구단 부산 웨이브스, 10경기 일정의 더미 시즌.</summary>
+        /// <summary>KBO 10개 구단 홈구장 (Resources/Database/Teams.csv와 같다 — 테스트가 맞는지 확인한다).</summary>
+        public static readonly IReadOnlyDictionary<string, string> KboStadiums = new Dictionary<string, string>
+        {
+            ["KIA 타이거즈"] = "광주 챔피언스필드",
+            ["삼성 라이온즈"] = "대구 라이온즈파크",
+            ["LG 트윈스"] = "잠실야구장",
+            ["두산 베어스"] = "잠실야구장",
+            ["KT 위즈"] = "수원 위즈파크",
+            ["SSG 랜더스"] = "인천 랜더스필드",
+            ["롯데 자이언츠"] = "사직야구장",
+            ["한화 이글스"] = "대전 이글스파크",
+            ["NC 다이노스"] = "창원NC파크",
+            ["키움 히어로즈"] = "고척스카이돔",
+        };
+
+        /// <summary>
+        /// KBO 10개 구단, 내 구단 삼성 라이온즈(실제 선수 데이터가 있는 구단), 10경기 일정의 새 시즌 (Phase 26.5).
+        /// 순위표 성적은 시즌 중반 시작용 게임 값이다 (실제 기록 아님).
+        /// </summary>
         public static SeasonState CreateDummy()
         {
-            const string my = "부산 웨이브스";
+            const string my = "삼성 라이온즈";
             var opponents = new[]
             {
-                "서울 블루윙스", "인천 하버스", "대구 썬더스", "광주 레드폭스", "대전 코메츠",
-                "수원 나이츠", "창원 마리너스", "서울 그리폰스", "고양 스타즈", "서울 블루윙스",
+                "LG 트윈스", "SSG 랜더스", "KIA 타이거즈", "두산 베어스", "한화 이글스",
+                "KT 위즈", "롯데 자이언츠", "NC 다이노스", "키움 히어로즈", "LG 트윈스",
             };
             var dates = new[]
             {
@@ -739,7 +757,7 @@ namespace DailyFranchise.App
             var schedule = new List<ScheduledGame>();
             for (int i = 0; i < opponents.Length; i++)
             {
-                bool home = i % 3 != 1; // 첫 경기는 경기 화면 더미와 같은 서울(원정) vs 부산(홈)
+                bool home = i % 3 != 1; // 첫 경기는 LG(원정) vs 삼성(홈)
                 string away = home ? opponents[i] : my;
                 string homeTeam = home ? my : opponents[i];
                 schedule.Add(new ScheduledGame
@@ -748,22 +766,22 @@ namespace DailyFranchise.App
                     Date = dates[i],
                     AwayTeam = away,
                     HomeTeam = homeTeam,
-                    Stadium = homeTeam.Split(' ')[0] + " 구장",
+                    Stadium = KboStadiums[homeTeam],
                 });
             }
 
             var standings = new List<StandingRow>
             {
-                new StandingRow { Team = "대구 썬더스", Wins = 26, Losses = 15, Draws = 1 },
-                new StandingRow { Team = "서울 블루윙스", Wins = 24, Losses = 16, Draws = 2 },
-                new StandingRow { Team = "부산 웨이브스", Wins = 23, Losses = 18, Draws = 0 },
-                new StandingRow { Team = "광주 레드폭스", Wins = 22, Losses = 19, Draws = 1 },
-                new StandingRow { Team = "수원 나이츠", Wins = 21, Losses = 20, Draws = 0 },
-                new StandingRow { Team = "인천 하버스", Wins = 20, Losses = 21, Draws = 1 },
-                new StandingRow { Team = "창원 마리너스", Wins = 19, Losses = 22, Draws = 0 },
-                new StandingRow { Team = "대전 코메츠", Wins = 18, Losses = 23, Draws = 1 },
-                new StandingRow { Team = "서울 그리폰스", Wins = 17, Losses = 24, Draws = 0 },
-                new StandingRow { Team = "고양 스타즈", Wins = 15, Losses = 27, Draws = 0 },
+                new StandingRow { Team = "KIA 타이거즈", Wins = 26, Losses = 15, Draws = 1 },
+                new StandingRow { Team = "LG 트윈스", Wins = 24, Losses = 16, Draws = 2 },
+                new StandingRow { Team = "삼성 라이온즈", Wins = 23, Losses = 18, Draws = 0 },
+                new StandingRow { Team = "두산 베어스", Wins = 22, Losses = 19, Draws = 1 },
+                new StandingRow { Team = "KT 위즈", Wins = 21, Losses = 20, Draws = 0 },
+                new StandingRow { Team = "SSG 랜더스", Wins = 20, Losses = 21, Draws = 1 },
+                new StandingRow { Team = "롯데 자이언츠", Wins = 19, Losses = 22, Draws = 0 },
+                new StandingRow { Team = "한화 이글스", Wins = 18, Losses = 23, Draws = 1 },
+                new StandingRow { Team = "NC 다이노스", Wins = 17, Losses = 24, Draws = 0 },
+                new StandingRow { Team = "키움 히어로즈", Wins = 15, Losses = 27, Draws = 0 },
             };
             // 개막 후 득실점: 경기당 4.6점 안팎에 승패 마진만큼 벌린다 (리그 득점 합 = 실점 합).
             foreach (var row in standings)

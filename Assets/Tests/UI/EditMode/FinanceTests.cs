@@ -191,7 +191,7 @@ namespace DailyFranchise.UI.Tests
             data.Budget = 5_050_000;
             data.CapFlex = 200_000;
             data.CapRepay = 100_000;
-            data.Signings.Add(new SigningData { PlayerId = "BW004", FromTeam = "서울 블루윙스", ToTeam = "부산 웨이브스", Salary = 376_200 });
+            data.Signings.Add(new SigningData { PlayerId = "BW004", FromTeam = "LG 트윈스", ToTeam = "삼성 라이온즈", Salary = 376_200 });
             var loaded = SeasonState.FromSaveData(data);
             Assert.That(loaded.Budget, Is.EqualTo(5_050_000_000L));
             Assert.That((loaded.CapFlex, loaded.CapRepay), Is.EqualTo((200_000_000L, 100_000_000L)));

@@ -11,8 +11,11 @@ namespace DailyFranchise.App
     [Serializable]
     public sealed class SeasonSaveData
     {
-        /// <summary>저장 형식 버전. 형식이 바뀌면 올리고, 다른 버전 파일은 손상으로 보고 새 시즌을 시작한다.</summary>
-        public const int CurrentVersion = 1;
+        /// <summary>
+        /// 저장 형식 버전. 형식이 바뀌면 올리고, 다른 버전 파일은 손상으로 보고 새 시즌을 시작한다.
+        /// 2 (Phase 26.5): 가상 리그(부산 웨이브스 등) → 실제 KBO 구단. 이전 저장 파일의 구단·선수는 지금 데이터에 없어 새 시즌으로 시작한다.
+        /// </summary>
+        public const int CurrentVersion = 2;
 
         public int Version;
 

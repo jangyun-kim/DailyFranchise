@@ -11,48 +11,109 @@ using NUnit.Framework;
 
 namespace DailyFranchise.UI.Tests
 {
-    /// <summary>Resources 샘플 로스터 로딩과 MasterDatabase 검증.</summary>
+    /// <summary>Resources 실제 KBO 로스터(Phase 26.5) 로딩과 MasterDatabase 검증.</summary>
     public class MasterDatabaseTests
     {
         const string Teams = "name,short_name,stadium\n가 팀,가,가 구장\n나 팀,나,나 구장\n";
         const string Header = "season,team,id,name,position,throws,bats,role,order,memo,avg,hr,ops,sb,era,w,l,sv,hld\n";
 
         [Test]
-        public void Resources_샘플_로스터를_동기로_읽는다()
+        public void Resources_실제_KBO_선수_데이터를_동기로_읽는다()
         {
             var warnings = new List<string>();
             var db = MasterDatabase.LoadFromResources(warnings.Add);
             Assert.That(warnings, Is.Empty);
+            Assert.That(MasterDatabase.RosterFileName, Is.EqualTo("SampleRoster_Export.csv"));
             Assert.That(db.IsEmpty, Is.False);
-            Assert.That(db.Season, Is.EqualTo(2026));
-            Assert.That(db.Teams, Has.Count.EqualTo(10));
-            Assert.That(db.Players.Count, Is.EqualTo(35), "샘플 27행 + Phase 22 선발 로테이션 4명 × 2구단");
-            Assert.That(db.Players.Select(p => p.Team).Distinct().Count(), Is.EqualTo(2), "2개 구단 분량");
+            Assert.That(db.Season, Is.EqualTo(2024));
+            Assert.That(db.Teams.Select(t => t.Name), Is.EqualTo(new[]
+            {
+                "KIA 타이거즈", "삼성 라이온즈", "LG 트윈스", "두산 베어스", "KT 위즈",
+                "SSG 랜더스", "롯데 자이언츠", "한화 이글스", "NC 다이노스", "키움 히어로즈",
+            }));
+            Assert.That(db.Players.Count, Is.EqualTo(61), "파이썬 파이프라인 내보내기: 삼성 2024 전체 선수단");
+            Assert.That(db.Players.Select(p => p.Team).Distinct(), Is.EqualTo(new[] { "삼성 라이온즈" }), "약칭 '삼성' → 정식 이름");
             Assert.That(db.Players.Select(p => p.Id), Is.Unique);
 
-            var busan = db.GetRoster("부산 웨이브스");
-            Assert.That(busan.Lineup.Select(p => p.Order), Is.EqualTo(Enumerable.Range(1, 9)));
-            Assert.That(busan.Bench, Has.Count.EqualTo(3));
-            Assert.That(busan.Bullpen, Has.Count.EqualTo(3));
-            Assert.That(busan.StartingPitcher.Name, Is.EqualTo("차은호"));
-            var third = busan.AtOrder(3);
-            Assert.That((third.Name, third.Position, third.Throws, third.Bats), Is.EqualTo(("성지환", "RF", Hand.Left, Hand.Left)));
-            Assert.That((third.BattingAverage, third.HomeRuns, third.Ops), Is.EqualTo((0.318, 19, 0.889)));
+            var samsung = db.GetRoster("삼성 라이온즈");
+            Assert.That(samsung.Lineup.Select(p => p.Name), Is.EqualTo(new[]
+                { "구자욱", "김지찬", "김영웅", "이재현", "강민호", "박병호", "이성규", "류지혁", "맥키넌" }));
+            Assert.That(samsung.Starters.Select(p => p.Name), Is.EqualTo(new[] { "코너", "원태인", "레예스", "이승현", "백정현" }));
+            var lead = samsung.AtOrder(1);
+            Assert.That((lead.Name, lead.Position, lead.Throws, lead.Bats), Is.EqualTo(("구자욱", "LF", Hand.Right, Hand.Left)));
+            Assert.That((lead.BattingAverage, lead.HomeRuns, lead.Ops, lead.War), Is.EqualTo((0.343, 33, 1.044, 4.39)));
+            Assert.That(samsung.StartingPitcher.Era, Is.EqualTo(3.43));
 
-            var seoul = db.GetRoster("서울 블루윙스");
-            Assert.That(seoul.StartingPitcher.Era, Is.EqualTo(3.21));
-            Assert.That(seoul.Lineup, Has.Count.EqualTo(9));
+            Assert.That(db.GetRoster("LG 트윈스"), Is.Null, "선수 데이터가 아직 없는 구단");
+            Assert.That(db.FindTeam("삼성 라이온즈").ShortName, Is.EqualTo("삼성"));
+            Assert.That(db.FindPlayer("p_삼성_2024_구자욱").Name, Is.EqualTo("구자욱"));
+            Assert.That(db.FindPlayer("WV003"), Is.Null, "가상 선수 데이터는 런타임에서 읽지 않는다");
+            Assert.That(UnityEngine.Resources.Load<UnityEngine.TextAsset>("Database/SampleRoster_Master"), Is.Null,
+                "가상 데이터 파일은 Resources에서 뺐다");
+        }
 
-            Assert.That(db.GetRoster("인천 하버스"), Is.Null, "선수 데이터가 없는 구단");
-            Assert.That(db.FindTeam("인천 하버스").ShortName, Is.EqualTo("인천"));
-            Assert.That(db.FindPlayer("WV003").Name, Is.EqualTo("성지환"));
-            Assert.That(db.FindPlayer("없음"), Is.Null);
+        [Test]
+        public void 실제_데이터는_1군_엔트리와_퓨처스로_나눈다()
+        {
+            var samsung = TestLeague.Real.GetRoster("삼성 라이온즈");
+            // 1군: 선발 타순 9 · 벤치 앞 5 · 선발 5 · 불펜 앞 7 = 26, 나머지 35명은 퓨처스
+            Assert.That((samsung.Lineup.Count, samsung.Bench.Count, samsung.Starters.Count, samsung.Bullpen.Count, samsung.Reserves.Count),
+                Is.EqualTo((9, 5, 5, 7, 35)));
+            Assert.That(RosterLimits.CountOf(samsung), Is.EqualTo(RosterLimits.MaxRoster));
+            Assert.That(samsung.Bench.Select(p => p.Name), Is.EqualTo(new[] { "김헌곤", "김현준", "윤정빈", "이병헌", "안주형" }),
+                "데이터 순서(출장 많은 순) 앞 5명");
+            Assert.That(samsung.Bullpen.Select(p => p.Name), Is.EqualTo(new[] { "김재윤", "이승현", "임창민", "오승환", "김태훈", "이상민", "최지광" }));
+            Assert.That(samsung.Reserves.Take(2).Select(p => p.Name), Is.EqualTo(new[] { "전병우", "디아즈" }), "벤치 6번째부터");
+            Assert.That(samsung.Reserves.Count(p => p.IsPitcher), Is.EqualTo(16));
+            Assert.That(RosterLimits.GameReadinessProblem(samsung), Is.Null);
+
+            // 퓨처스는 라인업 카드·정원·페이롤에 들어가지 않는다
+            Assert.That(LineupCard.FromRoster(samsung).Bench.Count, Is.EqualTo(5));
+            Assert.That(StoveLeague.Payroll(samsung, null),
+                Is.EqualTo(LeagueRosterBook.AllOf(samsung).Sum(p => FrontOfficeTrust.SalaryOf(p.War))));
+            Assert.That(LeagueRosterBook.AllOf(samsung).Count(), Is.EqualTo(26));
+        }
+
+        [Test]
+        public void 다구단_검증용_테스트_선수단은_2개_구단이다()
+        {
+            var db = TestLeague.TwoTeams;
+            Assert.That(db.Players.Count, Is.EqualTo(35));
+            Assert.That(db.Players.Select(p => p.Team).Distinct(), Is.EquivalentTo(new[] { "삼성 라이온즈", "LG 트윈스" }));
+            Assert.That(db.GetRoster("삼성 라이온즈").Reserves, Is.Empty, "벤치 3 · 불펜 3이라 퓨처스 없음");
+            Assert.That(db.GetRoster("SSG 랜더스"), Is.Null);
+        }
+
+        [Test]
+        public void 선수_행의_구단은_정식_이름이나_약칭으로_적는다()
+        {
+            const string teams = "name,short_name,stadium\n가 구단,가,가 구장\n나 구단,나,나 구장\n다 구단,다,다 구장\n라 구단,다,라 구장\n";
+            var db = MasterDatabase.FromCsv(teams, Header +
+                "2026,가,a1,타자1,CF,R,L,lineup,1,,,,,,,,,,\n" +
+                "2026,나 구단,b1,타자2,SS,R,R,lineup,1,,,,,,,,,,\n");
+            Assert.That(db.FindPlayer("a1").Team, Is.EqualTo("가 구단"));
+            Assert.That(db.GetRoster("가 구단").Lineup.Single().Id, Is.EqualTo("a1"));
+            Assert.That(db.FindPlayer("b1").Team, Is.EqualTo("나 구단"));
+
+            var e = Assert.Throws<FormatException>(() => MasterDatabase.FromCsv(teams, Header + "2026,다,x,이름,CF,R,R,lineup,1,,,,,,,,,,\n"));
+            Assert.That(e.Message, Does.Contain("여러 구단에 겹친다"));
+        }
+
+        [Test]
+        public void 시즌_구장은_구단_데이터와_같다()
+        {
+            foreach (var team in TestLeague.Real.Teams)
+                Assert.That(SeasonState.KboStadiums[team.Name], Is.EqualTo(team.Stadium), team.Name);
+            Assert.That(SeasonState.KboStadiums.Count, Is.EqualTo(TestLeague.Real.Teams.Count));
+            var season = SeasonState.CreateDummy();
+            Assert.That(season.Schedule[0].Stadium, Is.EqualTo("대구 라이온즈파크"), "1경기 LG @ 삼성");
+            Assert.That(season.Schedule.All(g => g.Stadium == SeasonState.KboStadiums[g.HomeTeam]), Is.True);
         }
 
         [Test]
         public void 시즌_일정의_모든_구단이_구단_데이터에_있다()
         {
-            var db = MasterDatabase.LoadFromResources();
+            var db = TestLeague.Real;
             var season = SeasonState.CreateDummy();
             foreach (var team in season.Standings.Select(r => r.Team))
                 Assert.That(db.FindTeam(team), Is.Not.Null, team);
@@ -64,7 +125,7 @@ namespace DailyFranchise.UI.Tests
         {
             var db = MasterDatabase.Empty;
             Assert.That(db.IsEmpty, Is.True);
-            Assert.That(db.GetRoster("부산 웨이브스"), Is.Null);
+            Assert.That(db.GetRoster("삼성 라이온즈"), Is.Null);
         }
 
         [Test]
@@ -106,16 +167,16 @@ namespace DailyFranchise.UI.Tests
     /// <summary>선수단 주입 시 장면 더미 이름표가 DB 선수로 바뀌는지 검증.</summary>
     public class ScenarioRosterSourceTests
     {
-        static readonly MasterDatabase Db = MasterDatabase.LoadFromResources();
+        static readonly MasterDatabase Db = TestLeague.TwoTeams;
         static readonly string[] Ids = ScenarioCatalog.All.Select(e => e.Id).ToArray();
 
-        static TeamRoster Busan => Db.GetRoster("부산 웨이브스");
-        static TeamRoster Seoul => Db.GetRoster("서울 블루윙스");
+        static TeamRoster Busan => Db.GetRoster("삼성 라이온즈");
+        static TeamRoster Seoul => Db.GetRoster("LG 트윈스");
 
         /// <summary>1경기: 서울(원정) vs 부산(홈, 내 구단). 두 구단 모두 선수단이 있다.</summary>
         static ScenarioRosterSource HomeGame(string scenario = ScenarioCatalog.EighthBottomTactics) =>
             new ScenarioRosterSource(new DummyScenarioData(scenario,
-                Matchup.FromNames("서울 블루윙스", "부산 웨이브스", TeamSide.Home, Seoul, Busan)), "SampleRoster.csv");
+                Matchup.FromNames("LG 트윈스", "삼성 라이온즈", TeamSide.Home, Seoul, Busan)), "SampleRoster.csv");
 
         [Test]
         public void 더미_이름표가_DB_선수로_바뀌고_장면_기록은_그대로다()
@@ -197,11 +258,11 @@ namespace DailyFranchise.UI.Tests
         }
 
         [Test]
-        public void 원정_경기에서도_내_선수는_DB_선수이고_선수단이_없는_상대는_더미_이름을_쓴다()
+        public void 원정_경기에서도_내_선수는_DB_선수이고_선수단이_없는_상대는_이름을_지어내지_않는다()
         {
             // 2경기: 부산(원정, 내 구단) vs 인천(홈, 샘플 선수단 없음)
             var source = new ScenarioRosterSource(new DummyScenarioData(ScenarioCatalog.EighthBottomTactics,
-                Matchup.FromNames("부산 웨이브스", "인천 하버스", TeamSide.Away, Busan, Db.GetRoster("인천 하버스"))), "SampleRoster.csv");
+                Matchup.FromNames("삼성 라이온즈", "SSG 랜더스", TeamSide.Away, Busan, Db.GetRoster("SSG 랜더스"))), "SampleRoster.csv");
 
             Assert.That(source.Mirrored, Is.True);
             var batter = source.GetPlayer(Fixture8thBottom.Batter1);
@@ -212,8 +273,18 @@ namespace DailyFranchise.UI.Tests
 
             var pitcher = source.GetPlayer(Fixture8thBottom.Pitcher);
             Assert.That(source.Resolve(Fixture8thBottom.Pitcher), Is.Null);
-            Assert.That(pitcher.Name, Is.EqualTo("강민혁"), "상대 선수단이 없으면 더미");
+            // Phase 26.5: 상대 선수단이 없으면 가상 이름 대신 구단 약칭 + 자리, 기록은 리그 평균 안내
+            Assert.That(pitcher.Name, Is.EqualTo("SSG 선발 투수"));
+            Assert.That(pitcher.SeasonLine, Is.EqualTo(ScenarioRosterSource.NoDataLine));
+            Assert.That(pitcher.Handedness, Is.EqualTo("—"));
             Assert.That(pitcher.Side, Is.EqualTo(TeamSide.Home));
+            Assert.That(pitcher.PitchesBeforeScene, Is.EqualTo(new DummyScenarioData(ScenarioCatalog.EighthBottomTactics)
+                .GetPlayer(Fixture8thBottom.Pitcher).PitchesBeforeScene), "장면의 투구 수는 그대로");
+            Assert.That(source.GetPlayer("away_b4").Name, Is.EqualTo("SSG 4번 타자"));
+            Assert.That(source.GetPlayer("away_rp2").Name, Is.EqualTo("SSG 불펜 2"));
+            Assert.That(ScenarioRosterSource.SlotLabel("home_ph1"), Is.EqualTo("대타 1"));
+            Assert.That(ScenarioRosterSource.SlotLabel("home_pr1"), Is.EqualTo("대주자 1"));
+            Assert.That(ScenarioRosterSource.SlotLabel("ghost"), Is.Null);
         }
 
         [Test]

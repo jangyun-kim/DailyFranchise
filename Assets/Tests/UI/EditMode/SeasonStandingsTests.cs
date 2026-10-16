@@ -16,9 +16,9 @@ namespace DailyFranchise.UI.Tests
         [Test]
         public void 홈_승리는_내_구단_승_원정팀_패로_반영된다()
         {
-            var s = SeasonState.CreateDummy(); // 1경기: 서울 블루윙스(원정) vs 부산 웨이브스(홈)
+            var s = SeasonState.CreateDummy(); // 1경기: LG 트윈스(원정) vs 삼성 라이온즈(홈)
             var me = s.MyStanding;
-            var opp = s.StandingOf("서울 블루윙스");
+            var opp = s.StandingOf("LG 트윈스");
             var (w, l, oppW, oppL) = (me.Wins, me.Losses, opp.Wins, opp.Losses);
 
             s.StartNextGame();

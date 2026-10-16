@@ -186,7 +186,7 @@ namespace DailyFranchise.Sim.Data
             int order = 2;
             foreach (var p in roster.Starters.Where(p => !ReferenceEquals(p, today)))
                 starters.Add(p.CloneAs(RosterRole.Starter, order++, p.Position));
-            return new TeamRoster(roster.Team, roster.Lineup, roster.Bench, starters, roster.Bullpen);
+            return new TeamRoster(roster.Team, roster.Lineup, roster.Bench, starters, roster.Bullpen, roster.Reserves);
         }
     }
 }

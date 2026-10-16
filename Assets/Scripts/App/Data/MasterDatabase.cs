@@ -10,7 +10,11 @@ namespace DailyFranchise.App.Data
 {
     /// <summary>
     /// 런타임 마스터 데이터(구단·선수·시즌)를 메모리에 들고 있는다. 만든 뒤에는 읽기 전용이다.
-    /// 데이터는 Resources/Database 의 CSV(Teams.csv, SampleRoster_Master.csv)에서 읽는다.
+    /// 데이터는 Resources/Database 의 CSV(Teams.csv, SampleRoster_Export.csv)에서 읽는다 (Phase 26.5: 파이썬 파이프라인이
+    /// 내보낸 실제 KBO 선수 데이터. 이전 가상 데이터 SampleRoster_Master.csv는 런타임에서 뺐다).
+    /// 선수 행의 구단은 Teams.csv의 정식 이름(삼성 라이온즈) 또는 약칭(삼성)으로 적을 수 있다 — 약칭은 정식 이름으로 바꾼다.
+    /// 구단 선수단은 1군 엔트리(선발 타순 · 벤치 앞 <see cref="FirstTeamBench"/>명 · 선발 · 불펜 앞 <see cref="FirstTeamBullpen"/>명,
+    /// 각각 데이터 순서)와 나머지 퓨처스(<see cref="TeamRoster.Reserves"/>)로 나눈다.
     /// 선수 CSV는 기존 소문자 열 형식과 파이썬 마스터 CSV 형식(Year, Pos., Back Num., wRC+ …)을 모두 받는다.
     /// - 동기: <see cref="LoadFromResources"/> (테스트·즉시 필요할 때)
     /// - 비동기: <see cref="LoadFromResourcesAsync"/> 코루틴 (에셋은 ResourceRequest, 파싱은 작업 스레드)
@@ -20,9 +24,14 @@ namespace DailyFranchise.App.Data
     public sealed class MasterDatabase : IPlayerLookup
     {
         public const string TeamsResource = "Database/Teams";
-        public const string RosterResource = "Database/SampleRoster_Master";
+        public const string RosterResource = "Database/SampleRoster_Export";
         /// <summary>화면 출처 표기용 선수 데이터 파일 이름.</summary>
-        public const string RosterFileName = "SampleRoster_Master.csv";
+        public const string RosterFileName = "SampleRoster_Export.csv";
+
+        /// <summary>1군 엔트리에 넣는 벤치 야수 수 (<see cref="RosterLimits.MaxBench"/>와 같다).</summary>
+        public const int FirstTeamBench = RosterLimits.MaxBench;
+        /// <summary>1군 엔트리에 넣는 불펜 투수 수 (<see cref="RosterLimits.MaxBullpen"/>와 같다).</summary>
+        public const int FirstTeamBullpen = RosterLimits.MaxBullpen;
 
         readonly List<TeamData> _teams;
         readonly List<PlayerData> _players;
@@ -35,8 +44,14 @@ namespace DailyFranchise.App.Data
             _teams = teams;
             _players = players;
             _byId = players.ToDictionary(p => p.Id);
-            _rosters = players.GroupBy(p => p.Team).ToDictionary(g => g.Key, g => new TeamRoster(g.Key,
-                Of(g, RosterRole.Lineup), Of(g, RosterRole.Bench), Of(g, RosterRole.Starter), Of(g, RosterRole.Bullpen)));
+            _rosters = players.GroupBy(p => p.Team).ToDictionary(g => g.Key, g =>
+            {
+                var bench = Of(g, RosterRole.Bench);
+                var bullpen = Of(g, RosterRole.Bullpen);
+                var reserves = bench.Skip(FirstTeamBench).Concat(bullpen.Skip(FirstTeamBullpen)).ToList();
+                return new TeamRoster(g.Key, Of(g, RosterRole.Lineup), bench.Take(FirstTeamBench).ToList(), Of(g, RosterRole.Starter),
+                    bullpen.Take(FirstTeamBullpen).ToList(), reserves);
+            });
 
             static List<PlayerData> Of(IEnumerable<PlayerData> team, RosterRole role) =>
                 team.Where(p => p.Role == role).OrderBy(p => p.Order).ToList();
@@ -56,6 +71,19 @@ namespace DailyFranchise.App.Data
 
         /// <summary>구단의 선수단. 선수 데이터가 없는 구단이면 null.</summary>
         public TeamRoster GetRoster(string team) => team != null && _rosters.TryGetValue(team, out var r) ? r : null;
+
+        /// <summary>
+        /// 선수 행의 구단 표기 → 정식 이름. 정식 이름이 먼저, 아니면 약칭(short_name)이 한 구단에만 맞을 때.
+        /// 모르는 구단이거나 약칭이 여러 구단에 겹치면 FormatException.
+        /// </summary>
+        static string TeamNameOf(List<TeamData> teams, string raw, int line)
+        {
+            if (teams.Any(t => t.Name == raw)) return raw;
+            var byShort = teams.Where(t => t.ShortName == raw).ToList();
+            if (byShort.Count == 1) return byShort[0].Name;
+            if (byShort.Count > 1) throw new FormatException($"{line}행: 구단 약칭 '{raw}'이 여러 구단에 겹친다 ({string.Join(", ", byShort.Select(t => t.Name))})");
+            throw new FormatException($"{line}행: 모르는 구단 '{raw}'");
+        }
 
         /// <summary>CSV 문자열로 만든다. 형식·내용 오류는 행 번호가 담긴 FormatException.</summary>
         public static MasterDatabase FromCsv(string teamsCsv, string rosterCsv)
@@ -85,7 +113,7 @@ namespace DailyFranchise.App.Data
                 var p = new PlayerData
                 {
                     Name = row.Required("name"),
-                    Team = row.Required("team"),
+                    Team = TeamNameOf(teams, row.Required("team"), row.Line),
                     Position = row.Required(Col(row, "position", "Pos.")),
                     Throws = ParseHand(row, "throws"),
                     Bats = ParseHand(row, "bats"),
@@ -97,7 +125,6 @@ namespace DailyFranchise.App.Data
                 p.Order = row.Has("order") ? row.Int("order")
                     : players.Count(x => x.Team == p.Team && x.Role == p.Role) + 1;
                 ReadStats(row, p);
-                if (teams.All(t => t.Name != p.Team)) throw new FormatException($"{row.Line}행: 모르는 구단 '{p.Team}'");
                 if (players.Any(x => x.Id == p.Id)) throw new FormatException($"{row.Line}행: 선수 ID 중복 '{p.Id}'");
                 if (p.Role == RosterRole.Lineup)
                 {

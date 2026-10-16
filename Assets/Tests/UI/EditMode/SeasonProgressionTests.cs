@@ -49,7 +49,7 @@ namespace DailyFranchise.UI.Tests
         {
             var s = SeasonState.CreateDummy();
             var me = s.MyStanding;          // 23승 18패 0무
-            var opp = s.StandingOf("서울 블루윙스"); // 24승 16패 2무
+            var opp = s.StandingOf("LG 트윈스"); // 24승 16패 2무
 
             var report = Play(s, new GameScore(away, home), Seed, _saves);
 
@@ -164,7 +164,7 @@ namespace DailyFranchise.UI.Tests
             var s = SeasonState.CreateDummy();
             Assert.That(LobbyController.LastResultText(s), Is.EqualTo("—"));
             Play(s, new GameScore(3, 3), Seed, null);
-            Assert.That(LobbyController.LastResultText(s), Does.StartWith("경기 1 · 서울 블루윙스 vs 부산 웨이브스 · 무 3:3 · "));
+            Assert.That(LobbyController.LastResultText(s), Does.StartWith("경기 1 · LG 트윈스 vs 삼성 라이온즈 · 무 3:3 · "));
         }
 
         // ───────── IComparer 타이브레이커 ─────────

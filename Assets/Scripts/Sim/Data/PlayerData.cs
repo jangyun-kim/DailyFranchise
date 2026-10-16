@@ -167,7 +167,10 @@ namespace DailyFranchise.Sim.Data
         public string Stadium;
     }
 
-    /// <summary>한 구단의 오늘 선수단. 각 목록은 Order 순으로 정렬돼 있다.</summary>
+    /// <summary>
+    /// 한 구단의 오늘 선수단 (1군). 각 목록은 Order 순으로 정렬돼 있다.
+    /// <see cref="Reserves"/>는 1군 엔트리 밖의 퓨처스(2군) 선수 — 경기·라인업·정원·페이롤에 쓰지 않는다 (Phase 26.5).
+    /// </summary>
     public sealed class TeamRoster
     {
         public readonly string Team;
@@ -175,15 +178,18 @@ namespace DailyFranchise.Sim.Data
         public readonly IReadOnlyList<PlayerData> Bench;
         public readonly IReadOnlyList<PlayerData> Starters;
         public readonly IReadOnlyList<PlayerData> Bullpen;
+        /// <summary>퓨처스(2군) 선수 (벤치·불펜 순서 그대로 이어짐). 없으면 빈 목록.</summary>
+        public readonly IReadOnlyList<PlayerData> Reserves;
 
         public TeamRoster(string team, IReadOnlyList<PlayerData> lineup, IReadOnlyList<PlayerData> bench,
-            IReadOnlyList<PlayerData> starters, IReadOnlyList<PlayerData> bullpen)
+            IReadOnlyList<PlayerData> starters, IReadOnlyList<PlayerData> bullpen, IReadOnlyList<PlayerData> reserves = null)
         {
             Team = team ?? throw new ArgumentNullException(nameof(team));
             Lineup = lineup ?? Array.Empty<PlayerData>();
             Bench = bench ?? Array.Empty<PlayerData>();
             Starters = starters ?? Array.Empty<PlayerData>();
             Bullpen = bullpen ?? Array.Empty<PlayerData>();
+            Reserves = reserves ?? Array.Empty<PlayerData>();
         }
 
         /// <summary>오늘 선발 투수. 없으면 null.</summary>

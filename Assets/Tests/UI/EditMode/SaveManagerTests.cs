@@ -63,7 +63,7 @@ namespace DailyFranchise.UI.Tests
             var season = PlayedTwoGames();
             string json = SaveManager.ToJson(season);
             Assert.That(json, Does.Contain("\"NextIndex\": 2"));
-            Assert.That(json, Does.Contain("부산 웨이브스"));
+            Assert.That(json, Does.Contain("삼성 라이온즈"));
 
             var loaded = SaveManager.FromJson(json);
             AssertSameSeason(loaded, season);
@@ -139,7 +139,9 @@ namespace DailyFranchise.UI.Tests
             yield return new TestCaseData("{ \"Version\": 1, \"Schedule\": [ {").SetName("손상_잘린_JSON");
             yield return new TestCaseData("garbage \u0000\u0001 not json").SetName("손상_JSON_아님");
             yield return new TestCaseData("{}").SetName("손상_빈_객체");
-            yield return new TestCaseData(valid.Replace("\"Version\": 1", "\"Version\": 99")).SetName("손상_버전_불일치");
+            yield return new TestCaseData(valid.Replace("\"Version\": 2", "\"Version\": 99")).SetName("손상_버전_불일치");
+            // Phase 26.5: 가상 리그(부산 웨이브스 등) 시절 형식 1 파일은 지금 데이터의 구단·선수가 아니라 새 시즌으로 시작한다.
+            yield return new TestCaseData(valid.Replace("\"Version\": 2", "\"Version\": 1")).SetName("손상_이전_가상_리그_형식_1");
             yield return new TestCaseData(valid.Replace("\"NextIndex\": 2", "\"NextIndex\": 42")).SetName("손상_진행_위치_범위_밖");
             yield return new TestCaseData(valid.Replace("\"NextIndex\": 2", "\"NextIndex\": 3")).SetName("손상_진행_위치와_종료_경기_불일치");
             yield return new TestCaseData(new Regex("\"AwayTeam\": \"[^\"]+\"").Replace(valid, "\"AwayTeam\": \"없는 구단\"", 1))

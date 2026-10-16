@@ -210,12 +210,14 @@ namespace DailyFranchise.App
                 RenderChemistry(ChemistryRules.Evaluate(mine, _manager.ChemistryTags), _manager.ChemistryTags != null);
                 RenderDatabaseRoster(mine);
                 RenderRotation(mine, season);
+                // 1군 엔트리 밖 퓨처스 선수 수 (Phase 26.5 — 실제 데이터는 구단 전체 선수단이다)
+                Q<Label>("bench-title").text = mine.Reserves.Count > 0 ? $"벤치 · 퓨처스 {mine.Reserves.Count}명 대기" : "벤치";
                 Q<Label>("roster-source").text = $"표시 데이터: {MasterDatabase.RosterFileName} ({db.Season})";
                 RenderSelection();
                 return;
             }
 
-            // 선수 DB가 없거나 아직 읽는 중이면 경기 화면과 같은 더미 선수 데이터를 쓴다 (교체 불가).
+            // 선수 DB를 읽는 중이거나 내 구단 데이터가 없으면 선수 이름을 지어내지 않고 비워 둔다 (Phase 26.5).
             RenderChemistry(null, false);
             _card = null;
             _selection.Clear();
@@ -223,11 +225,12 @@ namespace DailyFranchise.App
             SetVisible(Q("rotation-title"), false);
             SetVisible(Q("bullpen-title"), false);
             Q("bullpen").Clear();
-            var roster = new DummyScenarioData();
-            FillDummy(Q("roster"), roster, roster.GetLineup(roster.MyTeam));
-            FillDummy(Q("bench"), roster, roster.GetBench(roster.MyTeam));
-            Q<Label>("roster-source").text = "표시 데이터: 가상 더미";
-            Q<Label>("lineup-hint").text = _manager.IsDatabaseReady ? "라인업 교체는 선수 데이터가 있을 때만 할 수 있습니다." : "";
+            Q("roster").Clear();
+            Q("bench").Clear();
+            Q<Label>("roster-source").text = _manager.IsDatabaseReady ? $"표시 데이터: {MasterDatabase.RosterFileName} — 내 구단 선수 없음" : "";
+            Q<Label>("lineup-hint").text = _manager.IsDatabaseReady
+                ? $"{season.MyTeam} 선수 데이터가 없습니다. 선수 CSV를 확인하세요."
+                : "선수 데이터 불러오는 중…";
         }
 
         /// <summary>
@@ -244,21 +247,6 @@ namespace DailyFranchise.App
             var label = Q<Label>("chem-active");
             label.text = known ? ChemistryText.Summary(active) : "선수 데이터를 읽으면 판정합니다";
             label.EnableInClassList("chem-active--on", active != null && active.Kinds.Count > 0);
-        }
-
-        static void FillDummy(VisualElement container, DummyScenarioData roster, IEnumerable<RosterEntry> entries)
-        {
-            container.Clear();
-            foreach (var entry in entries)
-            {
-                var p = roster.GetPlayer(entry.PlayerId);
-                container.Add(Row("lobby-row",
-                    Cell(entry.Order?.ToString() ?? "", "col-order"),
-                    Cell(entry.Role, "col-pos"),
-                    Cell(p.Name, "col-name"),
-                    Cell("", "col-cond"),
-                    Cell(p.Handedness, "col-hand")));
-            }
         }
 
         /// <summary>선발 로테이션: 로테이션 순서대로, 컨디션과 오늘 선발 표시.</summary>

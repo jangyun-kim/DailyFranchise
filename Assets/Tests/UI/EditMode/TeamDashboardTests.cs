@@ -37,9 +37,9 @@ namespace DailyFranchise.UI.Tests
         [Test]
         public void 홈_경기_득실점은_내_구단과_상대에_반대로_누적된다()
         {
-            var s = SeasonState.CreateDummy(); // 1경기: 서울 블루윙스(원정) vs 부산 웨이브스(홈)
+            var s = SeasonState.CreateDummy(); // 1경기: LG 트윈스(원정) vs 삼성 라이온즈(홈)
             var me = s.MyStanding;
-            var opp = s.StandingOf("서울 블루윙스");
+            var opp = s.StandingOf("LG 트윈스");
             var (rs, ra, oRs, oRa) = (me.RunsScored, me.RunsAllowed, opp.RunsScored, opp.RunsAllowed);
 
             var report = Play(s, new GameScore(2, 7));
@@ -241,22 +241,23 @@ namespace DailyFranchise.UI.Tests
         }
 
         [Test]
-        public void 샘플_DB_내_구단_리더는_마스터_파일_기록과_같고_라인업을_바꾸면_다시_뽑힌다()
+        public void 실제_DB_내_구단_리더는_2024_삼성_기록과_같고_라인업을_바꾸면_다시_뽑힌다()
         {
             var db = MasterDatabase.LoadFromResources();
-            var roster = db.GetRoster("부산 웨이브스");
+            var roster = db.GetRoster("삼성 라이온즈");
             Assert.That(roster, Is.Not.Null);
             var leaders = RosterAnalyzer.Leaders(roster);
             Assert.That(leaders.Select(l => (l.CategoryText, l.Player.Name, l.ValueText)), Is.EqualTo(new[]
             {
-                ("타율", "성지환", ".318"), ("홈런", "표준혁", "25개"), ("평균자책", "차은호", "3.55"), ("세이브", "석진영", "27개"),
+                ("타율", "구자욱", ".343"), ("홈런", "구자욱", "33개"), ("평균자책", "코너", "3.43"), ("세이브", "오승환", "27개"),
             }));
 
-            // 성지환(3번)을 벤치 소윤호(.296)와 바꾸면 타율 1위는 라인업에 남은 하윤재(.301).
+            // 구자욱(1번)을 벤치 김헌곤(.302)과 바꾸면 타율 1위는 김지찬(.316), 홈런 1위는 김영웅(28).
             var card = LineupCard.FromRoster(roster);
-            Assert.That(card.TrySwap(LineupSpot.Batting(3), LineupSpot.Bench(0)), Is.True);
+            Assert.That(card.TrySwap(LineupSpot.Batting(1), LineupSpot.Bench(0)), Is.True);
             var swapped = card.ApplyTo(roster);
-            Assert.That(RosterAnalyzer.Leader(swapped, LeaderCategory.BattingAverage).Player.Name, Is.EqualTo("하윤재"));
+            Assert.That(RosterAnalyzer.Leader(swapped, LeaderCategory.BattingAverage).Player.Name, Is.EqualTo("김지찬"));
+            Assert.That(RosterAnalyzer.Leader(swapped, LeaderCategory.HomeRuns).Player.Name, Is.EqualTo("김영웅"));
         }
     }
 }

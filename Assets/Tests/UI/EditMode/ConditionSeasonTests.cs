@@ -21,8 +21,8 @@ namespace DailyFranchise.UI.Tests
             g.AddPitches("WV013", 92);
             g.AddPitches("WV014", 18);
             foreach (var id in new[] { "WV010", "WV015", "WV017" }) g.AddRosterPlayer(id);
-            g.SetStartingPitcher("부산 웨이브스", "WV013");
-            g.SetStartingPitcher("서울 블루윙스", "BW010");
+            g.SetStartingPitcher("삼성 라이온즈", "WV013");
+            g.SetStartingPitcher("LG 트윈스", "BW010");
             return g;
         }
 
@@ -45,7 +45,7 @@ namespace DailyFranchise.UI.Tests
             Assert.That(new[] { "WV010", "WV015", "WV017" }.Select(s.ConditionOf), Is.All.EqualTo(4), "결장 → +1");
             Assert.That(r.Conditions.Select(c => c.PlayerId), Is.Ordered.Using((IComparer<string>)StringComparer.Ordinal));
             Assert.That(r.Conditions, Has.Count.EqualTo(8));
-            Assert.That((s.LastStarterOf("부산 웨이브스"), s.LastStarterOf("서울 블루윙스"), s.LastStarterOf("인천 하버스")),
+            Assert.That((s.LastStarterOf("삼성 라이온즈"), s.LastStarterOf("LG 트윈스"), s.LastStarterOf("SSG 랜더스")),
                 Is.EqualTo(("WV013", "BW010", (string)null)), "선발 순번 기록");
         }
 

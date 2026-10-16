@@ -16,8 +16,8 @@ namespace DailyFranchise.UI.Tests
     /// <summary>라인업 카드 교체 규칙과 선수단 적용.</summary>
     public class LineupCardTests
     {
-        static readonly MasterDatabase Db = MasterDatabase.LoadFromResources();
-        static TeamRoster Busan => Db.GetRoster("부산 웨이브스");
+        static readonly MasterDatabase Db = TestLeague.TwoTeams;
+        static TeamRoster Busan => Db.GetRoster("삼성 라이온즈");
 
         static string[] BattingIds(LineupCard c) => c.Batting.Select(s => s.PlayerId).ToArray();
 
@@ -166,7 +166,7 @@ namespace DailyFranchise.UI.Tests
             card.TrySwap(LineupSpot.Batting(3), LineupSpot.Bench(0));
             var mine = card.ApplyTo(Busan);
             var source = new ScenarioRosterSource(new DummyScenarioData(ScenarioCatalog.EighthBottomTactics,
-                Matchup.FromNames("서울 블루윙스", "부산 웨이브스", TeamSide.Home, Db.GetRoster("서울 블루윙스"), mine)), "SampleRoster.csv");
+                Matchup.FromNames("LG 트윈스", "삼성 라이온즈", TeamSide.Home, Db.GetRoster("LG 트윈스"), mine)), "SampleRoster.csv");
 
             Assert.That(source.GetLineup(TeamSide.Home).Select(e => source.GetPlayer(e.PlayerId).Name).ElementAt(2), Is.EqualTo("소윤호"));
             Assert.That(source.GetLineup(TeamSide.Home).ElementAt(2).Role, Is.EqualTo("RF"));
@@ -243,7 +243,7 @@ namespace DailyFranchise.UI.Tests
         static SeasonState WithSwappedLineup()
         {
             var season = SeasonState.CreateDummy();
-            var card = LineupCard.FromRoster(MasterDatabase.LoadFromResources().GetRoster(season.MyTeam));
+            var card = LineupCard.FromRoster(TestLeague.TwoTeams.GetRoster(season.MyTeam));
             card.TrySwap(LineupSpot.Batting(3), LineupSpot.Bench(0));
             card.TrySwap(LineupSpot.Batting(1), LineupSpot.Batting(2));
             season.MyLineup = card;

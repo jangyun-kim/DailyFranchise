@@ -25,7 +25,7 @@ namespace DailyFranchise.UI.Tests
         public void 첫_경기는_경기_화면_더미와_같은_매치업()
         {
             var first = SeasonState.CreateDummy().NextGame;
-            Assert.That((first.AwayTeam, first.HomeTeam), Is.EqualTo(("서울 블루윙스", "부산 웨이브스")));
+            Assert.That((first.AwayTeam, first.HomeTeam), Is.EqualTo(("LG 트윈스", "삼성 라이온즈")));
         }
 
         [Test]

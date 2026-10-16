@@ -328,7 +328,7 @@ Label {
 
 .next-game {
     height: 32px;
-    font-size: 20px;
+    font-size: 18px; /* Phase 26.5: 실제 구단명·구장명이 길어 20 → 18 */
     -unity-font-style: bold;
     -unity-text-align: middle-left;
 }
