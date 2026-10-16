@@ -313,9 +313,11 @@ namespace DailyFranchise.UI.Tests
             // 2) 주전 포수 [방출] → 포수 자리는 포수가 (외야수 김헌곤이 아니라)
             var mine = manager.MyRoster;
             var catcher = mine.Lineup.Single(p => p.Position == "C");
-            var row = root.Q("lineup-" + catcher.Order);
-            var release = row.Q<Button>(className: "lobby-release");
+            Click(root.Q("lineup-" + catcher.Order)); // Phase 31: 방출은 선수 상세에서 두 번 눌러 확정
+            yield return null;
+            var release = root.Q<Button>("pd-release");
             Assert.That(release.enabledSelf, Is.True, release.tooltip);
+            Submit(release);
             Submit(release);
             yield return null;
 
@@ -541,7 +543,7 @@ namespace DailyFranchise.UI.Tests
             Assert.That(root.Q<Button>("start-game").enabledSelf, Is.True);
             Assert.That(root.Q("roster").Query<Label>(className: "col-name").ToList().Select(l => l.text),
                 Is.EqualTo(manager.Database.GetRoster(manager.Season.MyTeam).Lineup.Select(p => p.Name)));
-            Assert.That(root.Q<Label>("roster-source").text, Does.Contain(MasterDatabase.RosterFileName));
+            Assert.That(root.Q("roster-source"), Is.Null, "Phase 31: 원천 데이터 파일·연도 표기는 로비에 없다");
         }
 
         [UnityTest]
@@ -678,9 +680,16 @@ namespace DailyFranchise.UI.Tests
             Assert.That(Names(root.Q("roster"))[2], Is.EqualTo("김영웅"));
             Assert.That(Names(root.Q("bench"))[0], Is.EqualTo("김헌곤"));
 
-            // 1) 3번 타자 클릭 → 강조
+            // 1) 3번 타자 클릭 → 선수 상세 (Phase 31) → [직접 골라 맞바꾸기] → 강조
+            var lobbyView = Object.FindAnyObjectByType<LobbyController>();
             Click(root.Q("lineup-3"));
             yield return null;
+            Assert.That(lobbyView.PlayerDetail.IsOpen, Is.True);
+            Assert.That(root.Q<Label>("pd-name").text, Is.EqualTo("김영웅"));
+            Assert.That(root.Q("lineup-3").ClassListContains("lobby-row--selected"), Is.False, "행 클릭은 상세를 연다");
+            Submit(root.Q<Button>("pd-pick"));
+            yield return null;
+            Assert.That(lobbyView.PlayerDetail.IsOpen, Is.False);
             Assert.That(root.Q("lineup-3").ClassListContains("lobby-row--selected"), Is.True);
             Assert.That(root.Q("bench-1").ClassListContains("lobby-row--swappable"), Is.True);
             Assert.That(root.Q<Label>("lineup-hint").text, Does.StartWith("김영웅 선택됨"));
@@ -694,8 +703,8 @@ namespace DailyFranchise.UI.Tests
             Assert.That(root.Query(className: "lobby-row--selected").ToList(), Is.Empty, "교체 후 선택 해제");
             Assert.That(File.ReadAllText(TestSavePath), Does.Contain("p_삼성_2024_김헌곤"), "세이브 파일에 덮어씀");
 
-            // 벤치끼리는 바꾸지 않고 선택만 옮긴다.
-            Click(root.Q("bench-1"));
+            // 벤치끼리는 바꾸지 않고 선택만 옮긴다 (선택 중에는 행 클릭이 상세 대신 교체 대상 선택).
+            lobbyView.ClickLineupSpot(LineupSpot.Bench(0));
             Click(root.Q("bench-2"));
             yield return null;
             Assert.That(root.Q("bench-2").ClassListContains("lobby-row--selected"), Is.True);
@@ -1022,7 +1031,9 @@ namespace DailyFranchise.UI.Tests
         {
             var manager = SeasonManager.Instance;
             var root = LobbyRoot();
-            Assert.That(root.Q<Label>("today").text, Is.EqualTo("오늘 " + FranchiseFinance.TodayText(System.DateTime.Now)));
+            Assert.That(root.Q("today"), Is.Null, "Phase 31: 현실 날짜는 없다");
+            Assert.That(root.Q<Label>("season-title").text, Is.EqualTo(manager.Season.SeasonTitle));
+            Assert.That(root.Q<Label>("game-day").text, Is.EqualTo("다음 경기 " + manager.Season.NextGame.Date), "게임 내 날짜");
             Assert.That(root.Q<Label>("fo-budget").text, Is.EqualTo("₩ 50억"), "Phase 26: 억·만 단위 표기");
             Assert.That(root.Q<Label>("fo-budget").tooltip, Is.EqualTo("₩5,000,000,000"));
             Assert.That(manager.Season.Payroll, Is.EqualTo(6_294_000_000L), "로비가 열리면 페이롤이 삼성 1군 26명 연봉에 맞춰진다");
@@ -1192,6 +1203,91 @@ namespace DailyFranchise.UI.Tests
             Assert.That(lobby.Chemistry.Kinds, Is.Empty);
             Assert.That(lobby.ChemistryRenderCount, Is.EqualTo(renders + 2));
 
+            rt.Release();
+            Object.Destroy(rt);
+            Object.Destroy(panel);
+        }
+
+        [UnityTest]
+        public IEnumerator Phase31_오늘의_결정에서_지친_주전을_발견해_상세에서_벤치와_바꾸면_경기_뒤_회복해_경고가_사라진다()
+        {
+            var manager = SeasonManager.Instance;
+            manager.UseGeneratedScenario = true;
+            manager.ScenarioRandom = new SeededRandom(20261031);
+            manager.ConditionRandom = new ScriptedRandom(0.99); // 출장 야수는 하락하지 않는다 → 교체·휴식 효과만 본다
+            var lobby = Object.FindAnyObjectByType<LobbyController>();
+            var doc = lobby.GetComponent<UIDocument>();
+            var rt = new RenderTexture(1920, 1080, 24);
+            rt.Create();
+            var panel = Object.Instantiate(doc.panelSettings);
+            panel.targetTexture = rt;
+            doc.panelSettings = panel;
+            yield return null;
+            yield return null;
+            var root = LobbyRoot();
+            void Layout(string label)
+            {
+                var issues = LayoutChecker.Check(LobbyRoot().Q("screen"));
+                Assert.That(issues, Is.Empty, $"[{label}]\n" + string.Join("\n", issues));
+            }
+
+            // 홈 대시보드: 팀 컬러 테마, 다음 경기 프리뷰, 경고 없음, 목록에는 방출 버튼·보통 컨디션 표시 없음
+            Assert.That(root.Q("screen").ClassListContains("team--samsung"), Is.True);
+            Assert.That(root.Q<Label>("team-mark").text, Is.EqualTo("삼성"));
+            Assert.That(root.Q<Label>("pv-home-team").text, Is.EqualTo("삼성 라이온즈"));
+            Assert.That(root.Q<Label>("pv-away-team").text, Is.EqualTo("LG 트윈스"));
+            Assert.That(root.Q("pv-home").ClassListContains("pv-side--mine"), Is.True);
+            Assert.That(root.Q<Label>("pv-home-sp").text, Is.EqualTo(manager.GameRosterOf("삼성 라이온즈").StartingPitcher.Name));
+            Assert.That(root.Q<Label>("pv-away-sp").text, Is.EqualTo("선발 미정"), "상대 선수 데이터 없음");
+            Assert.That(root.Q<Label>("pv-note").text, Is.EqualTo("시즌 첫 맞대결"));
+            Assert.That(root.Q("decision-ok"), Is.Not.Null, "처음엔 경고 없음");
+            Assert.That(root.Query<Button>(className: "lobby-release").ToList(), Is.Empty);
+            Assert.That(root.Q("lineup-3").Q<Label>(className: "cond-text").resolvedStyle.display, Is.EqualTo(DisplayStyle.None), "보통은 숨긴다");
+            Layout("Phase31 첫 로비");
+
+            // 1) 문제: 3번 타자가 지침 → 오늘의 결정에 경고
+            var tired = manager.MyRoster.AtOrder(3);
+            manager.Season.SetCondition(tired.Id, PlayerCondition.Tired);
+            lobby.enabled = false;
+            lobby.enabled = true;
+            yield return null;
+            root = LobbyRoot();
+            var warning = root.Q("decision-cond-" + tired.Id);
+            Assert.That(warning, Is.Not.Null);
+            Assert.That(warning.ClassListContains("decision--caution"), Is.True);
+            Assert.That(warning.Q<Label>(className: "decision__title").text, Is.EqualTo($"3번 {tired.Name} ({tired.Position}) · 컨디션 지침"));
+            Assert.That(root.Q("decision-ok"), Is.Null);
+            Assert.That(root.Q("lineup-3").Q<Label>(className: "cond-text").resolvedStyle.display, Is.EqualTo(DisplayStyle.Flex), "지침은 보인다");
+            Layout("지침 경고");
+
+            // 2) 결정: 경고를 눌러 선수 상세 → 상태 확인 → 추천 벤치 선수와 교체
+            Click(warning);
+            yield return null;
+            Assert.That(lobby.PlayerDetail.IsOpen, Is.True);
+            Assert.That(lobby.PlayerDetail.PlayerId, Is.EqualTo(tired.Id));
+            Assert.That(root.Q<Label>("pd-condition").text, Is.EqualTo("컨디션 지침"));
+            Assert.That(root.Q<Label>("pd-condition-note").text, Is.EqualTo("벤치에서 한 경기 쉬면 보통으로 회복합니다."));
+            Assert.That(root.Q<Label>("pd-role").text, Is.EqualTo("선발 3번 타자"));
+            var sub = lobby.PlayerDetail.SwapCandidates()[0];
+            yield return null;
+            Layout("선수 상세 모달");
+            Submit(root.Q<Button>("pd-swap-" + sub.Id));
+            yield return null;
+            Assert.That(lobby.PlayerDetail.IsOpen, Is.False);
+            Assert.That(manager.MyRoster.AtOrder(3).Id, Is.EqualTo(sub.Id));
+            Assert.That(root.Q("decision-cond-" + tired.Id), Is.Null, "벤치로 내리면 경고에서 빠진다");
+
+            // 3) 경기 진행
+            yield return PlayDefaultGameAndReturn();
+
+            // 4) 결과: 쉰 선수는 보통으로 회복, 로비 경고 없음
+            Assert.That(manager.Season.ConditionOf(tired.Id), Is.EqualTo(PlayerCondition.Normal), "지침(2) + 휴식 1 → 보통");
+            root = LobbyRoot();
+            Assert.That(root.Q("decision-cond-" + tired.Id), Is.Null);
+            Assert.That(root.Q("decision-ok"), Is.Not.Null, "경고 패널이 비었다");
+            var benchRow = root.Q("bench").Children().First(r => r.Q<Label>(className: "col-name").text == tired.Name);
+            Assert.That(benchRow.Q<Label>(className: "cond-text").resolvedStyle.display, Is.EqualTo(DisplayStyle.None), "보통이라 표시 없음");
+            Assert.That(root.Q<Label>("pv-note").text, Does.StartWith("시즌 첫 맞대결").Or.StartWith("시즌 상대 전적"));
             rt.Release();
             Object.Destroy(rt);
             Object.Destroy(panel);

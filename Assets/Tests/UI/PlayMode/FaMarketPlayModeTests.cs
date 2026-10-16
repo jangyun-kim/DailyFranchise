@@ -76,6 +76,15 @@ namespace DailyFranchise.UI.Tests
         static VisualElement Root => Lobby.GetComponent<UIDocument>().rootVisualElement;
         static string Text(string name) => Root.Q<Label>(name).text;
 
+        static void Click(VisualElement element)
+        {
+            using (var click = ClickEvent.GetPooled())
+            {
+                click.target = element;
+                element.SendEvent(click);
+            }
+        }
+
         static void Submit(Button button)
         {
             using (var submit = NavigationSubmitEvent.GetPooled())
@@ -152,16 +161,39 @@ namespace DailyFranchise.UI.Tests
             var r = RenderAt1080();
             yield return null;
             yield return null;
-            var release = Root.Q("bench-1").Q<Button>(className: "lobby-release");
-            Assert.That(release.enabledSelf, Is.True);
-            Assert.That(release.tooltip, Is.EqualTo("방출 · 위약금 −₩5,700만 (연봉 50%)"));
-            Assert.That(Root.Q("lineup-1").Q<Button>(className: "lobby-release").enabledSelf, Is.True, "Phase 30: 선발 타자도 방출할 수 있다");
-            Assert.That(Root.Q("rotation").Q<Button>(className: "lobby-release"), Is.Null, "로테이션도 없다");
+            Assert.That(Root.Query<Button>(className: "lobby-release").ToList(), Is.Empty, "Phase 31: 목록에는 방출 버튼이 없다 (선수 상세 안에서만)");
             Assert.That(Root.Q("bullpen").Children().Count(), Is.EqualTo(7), "1군 불펜 칩 7개");
             AssertLayout("1군 26명 로비");
 
+            // 선발 타자는 상세에서 방출할 수 있고 (Phase 30), 로테이션 투수는 막힌다
+            Click(Root.Q("lineup-1"));
+            yield return null;
+            Assert.That(Lobby.PlayerDetail.IsOpen, Is.True);
+            Assert.That(Root.Q<Button>("pd-release").enabledSelf, Is.True, "Phase 30: 선발 타자도 방출할 수 있다");
+            Submit(Root.Q<Button>("pd-close"));
+            Click(Root.Q("rotation-1"));
+            yield return null;
+            Assert.That(Root.Q<Button>("pd-release").enabledSelf, Is.False, "로테이션 투수는 막힌다");
+            Assert.That(Text("pd-release-note"), Is.EqualTo(StoveLeague.ReleaseBlockText(ReleaseBlock.Starter)));
+            Submit(Root.Q<Button>("pd-close"));
+            Assert.That(Lobby.PlayerDetail.IsOpen, Is.False);
+
+            // 벤치 1번 행 → 선수 상세 → [방출] (확인 상태) → [방출 확정]
+            Click(Root.Q("bench-1"));
+            yield return null;
+            Assert.That(Text("pd-name"), Is.EqualTo("김헌곤"));
+            var release = Root.Q<Button>("pd-release");
+            Assert.That(release.enabledSelf, Is.True);
+            Assert.That(release.tooltip, Is.EqualTo("방출 · 위약금 −₩5,700만 (연봉 50%)"));
+            AssertLayout("선수 상세");
             Submit(release);
             yield return null;
+            Assert.That(Lobby.PlayerDetail.ReleaseArmed, Is.True, "첫 누름은 확인 상태로만");
+            Assert.That(release.text, Is.EqualTo("방출 확정 · 위약금 −₩5,700만"));
+            Assert.That(manager.Season.Budget, Is.EqualTo(Budget0), "아직 방출하지 않았다");
+            Submit(release);
+            yield return null;
+            Assert.That(Lobby.PlayerDetail.IsOpen, Is.False, "방출하면 상세가 닫힌다");
             Assert.That(manager.Season.Budget, Is.EqualTo(Budget0 - 57_000_000));
             Assert.That(BenchNames(), Is.EqualTo(new[] { "김현준", "윤정빈", "이병헌", "안주형" }));
             Assert.That(Text("lineup-hint"), Is.EqualTo("방출 · 김헌곤 → FA 시장 (위약금 −₩5,700만)"));
@@ -368,7 +400,11 @@ namespace DailyFranchise.UI.Tests
             var lobby = Lobby;
             string penId = manager.MyRoster.Bullpen[0].Id;
             var chip = Root.Q("bullpen-" + penId);
-            Submit(chip.Q<Button>(className: "lobby-release"));
+            Click(chip);
+            yield return null;
+            Assert.That(Lobby.PlayerDetail.PlayerId, Is.EqualTo(penId), "불펜 칩을 누르면 선수 상세");
+            Submit(Root.Q<Button>("pd-release"));
+            Submit(Root.Q<Button>("pd-release"));
             yield return null;
             Assert.That(Root.Q("bullpen").Children().Count(), Is.EqualTo(6));
             Assert.That(Text("bullpen-title"), Is.EqualTo("불펜 6명"));
@@ -377,8 +413,11 @@ namespace DailyFranchise.UI.Tests
             lobby.enabled = false;
             lobby.enabled = true;
             yield return null;
-            var release = Root.Q("bench-1").Q<Button>(className: "lobby-release");
+            Click(Root.Q("bench-1"));
+            yield return null;
+            var release = Root.Q<Button>("pd-release");
             Assert.That(release.enabledSelf, Is.False);
+            Assert.That(Text("pd-release-note"), Is.EqualTo("예산이 위약금보다 적어 방출할 수 없습니다."));
             Assert.That(release.tooltip, Is.EqualTo("예산이 위약금보다 적어 방출할 수 없습니다."));
             var o = lobby.ReleasePlayer(manager.MyRoster.Bench[0].Id);
             Assert.That(o.Block, Is.EqualTo(ReleaseBlock.Budget), "직접 불러도 막힌다");

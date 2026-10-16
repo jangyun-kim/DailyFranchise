@@ -1,4 +1,4 @@
-/* ───────── 토큰 (GameScreen.uss와 같은 값) ───────── */
+/* ───────── 토큰 (GameScreen.uss와 같은 값) + Phase 31 팀 컬러 ───────── */
 .screen {
     --bg: #0E1319;
     --panel: #161E27;
@@ -7,6 +7,14 @@
     --text: #E6EBF0;
     --muted: #8796A6;
     --accent: #F28C28;
+    --danger: #E5534B;
+    --caution: #E3B341;
+    --good: #3FB950;
+    --cool: #4C9BE8;
+    /* 구단 컬러 (team--* 클래스가 덮어쓴다): 진한 기본 / 밝은 강조 / 어두운 바탕 */
+    --team: #2F6FDB;
+    --team-light: #5B91E8;
+    --team-tint: #13223A;
 
     width: 1920px;
     height: 1080px;
@@ -16,6 +24,17 @@
     font-size: 15px;
     overflow: hidden;
 }
+
+.team--samsung { --team: #074CA1; --team-light: #4A8BE0; --team-tint: #0E2340; }
+.team--lg { --team: #C30452; --team-light: #EA4B86; --team-tint: #2E0E1C; }
+.team--kia { --team: #C8102E; --team-light: #F2546A; --team-tint: #33121A; }
+.team--doosan { --team: #2A2770; --team-light: #6E69D0; --team-tint: #17162E; }
+.team--kt { --team: #B5121B; --team-light: #E5484F; --team-tint: #2C1416; }
+.team--ssg { --team: #CE0E2D; --team-light: #F04A5E; --team-tint: #311219; }
+.team--lotte { --team: #0B3A75; --team-light: #3F7DD0; --team-tint: #0B1A2E; }
+.team--hanwha { --team: #E55A00; --team-light: #FF9440; --team-tint: #33200F; }
+.team--nc { --team: #315288; --team-light: #6A8CC7; --team-tint: #15213A; }
+.team--kiwoom { --team: #820024; --team-light: #C2335A; --team-tint: #2A0E16; }
 
 Label {
     margin: 0;
@@ -29,6 +48,37 @@ Label {
     border-color: var(--line);
     border-radius: 6px;
     padding: 12px;
+}
+
+/* Phase 31 시각적 위계: 결정 카드(프리뷰·오늘의 결정)는 굵은 상단 띠, 보조 카드는 평평하게 */
+.card {
+    border-width: 0;
+    border-radius: 8px;
+}
+
+.card--flat {
+    background-color: var(--bg);
+    border-width: 1px;
+    border-color: var(--panel-2);
+}
+
+/* Phase 31: 어두운 기본 버튼 (Unity 기본 밝은 회색 대신). 주요 액션은 아래 btn--primary(팀 컬러) */
+.unity-button.btn,
+.unity-button.pd-swap-btn {
+    border-width: 1px;
+    border-radius: 6px;
+    border-color: var(--line);
+    background-color: var(--panel-2);
+    color: var(--text);
+}
+
+.unity-button.btn:hover,
+.unity-button.pd-swap-btn:hover {
+    background-color: var(--line);
+}
+
+.unity-button.btn:disabled {
+    opacity: 0.45;
 }
 
 .panel-title {
@@ -54,47 +104,83 @@ Label {
     -unity-text-align: middle-left;
 }
 
-/* ───────── 상단 120px ───────── */
+/* ───────── 상단 120px: 구단 브랜드 / 프런트 오피스 / 게임 내 시간 ───────── */
 .header {
     height: 120px;
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
     padding: 0 24px;
-    border-bottom-width: 1px;
-    border-color: var(--line);
-    background-color: var(--panel);
+    border-bottom-width: 3px;
+    border-color: var(--team);
+    background-color: var(--team-tint);
+}
+
+.header__brand {
+    width: 520px;
+    flex-direction: row;
+    align-items: center;
+}
+
+.team-mark {
+    width: 72px;
+    height: 72px;
+    margin-right: 16px;
+    border-radius: 36px;
+    border-width: 3px;
+    border-color: var(--team-light);
+    background-color: var(--team);
+    color: #FFFFFF;
+    font-size: 22px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+}
+
+.header__brand-text {
+    flex-grow: 1;
 }
 
 .app-title {
-    height: 40px;
-    font-size: 30px;
+    height: 18px;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--team-light);
     -unity-font-style: bold;
     -unity-text-align: middle-left;
-}
-
-.season-title {
-    height: 26px;
-    font-size: 16px;
-    color: var(--muted);
-    -unity-text-align: middle-left;
-}
-
-.header__team {
-    align-items: flex-end;
 }
 
 .my-team {
-    height: 34px;
-    font-size: 24px;
+    height: 40px;
+    font-size: 28px;
     -unity-font-style: bold;
-    color: var(--accent);
-    -unity-text-align: middle-right;
+    color: #FFFFFF;
+    -unity-text-align: middle-left;
 }
 
 .my-record {
-    height: 26px;
-    font-size: 16px;
+    height: 24px;
+    font-size: 15px;
+    color: var(--text);
+    -unity-text-align: middle-left;
+}
+
+.header__time {
+    width: 260px;
+    align-items: flex-end;
+}
+
+.season-title {
+    height: 34px;
+    font-size: 24px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-right;
+}
+
+.game-day {
+    height: 24px;
+    font-size: 15px;
+    color: var(--team-light);
+    -unity-font-style: bold;
     -unity-text-align: middle-right;
 }
 
@@ -115,93 +201,194 @@ Label {
     flex-direction: column;
 }
 
-/* 프런트 오피스 대시보드 (중앙 상단): 팀 주요 통계 540 / 15 / 팀 내 기록 1위 555 */
-.dashboard {
-    height: 268px;
+.side--right {
+    width: 450px;
+    margin-left: 15px;
+    flex-direction: column;
+}
+
+.center-row {
     flex-direction: row;
-    margin-bottom: 12px;
-}
-
-.dashboard__card--stats {
-    width: 540px;
-    margin-right: 15px;
-}
-
-.dashboard__card--leaders {
-    flex-grow: 1;
-}
-
-.stat-tiles {
-    flex-direction: row;
-    margin-top: 8px;
-}
-
-.stat-tile {
-    flex-grow: 1;
-    flex-basis: 0;
-    height: 116px;
-    margin-right: 8px;
-    padding: 12px 10px;
-    border-radius: 6px;
-    background-color: var(--panel-2);
-}
-
-.stat-tile:last-child {
-    margin-right: 0;
-}
-
-.stat-tile--wide {
-    flex-grow: 2;
-}
-
-/* 최근 10경기는 무승부가 끼면 "5승 4패 1무"처럼 길어진다 → 글자를 줄여 칸 안에 둔다. */
-.stat-tile--wide .stat-tile__value {
-    font-size: 24px;
-}
-
-.stat-tile__label {
-    height: 22px;
-    font-size: 13px;
-    color: var(--muted);
-    -unity-text-align: middle-left;
-}
-
-.stat-tile__value {
-    height: 58px;
-    font-size: 30px;
-    -unity-font-style: bold;
-    -unity-text-align: middle-left;
-}
-
-.stat-tile__value--plus { color: #E5534B; }
-.stat-tile__value--minus { color: #4C9BE8; }
-
-.schedule-panel {
-    flex-grow: 1;
-}
-
-/* 일정 행은 뉴스 패널 자리를 위해 28px (Phase 28) */
-.lobby-row.lobby-row--schedule {
-    height: 28px;
-}
-
-/* ───────── 리그 주요 뉴스 (Phase 28): 최신 5건 × 22px ───────── */
-.news-panel {
-    height: 168px;
     flex-shrink: 0;
-    margin-top: 10px;
-    padding-top: 8px;
-    padding-bottom: 8px;
 }
 
-.news-row {
-    height: 22px;
+.center-row--top { height: 320px; margin-bottom: 12px; }
+.center-row--mid { height: 272px; margin-bottom: 12px; }
+.center-row--bottom { height: 214px; }
+
+.card__head {
+    height: 34px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.card__title {
+    flex-shrink: 0;
+}
+
+.card__meta {
+    flex-shrink: 1;
+    font-size: 14px;
+    color: var(--muted);
+    -unity-text-align: middle-right;
+}
+
+/* 다음 경기 프리뷰 (팀 컬러 강조 카드) */
+.card--preview {
+    width: 650px;
+    margin-right: 15px;
+    padding: 14px 18px;
+    border-top-width: 4px;
+    border-color: var(--team);
+    background-color: var(--team-tint);
+}
+
+.card--preview .card__title {
+    color: var(--team-light);
+}
+
+.pv-teams {
+    height: 196px;
+    margin-top: 8px;
     flex-direction: row;
     align-items: center;
 }
 
+.pv-side {
+    flex-grow: 1;
+    flex-basis: 0;
+    height: 188px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background-color: rgba(0, 0, 0, 0.22);
+}
+
+.pv-side--mine {
+    border-width: 2px;
+    border-color: var(--team-light);
+}
+
+.pv-side__label {
+    height: 18px;
+    font-size: 12px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+.pv-side__label--gap {
+    margin-top: 8px;
+}
+
+.pv-team {
+    height: 34px;
+    font-size: 24px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.pv-side--mine .pv-team {
+    color: #FFFFFF;
+}
+
+.pv-standing {
+    height: 22px;
+    font-size: 15px;
+    color: var(--text);
+    -unity-text-align: middle-left;
+}
+
+.pv-sp {
+    height: 30px;
+    font-size: 20px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.pv-sp-line {
+    height: 22px;
+    font-size: 14px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+.pv-vs {
+    width: 64px;
+    font-size: 22px;
+    -unity-font-style: bold;
+    color: var(--muted);
+    -unity-text-align: middle-center;
+}
+
+.pv-note {
+    height: 26px;
+    margin-top: 8px;
+    font-size: 15px;
+    color: var(--text);
+    -unity-text-align: middle-left;
+}
+
+/* 오늘의 결정 (경고 카드) */
+.card--decisions {
+    flex-grow: 1;
+    padding: 14px 16px;
+    border-top-width: 4px;
+    border-color: var(--accent);
+}
+
+.card--decisions .card__title {
+    color: var(--accent);
+}
+
+.decision {
+    min-height: 62px;
+    margin-top: 8px;
+    padding: 6px 10px;
+    border-left-width: 4px;
+    border-radius: 4px;
+    border-color: var(--team);
+    background-color: var(--panel-2);
+}
+
+.decision--danger { border-color: var(--danger); }
+.decision--caution { border-color: var(--caution); }
+.decision--ok { border-color: var(--good); }
+.decision--player:hover { background-color: var(--line); }
+
+.decision__title {
+    height: 24px;
+    font-size: 15px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.decision--danger .decision__title { color: var(--danger); }
+.decision--caution .decision__title { color: var(--caution); }
+.decision--ok .decision__title { color: var(--good); }
+
+.decision__detail {
+    font-size: 13px;
+    color: var(--muted);
+    white-space: normal;
+    -unity-text-align: upper-left;
+}
+
+/* 리그 뉴스 (Phase 28 → 31: 가운데 2단) */
+.news-panel {
+    width: 650px;
+    margin-right: 15px;
+}
+
+.news-row {
+    min-height: 22px;
+    margin-bottom: 6px;
+    flex-direction: row;
+    align-items: flex-start;
+}
+
 .news-tag {
-    width: 76px;
+    width: 72px;
+    height: 20px;
     font-size: 13px;
     -unity-font-style: bold;
     color: var(--muted);
@@ -216,11 +403,10 @@ Label {
 .news-text {
     flex-grow: 1;
     flex-shrink: 1;
-    font-size: 15px;
-    -unity-text-align: middle-left;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    min-width: 0;
+    font-size: 14px;
+    white-space: normal;
+    -unity-text-align: upper-left;
 }
 
 .news-row--latest > .news-text {
@@ -228,8 +414,9 @@ Label {
 }
 
 .news-date {
-    width: 130px;
-    font-size: 13px;
+    width: 112px;
+    height: 20px;
+    font-size: 12px;
     color: var(--muted);
     -unity-text-align: middle-right;
 }
@@ -241,9 +428,87 @@ Label {
     -unity-text-align: middle-left;
 }
 
-.side--right {
-    width: 450px;
-    margin-left: 15px;
+/* 투수진 (선발 로테이션 + 불펜) */
+.staff-panel {
+    flex-grow: 1;
+}
+
+.rotation-title {
+    margin-top: 8px;
+}
+
+/* 팀 주요 통계 / 팀 내 기록 1위 */
+.dashboard__card--stats {
+    width: 440px;
+    margin-right: 15px;
+}
+
+.dashboard__card--leaders {
+    flex-grow: 1;
+}
+
+.stat-tiles {
+    flex-direction: row;
+    margin-top: 6px;
+}
+
+.stat-tile {
+    flex-grow: 1;
+    flex-basis: 0;
+    height: 86px;
+    margin-right: 8px;
+    padding: 10px 10px;
+    border-radius: 6px;
+    background-color: var(--panel);
+}
+
+.stat-tile:last-child {
+    margin-right: 0;
+}
+
+.stat-tile--wide {
+    flex-grow: 2;
+}
+
+.stat-tile--wide .stat-tile__value {
+    font-size: 20px;
+}
+
+.stat-tile__label {
+    height: 20px;
+    font-size: 13px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+.stat-tile__value {
+    height: 44px;
+    font-size: 28px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.stat-tile__value--plus { color: var(--danger); }
+.stat-tile__value--minus { color: var(--cool); }
+
+.stat-note {
+    height: 36px;
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--muted);
+    white-space: normal;
+    -unity-text-align: upper-left;
+}
+
+/* 순위 · 일정 (오른쪽) */
+.standings-panel {
+    height: 404px;
+    flex-shrink: 0;
+}
+
+.schedule-panel {
+    flex-grow: 1;
+    margin-top: 12px;
 }
 
 .lobby-row {
@@ -260,7 +525,7 @@ Label {
 }
 
 .lobby-row--head {
-    height: 30px;
+    height: 28px;
 }
 
 .lobby-row--head > Label {
@@ -268,32 +533,53 @@ Label {
     color: var(--muted);
 }
 
+.lobby-row.lobby-row--standing {
+    height: 32px;
+}
+
+.lobby-row--standing > Label {
+    font-size: 15px;
+}
+
+.lobby-row.lobby-row--schedule {
+    height: 30px;
+}
+
+.lobby-row--schedule > Label {
+    font-size: 14px;
+}
+
+.lobby-row.lobby-row--leader {
+    height: 36px;
+}
+
 .lobby-row--final > Label {
     color: var(--muted);
 }
 
 .lobby-row--next {
-    background-color: var(--panel-2);
+    background-color: var(--team-tint);
     border-left-width: 3px;
-    border-color: var(--accent);
+    border-color: var(--team-light);
 }
 
 .lobby-row--next .col-status {
-    color: var(--accent);
+    color: var(--team-light);
     -unity-font-style: bold;
 }
 
 .lobby-row--mine {
-    background-color: var(--panel-2);
+    background-color: var(--team-tint);
+    border-left-width: 3px;
+    border-color: var(--team-light);
 }
 
 .lobby-row--mine > Label {
-    color: var(--accent);
+    color: #FFFFFF;
     -unity-font-style: bold;
 }
 
-/* 라인업 교체 (Click-to-Swap). 상태는 클래스로만 바꾼다.
-   Phase 24: 팀 케미스트리 칸 자리를 위해 교체 가능한 행(라인업·벤치)은 36px. */
+/* 라인업 교체 (Click-to-Swap) — Phase 31: 행을 누르면 선수 상세, 상세의 [직접 고르기] 뒤에는 교체 대상 선택 */
 .lobby-row--selectable {
     height: 36px;
 }
@@ -307,14 +593,15 @@ Label {
     margin-top: 6px;
     height: 20px;
     font-size: 12px;
-    color: #3FB950;
+    color: var(--good);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     -unity-text-align: middle-left;
 }
 
-.lobby-row--selectable:hover {
+.lobby-row--selectable:hover,
+.lobby-row--clickable:hover {
     background-color: var(--panel-2);
 }
 
@@ -348,24 +635,21 @@ Label {
 .col-pos { width: 54px; color: var(--muted); }
 .col-name { flex-grow: 1; }
 .col-hand { width: 80px; -unity-text-align: middle-right; color: var(--muted); }
-/* 나이 (Phase 29): 폼이 오르면 초록, 내리면 빨강 */
 .lobby-row > Label.col-age { width: 44px; font-size: 14px; -unity-text-align: middle-right; color: var(--muted); }
-.lobby-row > Label.col-age--up { color: #3FB950; }
-.lobby-row > Label.col-age--down { color: #E5534B; }
+.lobby-row > Label.col-age--up { color: var(--good); }
+.lobby-row > Label.col-age--down { color: var(--danger); }
 
-/* 일정 열 */
-.col-no { width: 70px; padding-left: 8px; }
-.col-date { width: 130px; }
-.col-team { width: 230px; }
-.col-vs { width: 50px; color: var(--muted); }
-.col-stadium { width: 160px; }
-.col-status { flex-grow: 1; -unity-text-align: middle-right; padding-right: 8px; }
+/* 일정 열 (Phase 31: 오른쪽 아래 작은 목록) */
+.col-no { width: 34px; padding-left: 6px; color: var(--muted); }
+.col-date { width: 92px; }
+.col-opp { flex-grow: 1; }
+.col-status { width: 96px; -unity-text-align: middle-right; padding-right: 8px; }
 
 /* 순위 열 */
 .col-rank { width: 44px; padding-left: 6px; }
 .col-move { width: 30px; font-size: 13px; color: var(--muted); }
-.col-move--up { color: #E5534B; }
-.col-move--down { color: #4C9BE8; }
+.col-move--up { color: var(--danger); }
+.col-move--down { color: var(--cool); }
 .col-standing-team { flex-grow: 1; }
 .col-num { width: 40px; -unity-text-align: middle-right; }
 .col-pct { width: 64px; -unity-text-align: middle-right; }
@@ -375,7 +659,7 @@ Label {
 .col-leader-cat { width: 110px; padding-left: 6px; color: var(--muted); }
 .col-leader-name { flex-grow: 1; -unity-font-style: bold; }
 .col-leader-role { width: 110px; color: var(--muted); }
-.col-leader-value { width: 100px; -unity-text-align: middle-right; padding-right: 6px; color: var(--accent); -unity-font-style: bold; }
+.col-leader-value { width: 100px; -unity-text-align: middle-right; padding-right: 6px; color: var(--team-light); -unity-font-style: bold; }
 
 /* ───────── 하단 110px ───────── */
 .footer {
@@ -405,25 +689,30 @@ Label {
 
 .next-game {
     height: 32px;
-    font-size: 18px; /* Phase 26.5: 실제 구단명·구장명이 길어 20 → 18 */
+    font-size: 18px;
     -unity-font-style: bold;
     -unity-text-align: middle-left;
 }
 
+/* 주요 액션 (팀 컬러) */
 .unity-button.btn--primary {
     width: 260px;
     height: 60px;
     margin: 0;
     border-width: 2px;
     border-radius: 6px;
-    border-color: var(--accent);
-    background-color: var(--accent);
-    color: #0E1319;
+    border-color: var(--team-light);
+    background-color: var(--team);
+    color: #FFFFFF;
     font-size: 20px;
     -unity-font-style: bold;
 }
 
-/* 정규시즌 종료 뒤 [시즌 결산 및 2027 시즌 준비] (Phase 27) — 같은 폭에 맞춰 글자를 줄인다 */
+.unity-button.btn--primary:hover {
+    background-color: var(--team-light);
+}
+
+/* 정규시즌 종료 뒤 [시즌 결산 및 2027 시즌 준비] (Phase 27) */
 .unity-button.btn--primary.btn--offseason {
     font-size: 16px;
     white-space: normal;
@@ -433,7 +722,6 @@ Label {
     opacity: 0.45;
 }
 
-/* 스카우트 / FA 진입 (Phase 24, 아직 비활성) */
 .unity-button.btn--scout {
     width: 170px;
     height: 60px;
@@ -445,7 +733,6 @@ Label {
     opacity: 0.45;
 }
 
-/* 진행 방식 토글 (퀵 시뮬 8회~ / 풀 이닝 1회~) */
 .unity-button.btn--mode {
     width: 240px;
     height: 60px;
@@ -454,21 +741,12 @@ Label {
 }
 
 .unity-button.btn--mode.btn--active {
-    border-color: var(--accent);
-    color: var(--accent);
+    border-color: var(--team-light);
+    color: var(--team-light);
     -unity-font-style: bold;
 }
 
-/* ───────── 헤더: 오늘 날짜 + 프런트 오피스 (Phase 21) ───────── */
-.today {
-    height: 22px;
-    font-size: 14px;
-    color: var(--muted);
-    -unity-text-align: middle-left;
-}
-
-/* 헤더 가운데 고정 폭 패널: 좌측 타이틀·우측 성적과 겹치지 않도록 줄어들지 않는다.
-   Phase 24: 신뢰도·팬덤 특전 칸을 더해 860 → 1060px (4칸). */
+/* ───────── 프런트 오피스 (Phase 21) ───────── */
 .front-office {
     width: 1060px;
     height: 96px;
@@ -476,7 +754,7 @@ Label {
     flex-direction: row;
     padding: 10px 16px;
     border-radius: 8px;
-    background-color: var(--panel-2);
+    background-color: rgba(0, 0, 0, 0.28);
 }
 
 .fo-cell {
@@ -523,9 +801,9 @@ Label {
     background-color: var(--accent);
 }
 
-.fo-fill--happy { background-color: #3FB950; }
-.fo-fill--angry { background-color: #E5534B; }
-.fo-fill--season { background-color: #4C9BE8; }
+.fo-fill--happy { background-color: var(--good); }
+.fo-fill--angry { background-color: var(--danger); }
+.fo-fill--season { background-color: var(--team-light); }
 
 .fo-percent {
     width: 56px;
@@ -540,8 +818,8 @@ Label {
     font-size: 17px;
 }
 
-.fo-percent--happy { color: #3FB950; }
-.fo-percent--angry { color: #E5534B; }
+.fo-percent--happy { color: var(--good); }
+.fo-percent--angry { color: var(--danger); }
 
 .fo-delta {
     height: 20px;
@@ -550,7 +828,7 @@ Label {
     -unity-text-align: middle-left;
 }
 
-/* ───────── 선수 컨디션 (Phase 22): 5 파랑 · 4/3 초록 · 2 노랑 · 1 빨강 ───────── */
+/* ───────── 선수 컨디션 (Phase 31: 보통·좋음은 숨기고 위험 빨강 · 지침 주황 · 최상 파랑만) ───────── */
 .col-cond {
     width: 62px;
     flex-direction: row;
@@ -570,19 +848,17 @@ Label {
     -unity-text-align: middle-left;
 }
 
-.cond--5 .cond-dot { background-color: #4C9BE8; }
-.cond--5 .cond-text { color: #4C9BE8; }
-.cond--4 .cond-dot, .cond--3 .cond-dot { background-color: #3FB950; }
-.cond--4 .cond-text, .cond--3 .cond-text { color: #3FB950; }
-.cond--2 .cond-dot { background-color: #E3B341; }
-.cond--2 .cond-text { color: #E3B341; }
-.cond--1 .cond-dot { background-color: #E5534B; }
-.cond--1 .cond-text { color: #E5534B; -unity-font-style: bold; }
-
-/* 선발 로테이션: 좁은 행 */
-.rotation-title {
-    margin-top: 10px;
+.cond--3 > .cond-dot, .cond--3 > .cond-text,
+.cond--4 > .cond-dot, .cond--4 > .cond-text {
+    display: none;
 }
+
+.cond--5 .cond-dot { background-color: var(--cool); }
+.cond--5 .cond-text { color: var(--cool); }
+.cond--2 .cond-dot { background-color: var(--caution); }
+.cond--2 .cond-text { color: var(--caution); }
+.cond--1 .cond-dot { background-color: var(--danger); }
+.cond--1 .cond-text { color: var(--danger); -unity-font-style: bold; }
 
 .lobby-row.lobby-row--compact {
     height: 26px;
@@ -593,7 +869,7 @@ Label {
 }
 
 .lobby-row--today > Label {
-    color: var(--accent);
+    color: var(--team-light);
     -unity-font-style: bold;
 }
 
@@ -617,8 +893,8 @@ Label {
 }
 
 .fo-slot--unlocked {
-    border-color: #3FB950;
-    color: #3FB950;
+    border-color: var(--good);
+    color: var(--good);
     -unity-font-style: bold;
 }
 
@@ -628,7 +904,7 @@ Label {
     opacity: 0.6;
 }
 
-/* ───────── 팀 케미스트리 (Phase 24, 로비 라인업 패널 전용) ───────── */
+/* ───────── 팀 케미스트리 (Phase 24) ───────── */
 .chem-box {
     height: 48px;
     margin-bottom: 6px;
@@ -656,7 +932,6 @@ Label {
     -unity-font-style: bold;
 }
 
-/* 라인업 행 성향 배지: 주(주루) 파랑 · 수(수비) 초록 · 장(장타) 빨강 */
 .lobby-row > Label.chem-badge {
     width: 20px;
     height: 20px;
@@ -669,37 +944,50 @@ Label {
 }
 
 .chem-badge--none { background-color: rgba(0, 0, 0, 0); }
-.chem-badge--speed { background-color: #4C9BE8; }
-.chem-badge--glove { background-color: #3FB950; }
-.chem-badge--power { background-color: #E5534B; }
+.chem-badge--speed { background-color: var(--cool); }
+.chem-badge--glove { background-color: var(--good); }
+.chem-badge--power { background-color: var(--danger); }
 
-/* ───────── 투수진 (Phase 25: 순위표 아래) ───────── */
-/* 불펜: 줄바꿈 칩 (이름(역할) + 방출), 최대 7명 → 3줄 */
+/* 불펜: 줄바꿈 칩 (Phase 31: 방출 버튼 없이 누르면 선수 상세) */
 .bullpen-list {
     flex-direction: row;
     flex-wrap: wrap;
+    margin-top: 4px;
 }
 
 .bullpen-chip {
     height: 26px;
     margin: 0 6px 4px 0;
-    padding: 0 0 0 8px;
+    padding: 0 10px;
     flex-direction: row;
     align-items: center;
     border-radius: 13px;
     background-color: var(--panel-2);
 }
 
+.bullpen-chip:hover {
+    background-color: var(--line);
+}
+
 .bullpen-chip__name {
     height: 24px;
-    margin-right: 4px;
     font-size: 13px;
     -unity-text-align: middle-left;
 }
 
+.bullpen-chip--tired .bullpen-chip__name { color: var(--caution); }
+.bullpen-chip--exhausted .bullpen-chip__name { color: var(--danger); -unity-font-style: bold; }
+
 .bullpen-empty {
     height: 24px;
     font-size: 13px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+.last-finance {
+    height: 22px;
+    font-size: 14px;
     color: var(--muted);
     -unity-text-align: middle-left;
 }
@@ -924,35 +1212,221 @@ Label {
 .fa-modal__result--success { color: #3FB950; -unity-font-style: bold; }
 .fa-modal__result--failure { color: #E3B341; }
 
-/* ───────── 방출 (Phase 26) ───────── */
-.unity-button.lobby-release {
-    width: 40px;
-    height: 24px;
-    margin: 0;
-    padding: 0;
-    border-radius: 12px;
-    font-size: 11px;
-    color: #E5534B;
-    border-color: #E5534B;
-    background-color: rgba(0, 0, 0, 0);
+/* ───────── 선수 상세 모달 (Phase 31) ───────── */
+.pd-modal {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.66);
 }
 
-.unity-button.lobby-release:hover {
-    background-color: rgba(229, 83, 75, 0.15);
+.pd-modal--open {
+    display: flex;
 }
 
-.unity-button.lobby-release:disabled {
-    opacity: 0.35;
+.pd-window {
+    width: 780px;
+    padding: 18px 22px;
+    border-top-width: 4px;
+    border-radius: 10px;
+    border-color: var(--team);
+    background-color: var(--panel);
 }
 
-.lobby-row > .lobby-release {
-    margin-left: 4px;
+.pd-head {
+    height: 64px;
+    flex-direction: row;
+    align-items: center;
 }
 
-/* 지난 경기 재정 명세: 관중 수입 · 유지비 · 순이익 */
-.last-finance {
+.pd-head__text {
+    flex-grow: 1;
+}
+
+.pd-name {
+    height: 38px;
+    font-size: 28px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.pd-meta {
     height: 22px;
     font-size: 14px;
     color: var(--muted);
     -unity-text-align: middle-left;
+}
+
+.pd-role {
+    height: 30px;
+    margin-right: 14px;
+    padding: 0 12px;
+    border-radius: 15px;
+    background-color: var(--team-tint);
+    color: var(--team-light);
+    font-size: 14px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+}
+
+.unity-button.pd-close {
+    width: 90px;
+    height: 36px;
+    margin: 0;
+    padding: 0;
+    font-size: 15px;
+}
+
+.pd-condition-row {
+    min-height: 46px;
+    margin-top: 12px;
+    padding: 6px 12px;
+    flex-direction: row;
+    align-items: center;
+    border-radius: 6px;
+    background-color: var(--panel-2);
+}
+
+.pd-condition {
+    width: 130px;
+    height: 30px;
+    font-size: 18px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.pd-cond--1 { color: var(--danger); }
+.pd-cond--2 { color: var(--caution); }
+.pd-cond--3, .pd-cond--4 { color: var(--text); }
+.pd-cond--5 { color: var(--cool); }
+
+.pd-condition-note {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    font-size: 14px;
+    color: var(--muted);
+    white-space: normal;
+    -unity-text-align: middle-left;
+}
+
+.pd-stats {
+    height: 76px;
+    margin-top: 12px;
+    flex-direction: row;
+}
+
+.pd-stat {
+    flex-grow: 1;
+    flex-basis: 0;
+    margin-right: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background-color: var(--bg);
+}
+
+.pd-stat:last-child {
+    margin-right: 0;
+}
+
+.pd-stat__label {
+    height: 20px;
+    font-size: 12px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+.pd-stat__value {
+    height: 34px;
+    font-size: 22px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.pd-season {
+    height: 26px;
+    margin-top: 6px;
+    font-size: 14px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+.pd-swap-title {
+    margin-top: 10px;
+}
+
+.pd-swap {
+    margin-top: 6px;
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+
+.unity-button.pd-swap-btn {
+    height: 34px;
+    margin: 0 8px 8px 0;
+    padding: 0 12px;
+    font-size: 14px;
+    border-radius: 6px;
+}
+
+.unity-button.pd-swap-btn--cond1 { color: var(--danger); }
+.unity-button.pd-swap-btn--cond2 { color: var(--caution); }
+.unity-button.pd-swap-btn--cond5 { color: var(--cool); }
+
+.unity-button.pd-pick {
+    height: 36px;
+    margin: 4px 0 0 0;
+    padding: 0;
+    font-size: 14px;
+}
+
+.pd-danger {
+    margin-top: 16px;
+    padding-top: 12px;
+    flex-direction: row;
+    align-items: center;
+    border-top-width: 1px;
+    border-color: var(--line);
+}
+
+.pd-release-note {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    margin-right: 12px;
+    font-size: 13px;
+    color: var(--muted);
+    white-space: normal;
+    -unity-text-align: middle-left;
+}
+
+.unity-button.pd-release {
+    width: 300px;
+    height: 40px;
+    margin: 0;
+    padding: 0;
+    font-size: 15px;
+    border-radius: 6px;
+    color: var(--danger);
+    border-color: var(--danger);
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.unity-button.pd-release:hover {
+    background-color: rgba(229, 83, 75, 0.15);
+}
+
+.unity-button.pd-release.pd-release--armed {
+    color: #FFFFFF;
+    background-color: var(--danger);
+    -unity-font-style: bold;
+}
+
+.unity-button.pd-release:disabled {
+    opacity: 0.35;
 }

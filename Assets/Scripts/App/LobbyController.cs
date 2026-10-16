@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using DailyFranchise.App.Data;
 using DailyFranchise.Sim.Data;
 using DailyFranchise.UI.Data;
 using UnityEngine;
@@ -11,32 +10,20 @@ using UnityEngine.UIElements;
 namespace DailyFranchise.App
 {
     /// <summary>
-    /// 1920×1080 로비. SeasonManager의 시즌 상태를 읽어 일정·순위·라인업을 표시하고,
+    /// 1920×1080 로비 (Phase 31 결정 중심 대시보드). SeasonManager의 시즌 상태를 읽어 그리기만 하고,
     /// [다음 경기 시작]으로 경기 화면 진입을 요청한다. 경기 화면을 직접 참조하지 않는다.
-    /// 선수 DB를 읽는 동안에는 시작 버튼을 잠그고, 다 읽으면 다시 그린다.
-    /// 좌측 라인업은 Click-to-Swap으로 바꾼다: 첫 클릭으로 선수를 고르고(강조), 두 번째 클릭한 선수와 맞바꾼다.
-    /// 바꾼 라인업은 SeasonManager가 시즌에 반영·저장하고, 여기서는 다시 그리기만 한다.
-    /// 선택 상태 표시는 USS 클래스(lobby-row--selected / --swappable)로만 바꾼다.
-    /// 중앙 상단 대시보드: 내 구단 시즌 득점·실점·득실차·최근 10경기(SeasonState, 경기마다 PostGameProcessor가 갱신)와
-    /// 팀 내 기록 1위(RosterAnalyzer, 라인업을 적용한 선수단의 DB 기록 기준 — 라인업을 바꾸면 다시 뽑는다).
-    /// 순위표는 SeasonState가 정렬한 순서(승률 → 다승 → 무승부 → 잔여 경기)대로 그리고, 직전 경기일 대비 순위 변동을 함께 보인다.
-    /// 헤더 프런트 오피스(Phase 21): 구단 예산·팬 만족도 게이지(80% 이상 초록, 30% 미만 빨강)·시즌 진행도와
-    /// 직전 경기 재정 변화, 왼쪽 위에 현실 날짜(<see cref="Clock"/>).
-    /// 선수 컨디션(Phase 22): 라인업·벤치 행마다 컨디션 점·글자(5 파랑 · 4/3 초록 · 2 노랑 · 1 빨강), 그 아래 선발 로테이션
-    /// (직전 선발 다음 순번 중 컨디션 보통 이상인 투수가 "오늘 선발", <see cref="RotationPicker"/>).
-    /// 흥행 시스템(Phase 24): 프런트 오피스 넷째 칸에 신뢰도 TP 게이지와 팬덤 특전 슬롯(해금/잠김),
-    /// 라인업 패널 위에 팀 케미스트리(<see cref="ChemistryRules.Evaluate"/>)와 행마다 성향 배지(주·수·장).
-    /// 케미스트리는 라인업을 그릴 때(진입·DB 로드·교체 이벤트)만 판정하고, 결과가 바뀐 경우에만 문구를 바꾼다.
-    /// 스토브리그(Phase 25): 하단 [스카우트 / FA]로 FA 시장 모달(<see cref="FaMarketView"/>)을 연다 (선수 DB가 있고 경기 중이 아닐 때).
-    /// 벤치가 5명까지 늘 수 있어 투수진(선발 로테이션·불펜)은 순위표 아래에 그린다.
-    /// 재정 현실화(Phase 26): 금액은 "₩ 50억" 꼴, 헤더에 경기당 유지비·직전 경기 순이익, 하단에 관중 수입·유지비·순이익 명세.
-    /// 벤치 행·불펜 칩의 [방출]로 위약금(연봉 50%)을 내고 선수를 시장에 돌려보낸다 (선발 타순·로테이션은 불가).
-    /// 선수단이 경기를 치를 수 없으면(타순 9명·선발 투수) [다음 경기 시작]을 잠그고 이유를 보인다.
-    /// 오프시즌(Phase 27): 상단 제목은 시즌 연도로 그리고, 정규시즌 일정을 모두 치르면 [다음 경기 시작] 자리에
-    /// [시즌 결산 및 2027 시즌 준비]를 띄워 <see cref="SeasonManager.TransitionToNextSeason"/>을 요청한다.
-    /// 에이징(Phase 29): 라인업·벤치 행의 나이 칸("31세", 폼이 오르면 초록 · 내리면 빨강, 툴팁에 에이징 폼), 투타는 이름 툴팁으로.
-    /// 리그 뉴스(Phase 28): 일정 아래 [리그 주요 뉴스]에 최신 <see cref="NewsShown"/>건(말머리 색 · 본문 · 날짜).
-    /// 경기 뒤 로비 진입, FA 협상·방출·라인업 교체(NewsChanged), 시즌 결산 때 다시 그린다.
+    /// - 헤더: 팀 컬러 엠블럼·구단·성적 / 프런트 오피스(예산·팬 만족도·시즌 진행·신뢰도와 팬덤 특전) / 게임 내 시즌·다음 경기일.
+    ///   현실 날짜와 원천 데이터 연도는 보이지 않는다. 화면 루트에 구단 테마 클래스(<see cref="LobbyBriefing.TeamThemeClass"/>)를 붙여
+    ///   헤더 띠·엠블럼·프리뷰 카드·주요 버튼을 팀 컬러로 칠한다.
+    /// - 왼쪽 라인업·벤치: 행을 누르면 선수 상세 모달(<see cref="PlayerDetailView"/> — 기록·컨디션·교체·방출).
+    ///   상세의 [직접 고르기] 뒤(선택 중)에는 기존 Click-to-Swap대로 두 번째 행과 맞바꾼다 (<see cref="ClickLineupSpot"/>).
+    ///   컨디션은 위험(빨강)·지침(주황)·최상(파랑)만 보이고 보통·좋음은 숨긴다. 방출 버튼은 목록에 없다 (상세 모달 안에서만, 두 번 눌러 확정).
+    /// - 가운데 1단: 다음 경기 프리뷰(원정·홈 순위·전적, 오늘 선발 비교, 시즌 상대 전적) / 오늘의 결정(<see cref="LobbyBriefing.Decisions"/> —
+    ///   지친 선발 타자·경기 불가 선수단·결산 필요, 선수 항목은 누르면 상세).
+    ///   2단: 리그 뉴스 최신 <see cref="NewsShown"/>건 / 투수진(선발 로테이션·불펜 칩, 누르면 상세). 3단: 팀 주요 통계 / 팀 내 기록 1위.
+    /// - 오른쪽: 리그 순위, 그 아래 작은 일정 목록 (구장은 툴팁).
+    /// - 하단: 지난 경기·다음 경기 요약과 [스카우트 / FA] · 진행 방식 · [다음 경기 시작] (정규시즌 뒤에는 [시즌 결산]).
+    /// 경기 뒤 로비 진입, FA 협상·방출·라인업 교체(LineupChanged·NewsChanged), 시즌 결산 때 다시 그린다.
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class LobbyController : MonoBehaviour
@@ -46,16 +33,18 @@ namespace DailyFranchise.App
         Button _mode;
         Button _scout;
         FaMarketView _fa;
+        PlayerDetailView _detail;
         SeasonManager _manager;
         readonly LineupSelection _selection = new LineupSelection();
 
-        /// <summary>오늘 날짜 (현실 시간). 테스트는 고정 날짜를 넣는다.</summary>
-        public Func<DateTime> Clock { get; set; } = () => DateTime.Now;
         /// <summary>지금 그린 라인업 카드. 선수 DB가 없으면 null (교체 불가).</summary>
         LineupCard _card;
 
         /// <summary>FA 시장 모달 (로비가 켜져 있을 때만).</summary>
         public FaMarketView FaMarket => _fa;
+
+        /// <summary>선수 상세 모달 (로비가 켜져 있을 때만).</summary>
+        public PlayerDetailView PlayerDetail => _detail;
 
         /// <summary>현재 라인업 선택 상태 (테스트·진단용).</summary>
         public LineupSelection Selection => _selection;
@@ -72,6 +61,12 @@ namespace DailyFranchise.App
         /// <summary>지금 표시 중인 내 구단 케미스트리. 선수 DB가 없으면 null.</summary>
         public ActiveChemistry Chemistry { get; private set; }
 
+        /// <summary>오늘의 결정 카드에 보이는 최대 항목 수 (넘치면 머리에 "외 N건").</summary>
+        public const int DecisionsShown = 3;
+
+        /// <summary>로비 뉴스 패널에 보이는 최신 뉴스 수.</summary>
+        public const int NewsShown = 5;
+
         void OnEnable()
         {
             _root = GetComponent<UIDocument>().rootVisualElement;
@@ -83,6 +78,7 @@ namespace DailyFranchise.App
             _scout.clicked += OnScoutClicked;
             _manager = SeasonManager.EnsureExists();
             _fa = new FaMarketView(_root, _manager);
+            _detail = new PlayerDetailView(_root, _manager, ReleasePlayer, BeginSwapFrom);
             _manager.ModeChanged += Render;
             _manager.DatabaseReady += OnDatabaseReady;
             _manager.LineupChanged += OnLineupChanged;
@@ -110,6 +106,8 @@ namespace DailyFranchise.App
             }
             _fa?.Detach();
             _fa = null;
+            _detail?.Detach();
+            _detail = null;
             _start = null;
             _mode = null;
             _scout = null;
@@ -120,10 +118,7 @@ namespace DailyFranchise.App
 
         void OnNewsChanged() => RenderNews(_manager.Season);
 
-        /// <summary>로비 뉴스 패널에 보이는 최신 뉴스 수.</summary>
-        public const int NewsShown = 5;
-
-        /// <summary>최신 뉴스부터 <see cref="NewsShown"/>건. 없으면 안내 한 줄.</summary>
+        /// <summary>최신 뉴스부터 <see cref="NewsShown"/>건 (말머리 · 본문 · 날짜). 없으면 안내 한 줄.</summary>
         void RenderNews(SeasonState season)
         {
             var container = Q("news");
@@ -168,6 +163,7 @@ namespace DailyFranchise.App
         {
             _selection.Clear();
             _notice = null;
+            _detail?.Close();
             Render();
         }
 
@@ -177,6 +173,7 @@ namespace DailyFranchise.App
         public void OpenFaMarket()
         {
             if (_manager == null || !_manager.IsDatabaseReady || _manager.Season.InProgress != null) return;
+            _detail.Close();
             _fa.Open();
         }
 
@@ -193,13 +190,17 @@ namespace DailyFranchise.App
         void OnLineupChanged()
         {
             _selection.Clear();
-            RenderRoster(_manager.Season);
+            var season = _manager.Season;
+            RenderRoster(season);
             RenderLeaders();
+            RenderPreview(season);
+            RenderDecisions(season);
         }
 
         /// <summary>
-        /// 라인업 자리 클릭. 선수 DB 라인업이 없거나 경기 중이면 무시한다.
+        /// 라인업 자리 선택 (Click-to-Swap). 선수 DB 라인업이 없거나 경기 중이면 무시한다.
         /// 두 번째 클릭이 맞바꿀 수 있는 자리면 SeasonManager에 교체를 요청한다 (성공하면 LineupChanged로 다시 그림).
+        /// 행을 누르는 기본 동작은 선수 상세(<see cref="OnRowClicked"/>)이고, 선택 중일 때만 이 경로로 온다.
         /// </summary>
         public void ClickLineupSpot(LineupSpot spot)
         {
@@ -212,6 +213,32 @@ namespace DailyFranchise.App
                 if (_manager.SwapLineup(first, second)) return;
             }
             RenderSelection();
+        }
+
+        /// <summary>라인업·벤치 행 클릭: 교체 대상을 고르는 중이면 그 자리로 교체, 아니면 선수 상세를 연다.</summary>
+        void OnRowClicked(LineupSpot spot)
+        {
+            if (_selection.Selected.HasValue)
+            {
+                ClickLineupSpot(spot);
+                return;
+            }
+            OpenPlayer(_card?.PlayerAt(spot));
+        }
+
+        /// <summary>선수 상세 모달을 연다 (내 구단 1군 선수). 열었으면 true.</summary>
+        public bool OpenPlayer(string playerId)
+        {
+            if (_detail == null || playerId == null) return false;
+            _notice = null;
+            return _detail.Open(playerId);
+        }
+
+        /// <summary>상세 모달의 [직접 고르기]: 이 자리를 선택한 상태로 두고 두 번째 행을 기다린다.</summary>
+        void BeginSwapFrom(LineupSpot spot)
+        {
+            _selection.Clear();
+            ClickLineupSpot(spot);
         }
 
         void OnStartClicked()
@@ -232,12 +259,17 @@ namespace DailyFranchise.App
         {
             _ = _manager.Rosters; // 선수단 장부·페이롤·캡 기준을 먼저 맞춘다 (헤더 유지비 표기가 페이롤을 쓴다)
             var season = _manager.Season;
+            ApplyTeamTheme(season.MyTeam);
             Q<Label>("season-title").text = season.SeasonTitle;
+            Q<Label>("game-day").text = LobbyBriefing.GameDayText(season);
             Q<Label>("my-team").text = season.MyTeam;
+            Q<Label>("team-mark").text = LobbyBriefing.TeamMark(season.MyTeam);
             Q<Label>("my-record").text = RecordText(season);
 
             RenderFrontOffice(season);
             RenderRoster(season);
+            RenderPreview(season);
+            RenderDecisions(season);
             RenderTeamStats(season);
             RenderLeaders();
             RenderSchedule(season);
@@ -268,6 +300,15 @@ namespace DailyFranchise.App
             _mode.EnableInClassList("btn--active", _manager.FullInningMode);
         }
 
+        /// <summary>화면 루트에 구단 테마 클래스 하나만 남긴다.</summary>
+        void ApplyTeamTheme(string team)
+        {
+            var screen = Q("screen");
+            foreach (var c in screen.GetClasses().Where(c => c.StartsWith("team--", StringComparison.Ordinal)).ToList())
+                screen.RemoveFromClassList(c);
+            screen.AddToClassList(LobbyBriefing.TeamThemeClass(team));
+        }
+
         /// <summary>정규시즌 종료 뒤 시작 버튼 문구: "시즌 결산 및 2027 시즌 준비".</summary>
         public static string OffseasonButtonText(SeasonState season) => $"시즌 결산 및 {season.Year + 1} 시즌 준비";
 
@@ -279,9 +320,98 @@ namespace DailyFranchise.App
                 : $"{me.Rank}위 · {me.Wins}승 {me.Losses}패 {me.Draws}무 · 승률 {me.WinPctText} · 진행 {season.GamesPlayed} / {season.Schedule.Count}경기";
         }
 
+        // ---------- 다음 경기 프리뷰 / 오늘의 결정 ----------
+
+        /// <summary>
+        /// 다음 경기 프리뷰: 원정·홈 구단과 순위·전적, 오늘 선발(로테이션 규칙 그대로 — 상대 선수 데이터가 없으면 "선발 정보 없음"),
+        /// 내 구단 쪽 강조, 시즌 상대 전적·최근 10경기. 정규시즌이 끝났으면 결산 안내.
+        /// </summary>
+        void RenderPreview(SeasonState season)
+        {
+            var game = season.NextGame;
+            var away = Q("pv-away");
+            var home = Q("pv-home");
+            if (game == null)
+            {
+                Q<Label>("pv-meta").text = "정규시즌 종료";
+                SetSide("away", season.MyTeam, season, null, false);
+                SetSide("home", "—", season, null, false);
+                away.EnableInClassList("pv-side--mine", true);
+                home.EnableInClassList("pv-side--mine", false);
+                Q<Label>("pv-note").text = $"결산하면 {season.Year + 1} 시즌이 시작됩니다.";
+                return;
+            }
+            Q<Label>("pv-meta").text = $"경기 {game.Number} · {game.Date} · {game.Stadium}";
+            bool ready = _manager.IsDatabaseReady;
+            SetSide("away", game.AwayTeam, season, ready ? _manager.GameRosterOf(game.AwayTeam)?.StartingPitcher : null, ready);
+            SetSide("home", game.HomeTeam, season, ready ? _manager.GameRosterOf(game.HomeTeam)?.StartingPitcher : null, ready);
+            away.EnableInClassList("pv-side--mine", game.AwayTeam == season.MyTeam);
+            home.EnableInClassList("pv-side--mine", game.HomeTeam == season.MyTeam);
+            string opponent = game.AwayTeam == season.MyTeam ? game.HomeTeam : game.AwayTeam;
+            var l10 = season.MyRecentForm();
+            Q<Label>("pv-note").text = LobbyBriefing.HeadToHeadText(season, opponent)
+                + (l10.Games > 0 ? $" · 최근 {l10.Games}경기 {l10.Text}" : "");
+        }
+
+        void SetSide(string side, string team, SeasonState season, PlayerData starter, bool ready)
+        {
+            Q<Label>($"pv-{side}-team").text = team;
+            Q<Label>($"pv-{side}-standing").text = team == "—" ? "" : LobbyBriefing.StandingText(season.StandingOf(team));
+            var sp = Q<Label>($"pv-{side}-sp");
+            sp.text = starter?.Name ?? (ready ? "선발 미정" : "—");
+            string line = !ready ? "" : LobbyBriefing.StarterLine(starter);
+            if (starter != null && team == season.MyTeam)
+            {
+                int c = season.ConditionOf(starter.Id);
+                if (c != PlayerCondition.Normal) line += " · 컨디션 " + PlayerCondition.Label(c);
+            }
+            Q<Label>($"pv-{side}-sp-line").text = line;
+        }
+
+        /// <summary>오늘의 결정: 경고 항목 최대 <see cref="DecisionsShown"/>건 (선수 항목은 누르면 상세). 없으면 "바로 시작해도 좋다".</summary>
+        void RenderDecisions(SeasonState season)
+        {
+            var container = Q("decisions");
+            container.Clear();
+            var roster = _manager.IsDatabaseReady ? _manager.MyRoster : null;
+            var today = roster == null ? null : _manager.GameRosterOf(season.MyTeam)?.StartingPitcher;
+            string problem = _manager.IsDatabaseReady && !season.IsSeasonFinished ? _manager.RosterProblem : null;
+            var items = LobbyBriefing.Decisions(season, roster, today, problem);
+            Q<Label>("decisions-count").text = items.Count > DecisionsShown ? $"{items.Count}건 중 {DecisionsShown}건 · 외 {items.Count - DecisionsShown}건"
+                : items.Count > 0 ? $"{items.Count}건" : "";
+            if (items.Count == 0)
+            {
+                container.Add(DecisionRow(new BriefingItem("ok", BriefingSeverity.Info,
+                    _manager.IsDatabaseReady ? "라인업 컨디션 이상 없음" : "선수 데이터 불러오는 중…",
+                    _manager.IsDatabaseReady ? "바로 경기를 시작해도 좋습니다." : ""), ok: true));
+                return;
+            }
+            foreach (var item in items.Take(DecisionsShown)) container.Add(DecisionRow(item, ok: false));
+        }
+
+        VisualElement DecisionRow(BriefingItem item, bool ok)
+        {
+            var row = new VisualElement { name = "decision-" + item.Key, userData = item };
+            row.AddToClassList("decision");
+            row.EnableInClassList("decision--danger", item.Severity == BriefingSeverity.Danger);
+            row.EnableInClassList("decision--caution", item.Severity == BriefingSeverity.Caution);
+            row.EnableInClassList("decision--ok", ok);
+            row.Add(Cell(item.Title, "decision__title"));
+            row.Add(Cell(item.Detail, "decision__detail"));
+            if (item.PlayerId != null)
+            {
+                row.AddToClassList("decision--player");
+                row.tooltip = "누르면 선수 상세 (교체·휴식)";
+                string id = item.PlayerId;
+                row.RegisterCallback<ClickEvent>(_ => OpenPlayer(id));
+            }
+            return row;
+        }
+
+        // ---------- 라인업 ----------
+
         void RenderRoster(SeasonState season)
         {
-            var db = _manager.Database;
             var mine = _manager.MyRoster;
             _card = _manager.CurrentLineup;
             if (mine != null && _card != null)
@@ -292,7 +422,6 @@ namespace DailyFranchise.App
                 // 1군 엔트리 밖 퓨처스 선수 수 (Phase 26.5 — 실제 데이터는 구단 전체 선수단이다)
                 Q<Label>("bench-title").text = mine.Reserves.Count > 0 ? $"벤치 · 퓨처스 {mine.Reserves.Count}명 대기" : "벤치";
                 RenderFuturesRookies(mine);
-                Q<Label>("roster-source").text = $"표시 데이터: {MasterDatabase.RosterFileName} ({db.Season})";
                 RenderSelection();
                 return;
             }
@@ -308,7 +437,6 @@ namespace DailyFranchise.App
             Q("roster").Clear();
             Q("bench").Clear();
             RenderFuturesRookies(null);
-            Q<Label>("roster-source").text = _manager.IsDatabaseReady ? $"표시 데이터: {MasterDatabase.RosterFileName} — 내 구단 선수 없음" : "";
             Q<Label>("lineup-hint").text = _manager.IsDatabaseReady
                 ? $"{season.MyTeam} 선수 데이터가 없습니다. 선수 CSV를 확인하세요."
                 : "선수 데이터 불러오는 중…";
@@ -345,7 +473,7 @@ namespace DailyFranchise.App
             label.EnableInClassList("chem-active--on", active != null && active.Kinds.Count > 0);
         }
 
-        /// <summary>선발 로테이션: 로테이션 순서대로, 컨디션과 오늘 선발 표시.</summary>
+        /// <summary>선발 로테이션(순서대로, 컨디션·오늘 선발)과 불펜 칩. 모두 누르면 선수 상세.</summary>
         void RenderRotation(TeamRoster roster, SeasonState season)
         {
             var container = Q("rotation");
@@ -358,16 +486,22 @@ namespace DailyFranchise.App
             if (roster.Bullpen.Count == 0) bullpen.Add(Cell("없음", "bullpen-empty"));
             foreach (var p in roster.Bullpen)
             {
-                var chip = new VisualElement { name = "bullpen-" + p.Id, userData = p.Id };
+                string id = p.Id;
+                int c = season.ConditionOf(id);
+                var chip = new VisualElement { name = "bullpen-" + id, userData = id };
                 chip.AddToClassList("bullpen-chip");
+                chip.EnableInClassList("bullpen-chip--tired", c == PlayerCondition.Tired);
+                chip.EnableInClassList("bullpen-chip--exhausted", c <= PlayerCondition.Exhausted);
                 chip.Add(Cell($"{p.Name}({p.Position})", "bullpen-chip__name"));
-                chip.Add(ReleaseButton(p));
+                chip.tooltip = $"컨디션 {PlayerCondition.Label(c)} · 누르면 선수 상세";
+                chip.RegisterCallback<ClickEvent>(_ => OpenPlayer(id));
                 bullpen.Add(chip);
             }
             var today = RotationPicker.Pick(roster, season, season.LastStarterOf(roster.Team));
             foreach (var p in roster.Starters)
             {
                 bool isToday = ReferenceEquals(p, today);
+                string id = p.Id;
                 var row = Row("lobby-row",
                     Cell(p.Order.ToString(CultureInfo.InvariantCulture), "col-order"),
                     Cell(p.Name, "col-name"),
@@ -376,12 +510,14 @@ namespace DailyFranchise.App
                 row.name = $"rotation-{p.Order}";
                 row.userData = p.Id;
                 row.AddToClassList("lobby-row--compact");
+                row.AddToClassList("lobby-row--clickable");
                 row.EnableInClassList("lobby-row--today", isToday);
+                row.RegisterCallback<ClickEvent>(_ => OpenPlayer(id));
                 container.Add(row);
             }
         }
 
-        /// <summary>컨디션 점 + 글자 ("최상"). 클래스 cond--1 ~ cond--5로 색을 바꾼다.</summary>
+        /// <summary>컨디션 점 + 글자. 클래스 cond--1 ~ cond--5 (USS가 보통·좋음은 숨기고 위험·지침·최상만 보인다).</summary>
         static VisualElement ConditionCell(int condition)
         {
             int c = PlayerCondition.Clamp(condition);
@@ -394,6 +530,7 @@ namespace DailyFranchise.App
             text.AddToClassList("cond-text");
             cell.Add(dot);
             cell.Add(text);
+            cell.tooltip = "컨디션 " + PlayerCondition.Label(c);
             return cell;
         }
 
@@ -414,8 +551,8 @@ namespace DailyFranchise.App
         }
 
         /// <summary>
-        /// 라인업 행: 순번 · 위치 · 이름 · 배지 · 컨디션 · 나이 · [방출]. 벤치 행은 순번 없이 (투타는 이름 툴팁).
-        /// 선발 타자 [방출]은 Phase 30부터 — 빈 타순은 같은 수비 위치 선수가 메운다.
+        /// 라인업 행: 순번 · 위치 · 이름 · 배지 · 컨디션 · 나이. 벤치 행은 순번 없이 (투타는 이름 툴팁).
+        /// 누르면 선수 상세 (교체 대상을 고르는 중이면 교체). Phase 31부터 방출 버튼은 행에 없다.
         /// </summary>
         VisualElement SpotRow(LineupSpot spot, string order, PlayerData p)
         {
@@ -426,21 +563,19 @@ namespace DailyFranchise.App
                     name,
                     BadgeCell(TagOf(p)),
                     ConditionCell(_manager.Season.ConditionOf(p.Id)),
-                    AgeCell(p),
-                    ReleaseButton(p))
+                    AgeCell(p))
                 : Row("lobby-row",
                     Cell(order, "col-order"),
                     Cell(p.Position, "col-pos"),
                     name,
                     BadgeCell(TagOf(p)),
                     ConditionCell(_manager.Season.ConditionOf(p.Id)),
-                    AgeCell(p),
-                    ReleaseButton(p));
+                    AgeCell(p));
             name.tooltip = ScenarioRosterSource.HandednessText(p);
             row.name = spot.IsBench ? $"bench-{spot.Index + 1}" : $"lineup-{spot.Index + 1}";
             row.userData = spot;
             row.AddToClassList("lobby-row--selectable");
-            row.RegisterCallback<ClickEvent>(_ => ClickLineupSpot(spot));
+            row.RegisterCallback<ClickEvent>(_ => OnRowClicked(spot));
             return row;
         }
 
@@ -461,23 +596,8 @@ namespace DailyFranchise.App
             return cell;
         }
 
-        /// <summary>[방출] 버튼. 막히면 잠그고 이유를, 아니면 위약금을 툴팁으로 보인다. 행 클릭(교체 선택)으로 번지지 않는다.</summary>
-        Button ReleaseButton(PlayerData p)
-        {
-            string id = p.Id;
-            var button = new Button(() => ReleasePlayer(id)) { text = "방출", name = "release-" + id };
-            button.AddToClassList("lobby-release");
-            button.RegisterCallback<ClickEvent>(e => e.StopPropagation());
-            var block = StoveLeague.CheckRelease(_manager.Season, _manager.Rosters, id);
-            button.SetEnabled(block == ReleaseBlock.None);
-            button.tooltip = block == ReleaseBlock.None
-                ? $"방출 · 위약금 {FranchiseFinance.BudgetDeltaText(-StoveLeague.ReleasePenalty(_manager.Season, _manager.Rosters, id))} (연봉 50%)"
-                : StoveLeague.ReleaseBlockText(block);
-            return button;
-        }
-
         /// <summary>
-        /// 선수 방출 (라인업·벤치 행·불펜 칩의 [방출]). 결과는 라인업 안내 줄에 보인다. 선발 타자였으면 그 타순을 누가 메웠는지도
+        /// 선수 방출 (선수 상세 모달의 [방출 확정]). 결과는 라인업 안내 줄에 보인다. 선발 타자였으면 그 타순을 누가 메웠는지도
         /// ("포수 자리: 이병헌").
         /// </summary>
         public ReleaseOutcome ReleasePlayer(string playerId)
@@ -525,7 +645,7 @@ namespace DailyFranchise.App
             Q<Label>("lineup-hint").text = _manager.Season.InProgress != null ? ""
                 : _notice != null ? _notice
                 : problem != null ? problem
-                : name == null ? "선수를 누른 뒤 바꿀 타순 또는 벤치 선수를 누르면 자리를 맞바꿉니다."
+                : name == null ? "선수를 누르면 기록·컨디션을 보고 교체할 수 있습니다."
                 : $"{name} 선택됨 · 바꿀 선수를 누르세요 (다시 누르면 취소).";
         }
 
@@ -534,6 +654,8 @@ namespace DailyFranchise.App
             var id = _card.PlayerAt(spot);
             return id == null ? null : _manager.Rosters?.Find(id).player?.Name ?? _manager.Database?.FindPlayer(id)?.Name ?? id;
         }
+
+        // ---------- 팀 통계 · 기록 1위 · 일정 · 순위 ----------
 
         void RenderTeamStats(SeasonState season)
         {
@@ -563,7 +685,7 @@ namespace DailyFranchise.App
             return recent.Games < 10 ? $"{text} · 최근 전적 {recent.Games}경기 기준" : text;
         }
 
-        /// <summary>팀 내 기록 1위. 선수 DB가 없으면(읽는 중 포함) 안내 문구만 보인다.</summary>
+        /// <summary>팀 내 기록 1위 (지난 시즌 기록, 라인업 적용 선수단). 선수 DB가 없으면 비운다.</summary>
         void RenderLeaders()
         {
             var container = Q("team-leaders");
@@ -571,7 +693,7 @@ namespace DailyFranchise.App
             var roster = _manager.MyRoster;
             if (roster == null)
             {
-                Q<Label>("leaders-source").text = _manager.IsDatabaseReady ? "내 구단 선수 데이터가 없습니다." : "선수 데이터 불러오는 중…";
+                container.Add(Cell(_manager.IsDatabaseReady ? "내 구단 선수 데이터가 없습니다." : "선수 데이터 불러오는 중…", "news-empty"));
                 return;
             }
             foreach (var leader in RosterAnalyzer.Leaders(roster))
@@ -582,11 +704,12 @@ namespace DailyFranchise.App
                     Cell(leader.Player.Position, "col-leader-role"),
                     Cell(leader.ValueText, "col-leader-value"));
                 row.name = "leader-" + leader.Category;
+                row.AddToClassList("lobby-row--leader");
                 container.Add(row);
             }
-            Q<Label>("leaders-source").text = $"기준: {MasterDatabase.RosterFileName} 시즌 기록 · 타자는 선발 라인업만";
         }
 
+        /// <summary>작은 일정 목록: 번호 · 날짜 · 상대(홈 "vs", 원정 "@") · 상태. 구장은 툴팁.</summary>
         void RenderSchedule(SeasonState season)
         {
             var container = Q("schedule");
@@ -598,15 +721,15 @@ namespace DailyFranchise.App
                     : g.Status == GameStatus.InProgress ? "진행 중"
                     : g == next ? "다음 경기"
                     : "예정";
+                bool home = g.HomeTeam == season.MyTeam;
+                string opponent = home ? g.AwayTeam : g.HomeTeam;
                 var row = Row("lobby-row",
                     Cell(g.Number.ToString(), "col-no"),
                     Cell(g.Date, "col-date"),
-                    Cell(g.AwayTeam, "col-team"),
-                    Cell("vs", "col-vs"),
-                    Cell(g.HomeTeam, "col-team"),
-                    Cell(g.Stadium, "col-stadium"),
+                    Cell((home ? "vs " : "@ ") + opponent, "col-opp"),
                     Cell(status, "col-status"));
                 row.name = "game-" + g.Number;
+                row.tooltip = $"{g.MatchupText} · {g.Stadium}";
                 row.AddToClassList("lobby-row--schedule");
                 row.EnableInClassList("lobby-row--final", g.Status == GameStatus.Final);
                 row.EnableInClassList("lobby-row--next", g == next);
@@ -632,6 +755,7 @@ namespace DailyFranchise.App
                     Cell(s.Draws.ToString(), "col-num"),
                     Cell(s.WinPctText, "col-pct"),
                     Cell(s.GamesBehind, "col-gb"));
+                row.AddToClassList("lobby-row--standing");
                 row.EnableInClassList("lobby-row--mine", s.Team == season.MyTeam);
                 container.Add(row);
             }
@@ -662,11 +786,9 @@ namespace DailyFranchise.App
 
         T Q<T>(string name) where T : VisualElement => _root.Q<T>(name);
 
-        /// <summary>헤더: 오늘 날짜와 프런트 오피스 (예산·팬 만족도·시즌 진행). 직전 경기 변화는 이번 실행에서 치른 경기만.</summary>
+        /// <summary>헤더 프런트 오피스 (예산·팬 만족도·시즌 진행·신뢰도). 직전 경기 변화는 이번 실행에서 치른 경기만.</summary>
         void RenderFrontOffice(SeasonState season)
         {
-            Q<Label>("today").text = "오늘 " + FranchiseFinance.TodayText(Clock());
-
             var report = _manager.LastReport;
             var budget = Q<Label>("fo-budget");
             budget.text = FranchiseFinance.BudgetText(season.Budget);

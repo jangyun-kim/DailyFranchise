@@ -2,16 +2,19 @@
     <Style src="LobbyScreen.uss" />
     <ui:VisualElement name="screen" class="screen">
 
-        <!-- 상단 120px: 타이틀·시즌·오늘 날짜 / 프런트 오피스(예산·팬 만족도·시즌 진행·신뢰도와 팬덤 특전) / 내 구단 성적 -->
-        <ui:VisualElement class="header">
-            <ui:VisualElement class="header__title">
-                <ui:Label class="app-title" text="데일리 프랜차이즈" />
-                <ui:Label name="season-title" class="season-title" text="—" />
-                <ui:Label name="today" class="today" text="—" />
+        <!-- Phase 31 상단 120px: 구단 브랜드(팀 컬러 엠블럼·구단·성적) / 프런트 오피스 / 게임 내 시즌·날짜 (현실 날짜·원천 데이터 연도는 없다) -->
+        <ui:VisualElement name="header" class="header">
+            <ui:VisualElement class="header__brand">
+                <ui:Label name="team-mark" class="team-mark" text="—" />
+                <ui:VisualElement class="header__brand-text">
+                    <ui:Label class="app-title" text="DAILY FRANCHISE" />
+                    <ui:Label name="my-team" class="my-team" text="—" />
+                    <ui:Label name="my-record" class="my-record" text="—" />
+                </ui:VisualElement>
             </ui:VisualElement>
             <ui:VisualElement name="front-office" class="front-office">
                 <ui:VisualElement class="fo-cell">
-                    <ui:Label class="fo-label" text="FRONT OFFICE · 구단 예산" />
+                    <ui:Label class="fo-label" text="구단 예산" />
                     <ui:Label name="fo-budget" class="fo-value" text="—" />
                     <ui:Label name="fo-budget-delta" class="fo-delta" text="" />
                 </ui:VisualElement>
@@ -35,7 +38,6 @@
                     </ui:VisualElement>
                     <ui:Label name="fo-season-next" class="fo-delta" text="" />
                 </ui:VisualElement>
-                <!-- Phase 24: 프런트 신뢰도(TP) 게이지 + 팬덤 특전 슬롯 3칸 -->
                 <ui:VisualElement name="fo-trust-cell" class="fo-cell fo-cell--last">
                     <ui:Label class="fo-label" text="프런트 신뢰도 · 팬덤 특전" />
                     <ui:VisualElement name="fo-trust-gauge" class="fo-gauge fo-gauge--trust">
@@ -51,17 +53,16 @@
                     </ui:VisualElement>
                 </ui:VisualElement>
             </ui:VisualElement>
-            <ui:VisualElement class="header__team">
-                <ui:Label name="my-team" class="my-team" text="—" />
-                <ui:Label name="my-record" class="my-record" text="—" />
+            <ui:VisualElement class="header__time">
+                <ui:Label name="season-title" class="season-title" text="—" />
+                <ui:Label name="game-day" class="game-day" text="—" />
             </ui:VisualElement>
         </ui:VisualElement>
 
-        <!-- 중단 850px: 좌 330 라인업 / 중앙 1110 (대시보드 + 일정) / 우 450 순위 -->
+        <!-- 중단 850px: 좌 330 라인업 / 중앙 1110 결정 대시보드 / 우 450 순위·일정 -->
         <ui:VisualElement class="main">
             <ui:VisualElement class="panel side side--left">
-                <ui:Label class="panel-title" text="내 구단 라인업" />
-                <!-- Phase 24: 라인업을 바꿀 때마다 다시 판정하는 팀 케미스트리 -->
+                <ui:Label class="panel-title" text="라인업" />
                 <ui:VisualElement name="chemistry" class="chem-box">
                     <ui:Label class="chem-title" text="팀 케미스트리 · 배지 주=주루 수=수비 장=장타" />
                     <ui:Label name="chem-active" class="chem-active" text="—" />
@@ -69,24 +70,73 @@
                 <ui:VisualElement name="roster" />
                 <ui:Label name="bench-title" class="section-title bench-title" text="벤치" />
                 <ui:VisualElement name="bench" />
-                <!-- Phase 30: 드래프트 신인 중 퓨처스에 있는 선수 한 줄 -->
                 <ui:Label name="futures-rookies" class="futures-rookies" text="" />
                 <ui:Label name="lineup-hint" class="lineup-hint" text="" />
-                <ui:Label name="roster-source" class="footnote" text="" />
             </ui:VisualElement>
 
             <ui:VisualElement class="center">
-                <!-- 프런트 오피스 대시보드: 팀 주요 통계 / 팀 내 기록 1위 -->
-                <ui:VisualElement class="dashboard">
-                    <ui:VisualElement name="team-stats" class="panel dashboard__card dashboard__card--stats">
+                <!-- 1단: 다음 경기 프리뷰 (팀 컬러 강조) / 오늘의 결정 (경고) -->
+                <ui:VisualElement class="center-row center-row--top">
+                    <ui:VisualElement name="preview" class="panel card card--preview">
+                        <ui:VisualElement class="card__head">
+                            <ui:Label class="panel-title card__title" text="다음 경기" />
+                            <ui:Label name="pv-meta" class="card__meta" text="—" />
+                        </ui:VisualElement>
+                        <ui:VisualElement class="pv-teams">
+                            <ui:VisualElement name="pv-away" class="pv-side">
+                                <ui:Label class="pv-side__label" text="원정" />
+                                <ui:Label name="pv-away-team" class="pv-team" text="—" />
+                                <ui:Label name="pv-away-standing" class="pv-standing" text="" />
+                                <ui:Label class="pv-side__label pv-side__label--gap" text="선발 투수" />
+                                <ui:Label name="pv-away-sp" class="pv-sp" text="—" />
+                                <ui:Label name="pv-away-sp-line" class="pv-sp-line" text="" />
+                            </ui:VisualElement>
+                            <ui:Label class="pv-vs" text="VS" />
+                            <ui:VisualElement name="pv-home" class="pv-side">
+                                <ui:Label class="pv-side__label" text="홈" />
+                                <ui:Label name="pv-home-team" class="pv-team" text="—" />
+                                <ui:Label name="pv-home-standing" class="pv-standing" text="" />
+                                <ui:Label class="pv-side__label pv-side__label--gap" text="선발 투수" />
+                                <ui:Label name="pv-home-sp" class="pv-sp" text="—" />
+                                <ui:Label name="pv-home-sp-line" class="pv-sp-line" text="" />
+                            </ui:VisualElement>
+                        </ui:VisualElement>
+                        <ui:Label name="pv-note" class="pv-note" text="" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="decisions-panel" class="panel card card--decisions">
+                        <ui:VisualElement class="card__head">
+                            <ui:Label class="panel-title card__title" text="오늘의 결정" />
+                            <ui:Label name="decisions-count" class="card__meta" text="" />
+                        </ui:VisualElement>
+                        <ui:VisualElement name="decisions" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <!-- 2단: 리그 뉴스 / 투수진 -->
+                <ui:VisualElement class="center-row center-row--mid">
+                    <ui:VisualElement name="news-panel" class="panel card news-panel">
+                        <ui:Label class="panel-title" text="리그 뉴스" />
+                        <ui:VisualElement name="news" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="staff-panel" class="panel card staff-panel">
+                        <ui:Label name="rotation-title" class="section-title" text="선발 로테이션" />
+                        <ui:VisualElement name="rotation" />
+                        <ui:Label name="bullpen-title" class="section-title rotation-title" text="불펜" />
+                        <ui:VisualElement name="bullpen" class="bullpen-list" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <!-- 3단: 팀 주요 통계 / 팀 내 기록 1위 -->
+                <ui:VisualElement class="center-row center-row--bottom">
+                    <ui:VisualElement name="team-stats" class="panel card card--flat dashboard__card--stats">
                         <ui:Label class="panel-title" text="팀 주요 통계" />
                         <ui:VisualElement class="stat-tiles">
                             <ui:VisualElement class="stat-tile">
-                                <ui:Label class="stat-tile__label" text="득점 RS" />
+                                <ui:Label class="stat-tile__label" text="득점" />
                                 <ui:Label name="stat-rs" class="stat-tile__value" text="—" />
                             </ui:VisualElement>
                             <ui:VisualElement class="stat-tile">
-                                <ui:Label class="stat-tile__label" text="실점 RA" />
+                                <ui:Label class="stat-tile__label" text="실점" />
                                 <ui:Label name="stat-ra" class="stat-tile__value" text="—" />
                             </ui:VisualElement>
                             <ui:VisualElement class="stat-tile">
@@ -98,55 +148,35 @@
                                 <ui:Label name="stat-l10" class="stat-tile__value" text="—" />
                             </ui:VisualElement>
                         </ui:VisualElement>
-                        <ui:Label name="stat-note" class="footnote" text="" />
+                        <ui:Label name="stat-note" class="stat-note" text="" />
                     </ui:VisualElement>
-
-                    <ui:VisualElement name="team-leaders-panel" class="panel dashboard__card dashboard__card--leaders">
-                        <ui:Label class="panel-title" text="팀 내 기록 1위" />
+                    <ui:VisualElement name="team-leaders-panel" class="panel card card--flat dashboard__card--leaders">
+                        <ui:Label class="panel-title" text="팀 내 기록 1위 · 지난 시즌" />
                         <ui:VisualElement name="team-leaders" />
-                        <ui:Label name="leaders-source" class="footnote" text="" />
                     </ui:VisualElement>
-                </ui:VisualElement>
-
-                <ui:VisualElement class="panel schedule-panel">
-                    <ui:Label class="panel-title" text="시즌 일정" />
-                    <ui:VisualElement class="lobby-row lobby-row--head">
-                        <ui:Label class="col-no" text="경기" />
-                        <ui:Label class="col-date" text="날짜" />
-                        <ui:Label class="col-team" text="원정" />
-                        <ui:Label class="col-vs" text="" />
-                        <ui:Label class="col-team" text="홈" />
-                        <ui:Label class="col-stadium" text="구장" />
-                        <ui:Label class="col-status" text="상태" />
-                    </ui:VisualElement>
-                    <ui:VisualElement name="schedule" />
-                </ui:VisualElement>
-
-                <!-- Phase 28: 리그 주요 뉴스 (최신 5건, 스크롤 없이 고정) -->
-                <ui:VisualElement name="news-panel" class="panel news-panel">
-                    <ui:Label class="panel-title" text="리그 주요 뉴스" />
-                    <ui:VisualElement name="news" />
                 </ui:VisualElement>
             </ui:VisualElement>
 
-            <ui:VisualElement class="panel side side--right">
-                <ui:Label class="panel-title" text="리그 순위" />
-                <ui:VisualElement class="lobby-row lobby-row--head">
-                    <ui:Label class="col-rank" text="순위" />
-                    <ui:Label class="col-move" text="" />
-                    <ui:Label class="col-standing-team" text="팀" />
-                    <ui:Label class="col-num" text="승" />
-                    <ui:Label class="col-num" text="패" />
-                    <ui:Label class="col-num" text="무" />
-                    <ui:Label class="col-pct" text="승률" />
-                    <ui:Label class="col-gb" text="승차" />
+            <ui:VisualElement class="side side--right">
+                <ui:VisualElement class="panel card standings-panel">
+                    <ui:Label class="panel-title" text="리그 순위" />
+                    <ui:VisualElement class="lobby-row lobby-row--head">
+                        <ui:Label class="col-rank" text="순위" />
+                        <ui:Label class="col-move" text="" />
+                        <ui:Label class="col-standing-team" text="팀" />
+                        <ui:Label class="col-num" text="승" />
+                        <ui:Label class="col-num" text="패" />
+                        <ui:Label class="col-num" text="무" />
+                        <ui:Label class="col-pct" text="승률" />
+                        <ui:Label class="col-gb" text="승차" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="standings" />
                 </ui:VisualElement>
-                <ui:VisualElement name="standings" />
-                <!-- Phase 25: 벤치가 5명까지 늘 수 있어 투수진(선발 로테이션·불펜)은 순위표 아래로 옮겼다 -->
-                <ui:Label name="rotation-title" class="section-title rotation-title" text="선발 로테이션 · 컨디션이 좋은 투수부터 등판" />
-                <ui:VisualElement name="rotation" />
-                <ui:Label name="bullpen-title" class="section-title rotation-title" text="불펜" />
-                <ui:VisualElement name="bullpen" class="bullpen-list" />
+                <!-- Phase 31: 일정은 오른쪽 아래 작은 목록 (구장은 툴팁) -->
+                <ui:VisualElement class="panel card card--flat schedule-panel">
+                    <ui:Label class="panel-title" text="일정" />
+                    <ui:VisualElement name="schedule" />
+                </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
 
@@ -217,6 +247,33 @@
                         </ui:VisualElement>
                         <ui:Label name="fa-result" class="fa-modal__result" text="" />
                     </ui:VisualElement>
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- Phase 31: 선수 상세 모달 (방출은 여기서만, 두 번 눌러 확정) -->
+        <ui:VisualElement name="player-modal" class="pd-modal">
+            <ui:VisualElement name="pd-window" class="pd-window">
+                <ui:VisualElement class="pd-head">
+                    <ui:VisualElement class="pd-head__text">
+                        <ui:Label name="pd-name" class="pd-name" text="—" />
+                        <ui:Label name="pd-meta" class="pd-meta" text="" />
+                    </ui:VisualElement>
+                    <ui:Label name="pd-role" class="pd-role" text="" />
+                    <ui:Button name="pd-close" class="btn pd-close" text="닫기" />
+                </ui:VisualElement>
+                <ui:VisualElement class="pd-condition-row">
+                    <ui:Label name="pd-condition" class="pd-condition" text="—" />
+                    <ui:Label name="pd-condition-note" class="pd-condition-note" text="" />
+                </ui:VisualElement>
+                <ui:VisualElement name="pd-stats" class="pd-stats" />
+                <ui:Label name="pd-season" class="pd-season" text="" />
+                <ui:Label name="pd-swap-title" class="section-title pd-swap-title" text="" />
+                <ui:VisualElement name="pd-swap" class="pd-swap" />
+                <ui:Button name="pd-pick" class="btn pd-pick" text="라인업에서 직접 골라 맞바꾸기" />
+                <ui:VisualElement class="pd-danger">
+                    <ui:Label name="pd-release-note" class="pd-release-note" text="" />
+                    <ui:Button name="pd-release" class="btn pd-release" text="방출" />
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
