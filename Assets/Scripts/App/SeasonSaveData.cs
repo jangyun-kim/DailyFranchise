@@ -81,6 +81,21 @@ namespace DailyFranchise.App
 
         /// <summary>구단별 직전 선발 (선발 로테이션 순번, Phase 22). 없는 이전 저장 파일은 1번부터.</summary>
         public List<LastStarterData> LastStarters = new List<LastStarterData>();
+
+        /// <summary>최근 리그 뉴스 (Phase 28, 오래된 것부터 최대 <see cref="SeasonState.MaxNews"/>건). 없는 이전 저장 파일은 빈 피드.</summary>
+        public List<NewsData> News = new List<NewsData>();
+    }
+
+    [Serializable]
+    public sealed class NewsData
+    {
+        /// <summary><see cref="NewsKind"/> 정수 값.</summary>
+        public int Kind;
+        public string Tag;
+        public string Team;
+        public string Headline;
+        public int Year;
+        public string Date;
     }
 
     [Serializable]

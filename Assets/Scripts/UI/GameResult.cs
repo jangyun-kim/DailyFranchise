@@ -14,12 +14,18 @@ namespace DailyFranchise.UI
         public readonly TeamSide MyTeamSide;
         /// <summary>두 구단 선수 출장 기록 (컨디션 갱신용, Phase 22). 선수 DB가 없는 경기(더미)면 null.</summary>
         public readonly GameParticipation Participation;
+        /// <summary>경기가 끝난 이닝 (리그 뉴스용, Phase 28). 모르면 0.</summary>
+        public readonly int FinalInning;
+        /// <summary>9회 이후 말 공격에서 홈이 앞서며 끝났다 (끝내기, Phase 28).</summary>
+        public readonly bool WalkOff;
 
-        public GameResult(GameScore score, TeamSide myTeamSide, GameParticipation participation = null)
+        public GameResult(GameScore score, TeamSide myTeamSide, GameParticipation participation = null, int finalInning = 0, bool walkOff = false)
         {
             Score = score;
             MyTeamSide = myTeamSide;
             Participation = participation;
+            FinalInning = finalInning;
+            WalkOff = walkOff;
         }
 
         public int MyRuns => MyTeamSide == TeamSide.Home ? Score.Home : Score.Away;

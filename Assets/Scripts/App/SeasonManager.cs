@@ -140,12 +140,20 @@ namespace DailyFranchise.App
             StoveLeague.Market(Rosters, Season.MyTeam, FranchiseFinance.MoodOf(Season.FanApproval));
 
         /// <summary>FA 일반 협상. 시도했으면(막히지 않았으면) 바로 저장하고 알린다.</summary>
-        public SigningOutcome Negotiate(FreeAgent agent, long offer) =>
-            Finish(_loading || Rosters == null ? Blocked(agent) : StoveLeague.Negotiate(Season, Rosters, agent, offer, NegotiationRandom));
+        public SigningOutcome Negotiate(FreeAgent agent, long offer)
+        {
+            if (_loading || Rosters == null) return Blocked(agent);
+            var chemistry = ChemistryKinds();
+            return Finish(StoveLeague.Negotiate(Season, Rosters, agent, offer, NegotiationRandom), chemistry);
+        }
 
         /// <summary>[확정 영입] (TP 100 소모). 시도했으면 바로 저장하고 알린다.</summary>
-        public SigningOutcome SignWithCeiling(FreeAgent agent) =>
-            Finish(_loading || Rosters == null ? Blocked(agent) : StoveLeague.SignWithCeiling(Season, Rosters, agent));
+        public SigningOutcome SignWithCeiling(FreeAgent agent)
+        {
+            if (_loading || Rosters == null) return Blocked(agent);
+            var chemistry = ChemistryKinds();
+            return Finish(StoveLeague.SignWithCeiling(Season, Rosters, agent), chemistry);
+        }
 
         static SigningOutcome Blocked(FreeAgent agent) => new SigningOutcome { Agent = agent, Block = SigningBlock.InGame };
 
@@ -156,26 +164,51 @@ namespace DailyFranchise.App
         public ReleaseOutcome Release(string playerId)
         {
             if (_loading || Rosters == null) return new ReleaseOutcome { Block = ReleaseBlock.InGame };
-            var outcome = StoveLeague.Release(Season, Rosters, playerId);
+            var chemistry = ChemistryKinds();
+            var outcome = StoveLeague.Release(Season, Rosters, playerId); // [단독] 방출 뉴스 발행
             if (!outcome.Released) return outcome;
             _ = Rosters; // 장부·페이롤 다시 짜기
+            PublishChemistry(chemistry);
             Saves.Save(Season);
             StoveChanged?.Invoke();
             LineupChanged?.Invoke();
+            NewsChanged?.Invoke();
             return outcome;
         }
 
         /// <summary>내 구단이 경기를 치를 수 없는 선수단이면 이유 (<see cref="RosterLimits.GameReadinessProblem"/>), 아니면 null.</summary>
         public string RosterProblem => RosterLimits.GameReadinessProblem(MyRoster);
 
-        SigningOutcome Finish(SigningOutcome outcome)
+        /// <summary>협상 뒤 (영입 [오피셜] / 결렬 [속보] 뉴스는 StoveLeague가 발행): 장부를 다시 짜고 새 케미스트리 뉴스, 저장, 알림.</summary>
+        SigningOutcome Finish(SigningOutcome outcome, IReadOnlyList<ChemistryKind> chemistryBefore)
         {
             if (outcome.Block != SigningBlock.None) return outcome;
             _ = Rosters; // 영입했으면 장부·페이롤 다시 짜기
+            if (outcome.Signed) PublishChemistry(chemistryBefore);
             Saves.Save(Season);
             StoveChanged?.Invoke();
             if (outcome.Signed) LineupChanged?.Invoke();
+            NewsChanged?.Invoke();
             return outcome;
+        }
+
+        /// <summary>리그 뉴스가 늘었다 (로비 뉴스 패널 다시 그리기용, Phase 28).</summary>
+        public event Action NewsChanged;
+
+        /// <summary>지금 라인업으로 발동 중인 내 구단 케미스트리. 선수단·태그를 모르면 빈 목록.</summary>
+        IReadOnlyList<ChemistryKind> ChemistryKinds()
+        {
+            var roster = MyRoster;
+            return roster == null || ChemistryTags == null ? new List<ChemistryKind>() : ChemistryRules.Evaluate(roster, ChemistryTags).Kinds;
+        }
+
+        /// <summary>선수단이 바뀐 뒤 새로 발동한 케미스트리를 [라인업] 뉴스로 낸다 (저장은 부른 쪽이).</summary>
+        void PublishChemistry(IReadOnlyList<ChemistryKind> before)
+        {
+            var roster = MyRoster;
+            if (roster == null || ChemistryTags == null) return;
+            foreach (var n in NewsWriter.NewChemistry(Season.MyTeam, before, ChemistryRules.Evaluate(roster, ChemistryTags), Season.Year, Season.NewsDate))
+                Season.AddNews(n);
         }
 
         public SaveManager Saves { get; private set; }
@@ -264,9 +297,12 @@ namespace DailyFranchise.App
             if (_loading || Season.InProgress != null) return false;
             var card = CurrentLineup;
             if (card == null || !card.TrySwap(a, b)) return false;
+            var chemistry = ChemistryKinds();
             Season.MyLineup = card;
+            PublishChemistry(chemistry);
             Saves.Save(Season);
             LineupChanged?.Invoke();
+            NewsChanged?.Invoke();
             return true;
         }
 
@@ -288,7 +324,7 @@ namespace DailyFranchise.App
             LastReport = null; // 직전 경기 재정 변화는 지난 시즌 것
             LastScore = null;
             _ = Rosters; // 캡 기준·페이롤 다시 맞추기 (선수단은 그대로)
-            Saves.Save(Season);
+            Saves.Save(Season); // 결산 뉴스는 SeasonState가 발행
             SeasonRolledOver?.Invoke();
             return LastRollover;
         }
@@ -361,7 +397,8 @@ namespace DailyFranchise.App
             ExitsHandled++;
             DetachGame();
             // 경기 화면은 일정의 원정·홈대로 그리지만, 내 구단 득점 기준으로 다시 맞춰 반영한다.
-            if (Season.InProgress != null) AdvanceSeason(Season.ScheduleScore(result.MyRuns, result.OpponentRuns), result.Participation);
+            if (Season.InProgress != null)
+                AdvanceSeason(Season.ScheduleScore(result.MyRuns, result.OpponentRuns), result.Participation, result.FinalInning, result.WalkOff);
             Load(LobbyScene);
         }
 
@@ -372,12 +409,15 @@ namespace DailyFranchise.App
         /// </summary>
         /// <param name="finalScore">일정의 원정 : 홈 기준 최종 점수.</param>
         /// <param name="participation">출장 기록. 있으면 두 구단 선수 컨디션을 바꾼다 (<see cref="ConditionRandom"/>).</param>
-        public PostGameReport AdvanceSeason(GameScore finalScore, GameParticipation participation = null)
+        /// <param name="finalInning">경기가 끝난 이닝 (뉴스용, 모르면 0).</param>
+        /// <param name="walkOff">끝내기로 끝났는지 (뉴스용).</param>
+        public PostGameReport AdvanceSeason(GameScore finalScore, GameParticipation participation = null, int finalInning = 0, bool walkOff = false)
         {
             if (Season.InProgress == null) return null;
             LastScore = finalScore;
             _ = Rosters; // 정산 전에 페이롤을 지금 선수단에 맞춘다
-            LastReport = PostGameProcessor.Process(Season, finalScore, LeagueRandom, Saves, participation, ConditionRandom);
+            LastReport = PostGameProcessor.Process(Season, finalScore, LeagueRandom, Saves, participation, ConditionRandom, finalInning, walkOff);
+            NewsChanged?.Invoke();
             return LastReport;
         }
 

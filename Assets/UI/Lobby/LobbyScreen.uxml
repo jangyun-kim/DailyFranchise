@@ -119,6 +119,12 @@
                     </ui:VisualElement>
                     <ui:VisualElement name="schedule" />
                 </ui:VisualElement>
+
+                <!-- Phase 28: 리그 주요 뉴스 (최신 5건, 스크롤 없이 고정) -->
+                <ui:VisualElement name="news-panel" class="panel news-panel">
+                    <ui:Label class="panel-title" text="리그 주요 뉴스" />
+                    <ui:VisualElement name="news" />
+                </ui:VisualElement>
             </ui:VisualElement>
 
             <ui:VisualElement class="panel side side--right">

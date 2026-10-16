@@ -462,6 +462,42 @@ namespace DailyFranchise.App
             return changes;
         }
 
+        /// <summary>리그 뉴스 보관 개수 (Phase 28). 넘치면 오래된 뉴스부터 버린다 — 저장 파일이 커지지 않게.</summary>
+        public const int MaxNews = 15;
+
+        readonly Queue<NewsItem> _news = new Queue<NewsItem>();
+
+        /// <summary>최근 리그 뉴스 (오래된 것부터, 최대 <see cref="MaxNews"/>건). 시즌과 함께 저장된다.</summary>
+        public IReadOnlyCollection<NewsItem> RecentNews => _news;
+
+        /// <summary>최신 뉴스부터 최대 <paramref name="count"/>건 (로비 뉴스 패널).</summary>
+        public IReadOnlyList<NewsItem> LatestNews(int count) =>
+            _news.Reverse().Take(Math.Max(0, count)).ToList();
+
+        /// <summary>뉴스를 발행한다. <see cref="MaxNews"/>를 넘으면 가장 오래된 뉴스를 꺼내 버린다.</summary>
+        public void AddNews(NewsItem item)
+        {
+            _news.Enqueue(item ?? throw new ArgumentNullException(nameof(item)));
+            while (_news.Count > MaxNews) _news.Dequeue();
+        }
+
+        /// <summary>로비에서 일어난 일(영입·방출 등)의 뉴스 날짜: 다음 경기일, 시즌이 끝났으면 마지막 경기일.</summary>
+        public string NewsDate => NextGame?.Date ?? LastFinished?.Date ?? "";
+
+        /// <summary>내 구단 현재 연승(+)·연패(−). 무승부나 치른 경기가 없으면 0.</summary>
+        public int MyStreak()
+        {
+            int streak = 0;
+            for (int i = NextIndex - 1; i >= 0; i--)
+            {
+                var o = MyOutcome(_schedule[i]);
+                if (o == GameOutcome.Win && streak >= 0) streak++;
+                else if (o == GameOutcome.Loss && streak <= 0) streak--;
+                else break;
+            }
+            return streak;
+        }
+
         /// <summary>예산·팬 만족도를 범위 안으로 맞춰 정한다 (불러오기·테스트용).</summary>
         public void SetFinance(long budget, long fanApproval)
         {
@@ -660,6 +696,7 @@ namespace DailyFranchise.App
 
             CloseTrustSeason();
             Year++;
+            AddNews(NewsWriter.SeasonClosed(MyTeam, summary)); // 지난 시즌 뉴스는 지우지 않는다 (보관 개수로만 밀려난다)
             return summary;
         }
 
@@ -715,6 +752,10 @@ namespace DailyFranchise.App
                     .Select(kv => new ConditionData { Id = kv.Key, Value = kv.Value }).ToList(),
                 LastStarters = _lastStarters.OrderBy(kv => kv.Key, StringComparer.Ordinal)
                     .Select(kv => new LastStarterData { Team = kv.Key, PlayerId = kv.Value }).ToList(),
+                News = _news.Select(n => new NewsData
+                {
+                    Kind = (int)n.Kind, Tag = n.Tag, Team = n.Team, Headline = n.Headline, Year = n.Year, Date = n.Date,
+                }).ToList(),
             };
         }
 
@@ -805,6 +846,13 @@ namespace DailyFranchise.App
             if (data.LastStarters != null)
                 foreach (var l in data.LastStarters)
                     if (l != null) season.SetLastStarter(l.Team, l.PlayerId);
+            // 뉴스가 없는 이전 저장 파일(Phase 28 이전)은 빈 피드. 본문이 빈 항목은 건너뛰고, 모르는 종류는 General,
+            // 보관 개수를 넘는 파일은 최근 것만 남는다 (AddNews).
+            if (data.News != null)
+                foreach (var n in data.News)
+                    if (n != null && !string.IsNullOrEmpty(n.Headline))
+                        season.AddNews(new NewsItem(Enum.IsDefined(typeof(NewsKind), n.Kind) ? (NewsKind)n.Kind : NewsKind.General,
+                            n.Tag, n.Team, n.Headline, n.Year, n.Date));
             return season;
         }
 

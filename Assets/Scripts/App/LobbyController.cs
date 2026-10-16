@@ -34,6 +34,8 @@ namespace DailyFranchise.App
     /// 선수단이 경기를 치를 수 없으면(타순 9명·선발 투수) [다음 경기 시작]을 잠그고 이유를 보인다.
     /// 오프시즌(Phase 27): 상단 제목은 시즌 연도로 그리고, 정규시즌 일정을 모두 치르면 [다음 경기 시작] 자리에
     /// [시즌 결산 및 2027 시즌 준비]를 띄워 <see cref="SeasonManager.TransitionToNextSeason"/>을 요청한다.
+    /// 리그 뉴스(Phase 28): 일정 아래 [리그 주요 뉴스]에 최신 <see cref="NewsShown"/>건(말머리 색 · 본문 · 날짜).
+    /// 경기 뒤 로비 진입, FA 협상·방출·라인업 교체(NewsChanged), 시즌 결산 때 다시 그린다.
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class LobbyController : MonoBehaviour
@@ -85,6 +87,7 @@ namespace DailyFranchise.App
             _manager.LineupChanged += OnLineupChanged;
             _manager.StoveChanged += OnStoveChanged;
             _manager.SeasonRolledOver += OnSeasonRolledOver;
+            _manager.NewsChanged += OnNewsChanged;
             _selection.Clear();
             _chemistryKey = null;
             Render();
@@ -102,6 +105,7 @@ namespace DailyFranchise.App
                 _manager.LineupChanged -= OnLineupChanged;
                 _manager.StoveChanged -= OnStoveChanged;
                 _manager.SeasonRolledOver -= OnSeasonRolledOver;
+                _manager.NewsChanged -= OnNewsChanged;
             }
             _fa?.Detach();
             _fa = null;
@@ -112,6 +116,52 @@ namespace DailyFranchise.App
         }
 
         void OnDatabaseReady() => Render();
+
+        void OnNewsChanged() => RenderNews(_manager.Season);
+
+        /// <summary>로비 뉴스 패널에 보이는 최신 뉴스 수.</summary>
+        public const int NewsShown = 5;
+
+        /// <summary>최신 뉴스부터 <see cref="NewsShown"/>건. 없으면 안내 한 줄.</summary>
+        void RenderNews(SeasonState season)
+        {
+            var container = Q("news");
+            container.Clear();
+            var latest = season.LatestNews(NewsShown);
+            if (latest.Count == 0)
+            {
+                container.Add(Cell("아직 리그 뉴스가 없습니다. 경기를 치르거나 FA 시장을 열어 보세요.", "news-empty"));
+                return;
+            }
+            for (int i = 0; i < latest.Count; i++)
+            {
+                var n = latest[i];
+                var row = new VisualElement { name = "news-" + i, userData = n };
+                row.AddToClassList("news-row");
+                row.EnableInClassList("news-row--latest", i == 0);
+                var tag = Cell(n.Tag, "news-tag");
+                string tagClass = NewsTagClass(n.Tag);
+                if (tagClass != null) tag.AddToClassList(tagClass);
+                row.Add(tag);
+                var text = Cell(n.Headline, "news-text");
+                text.tooltip = n.Text;
+                row.Add(text);
+                row.Add(Cell(n.Date.Length == 0 ? $"{n.Year}" : $"{n.Year} · {n.Date}", "news-date"));
+                container.Add(row);
+            }
+        }
+
+        static string NewsTagClass(string tag)
+        {
+            switch (tag)
+            {
+                case NewsWriter.OfficialTag: return "news-tag--official";
+                case NewsWriter.ExclusiveTag: return "news-tag--exclusive";
+                case NewsWriter.BreakingTag: return "news-tag--breaking";
+                case NewsWriter.WalkOffTag: return "news-tag--walkoff";
+                default: return null;
+            }
+        }
 
         void OnSeasonRolledOver()
         {
@@ -191,6 +241,7 @@ namespace DailyFranchise.App
             RenderLeaders();
             RenderSchedule(season);
             RenderStandings(season);
+            RenderNews(season);
 
             Q<Label>("last-result").text = season.LastFinished == null && _manager.LastRollover != null
                 ? _manager.LastRollover.Text
@@ -512,6 +563,7 @@ namespace DailyFranchise.App
                     Cell(g.Stadium, "col-stadium"),
                     Cell(status, "col-status"));
                 row.name = "game-" + g.Number;
+                row.AddToClassList("lobby-row--schedule");
                 row.EnableInClassList("lobby-row--final", g.Status == GameStatus.Final);
                 row.EnableInClassList("lobby-row--next", g == next);
                 container.Add(row);

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using DailyFranchise.Sim;
 using DailyFranchise.Sim.Data;
 
@@ -45,6 +46,8 @@ namespace DailyFranchise.App
         /// 타 구단끼리의 경기는 점수만 만들므로 그 선수들의 컨디션은 바뀌지 않는다.
         /// </summary>
         public IReadOnlyList<ConditionChange> Conditions = new List<ConditionChange>();
+        /// <summary>이 경기로 발행한 리그 뉴스 (Phase 28, 발행 순). 저장 전에 시즌 뉴스에 들어간다.</summary>
+        public IReadOnlyList<NewsItem> News = new List<NewsItem>();
         /// <summary>바로 저장에 성공했는지. 디스크 오류면 false (진행 상황은 메모리에 남아 다음 저장 때 다시 쓴다).</summary>
         public bool Saved;
     }
@@ -58,7 +61,9 @@ namespace DailyFranchise.App
     ///    (<see cref="FranchiseFinance.For(GameOutcome, FanMood, FandomSlot)"/>, 범위 제한), 그 뒤 슬롯 해금을 갱신한다.
     ///    같은 정산에서 선수단 유지비(페이롤 ÷ 144, <see cref="FranchiseFinance.PayrollPerGame"/>)를 뺀다 (Phase 26).
     /// 5) 출장 기록이 있으면 두 구단 선수 컨디션을 바꾼다 (<see cref="ConditionRules"/>, 전용 난수).
-    /// 6) 곧바로 저장해, 로비로 돌아가기 전에 꺼져도 결과가 남는다.
+    /// 6) 리그 뉴스를 발행한다 (Phase 28, <see cref="NewsWriter"/>): 내 경기 결과(끝내기·난타전·대승 등) 한 건, 선두 등극,
+    ///    새로 해금한 팬덤 특전, 그날 타 구단 경기 중 큰 점수 차 경기 한 건.
+    /// 7) 곧바로 저장해, 로비로 돌아가기 전에 꺼져도 결과가 남는다.
     /// </summary>
     public static class PostGameProcessor
     {
@@ -69,8 +74,10 @@ namespace DailyFranchise.App
         /// <param name="conditionRandom">
         /// 컨디션 하락 판정 난수. 타 구단 경기 난수(<paramref name="leagueRandom"/>)와 분리해, 컨디션 판정이 순위 결과를 바꾸지 않게 한다.
         /// </param>
+        /// <param name="finalInning">경기가 끝난 이닝 (뉴스용, 모르면 0).</param>
+        /// <param name="walkOff">9회 이후 말 공격에서 홈이 앞서며 끝났는지 (끝내기 뉴스).</param>
         public static PostGameReport Process(SeasonState season, GameScore finalScore, IRandomSource leagueRandom, SaveManager saves,
-            GameParticipation participation = null, IRandomSource conditionRandom = null)
+            GameParticipation participation = null, IRandomSource conditionRandom = null, int finalInning = 0, bool walkOff = false)
         {
             if (participation != null && conditionRandom == null)
                 throw new ArgumentNullException(nameof(conditionRandom), "출장 기록이 있으면 컨디션 난수가 필요하다.");
@@ -90,6 +97,7 @@ namespace DailyFranchise.App
             var finance = season.ApplyFinance(new FinanceChange(income.BudgetDelta - expense, income.FanDelta));
             var unlocked = season.UpdateFandomUnlocks();
             var conditions = participation == null ? new List<ConditionChange>() : season.ApplyConditions(participation, conditionRandom);
+            var news = PublishNews(season, game, mine, rankBefore, unlocked, finalInning, walkOff);
 
             return new PostGameReport
             {
@@ -107,6 +115,7 @@ namespace DailyFranchise.App
                 SlotsApplied = slots,
                 NewlyUnlocked = unlocked,
                 Conditions = conditions,
+                News = news,
                 MyRunsScored = mine.RunsFor(season.MyTeam),
                 MyRunsAllowed = mine.RunsAgainst(season.MyTeam),
                 RankBefore = rankBefore,
@@ -114,6 +123,26 @@ namespace DailyFranchise.App
                 DayResults = new List<GameRecord>(season.LastDayResults),
                 Saved = saves != null && saves.Save(season),
             };
+        }
+
+        static List<NewsItem> PublishNews(SeasonState season, ScheduledGame game, GameRecord mine, int rankBefore, FandomSlot unlocked,
+            int finalInning, bool walkOff)
+        {
+            int year = season.Year;
+            string date = game.Date;
+            var news = new List<NewsItem>
+            {
+                NewsWriter.Game(season.MyTeam, mine, finalInning, walkOff, season.MyStreak(), year, date),
+            };
+            var me = season.MyStanding;
+            if (me != null && me.Rank == 1 && rankBefore != 1)
+                news.Add(NewsWriter.TookLead(season.MyTeam, season.Standings.Count(r => r.Rank == 1) > 1, year, date));
+            foreach (var slot in FandomRules.Slots)
+                if ((unlocked & slot) != 0) news.Add(NewsWriter.FandomUnlocked(season.MyTeam, slot, year, date));
+            var league = NewsWriter.LeagueHighlight(season.LastDayResults.Skip(1), year, date);
+            if (league != null) news.Add(league);
+            foreach (var n in news) season.AddNews(n);
+            return news;
         }
     }
 }

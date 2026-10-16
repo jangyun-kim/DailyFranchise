@@ -284,6 +284,7 @@ namespace DailyFranchise.App
     /// - 페이롤: 영입 선수는 계약 연봉, 나머지는 WAR 연봉, 대체 선수는 최저 연봉.
     /// - 방출 (Phase 26): 벤치·불펜 선수만. 위약금 = 연봉의 50% (예산에서 즉시), 선수는 자유계약으로 시장에 돌아간다.
     /// - 캡 기준 (Phase 26): 리그 개막 평균 페이롤 × 1.25 (<see cref="OpeningCap"/>).
+    /// - 리그 뉴스 (Phase 28): 영입 [오피셜] · 협상 결렬 [속보] · 방출 [단독]을 시즌 뉴스에 발행한다.
     /// </summary>
     public static class StoveLeague
     {
@@ -390,6 +391,8 @@ namespace DailyFranchise.App
             if (outcome.Block != SigningBlock.None) return outcome;
             outcome.Negotiation = season.Negotiate(offer, agent.Ask, random);
             if (outcome.Negotiation.Signed) Sign(season, agent, offer, outcome);
+            else if (outcome.Negotiation.Attempted)
+                season.AddNews(NewsWriter.NegotiationFailed(season.MyTeam, agent.Player.Name, season.Year, season.NewsDate));
             return outcome;
         }
 
@@ -407,6 +410,7 @@ namespace DailyFranchise.App
         {
             season.AddSigning(new SigningRecord(agent.Id, agent.Team, season.MyTeam, salary), isBatter: !agent.Player.IsPitcher);
             outcome.Salary = salary;
+            season.AddNews(NewsWriter.Signed(season.MyTeam, agent.Player.Name, salary, outcome.Negotiation.CeilingUsed, season.Year, season.NewsDate));
         }
 
         /// <summary>방출 위약금 = 지금 연봉의 50% (내림).</summary>
@@ -445,6 +449,7 @@ namespace DailyFranchise.App
             outcome.Penalty = ReleasePenalty(season, book, playerId);
             season.ApplyFinance(new FinanceChange(-outcome.Penalty, 0));
             season.AddSigning(new SigningRecord(playerId, season.MyTeam, LeagueRosterBook.FreeAgentTeam, 0), isBatter: !p.IsPitcher);
+            season.AddNews(NewsWriter.Released(season.MyTeam, p.Name, season.Year, season.NewsDate));
             return outcome;
         }
 

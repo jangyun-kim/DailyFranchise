@@ -247,8 +247,27 @@ namespace DailyFranchise.UI
         public void RequestExit()
         {
             var handler = ExitRequested;
-            if (handler != null) handler(new GameResult(FinalScore(), _roster.MyTeam, Participation()));
-            else _playback.SkipToEnd();
+            if (handler == null)
+            {
+                _playback.SkipToEnd();
+                return;
+            }
+            var score = FinalScore();
+            var (inning, walkOff) = FinalInningInfo(score);
+            handler(new GameResult(score, _roster.MyTeam, Participation(), inning, walkOff));
+        }
+
+        /// <summary>
+        /// 경기 끝 경로(<see cref="FinalPath"/>)의 마지막 이닝과 끝내기 여부 (Phase 28 뉴스용).
+        /// 경기 흐름 규칙상 9회 이후 말 공격은 홈이 앞서지 않을 때만 이어지므로, 9회 이후 말에 홈이 앞선 채 끝났으면 끝내기다.
+        /// </summary>
+        public (int Inning, bool WalkOff) FinalInningInfo(GameScore score)
+        {
+            var path = FinalPath();
+            if (path == null || path.Count == 0) return (0, false);
+            var last = path[path.Count - 1];
+            bool walkOff = last.HalfInning == HalfInning.Bottom && last.Inning >= PlayByPlayGenerator.FinalInning && score.Home > score.Away;
+            return (last.Inning, walkOff);
         }
 
         /// <summary>

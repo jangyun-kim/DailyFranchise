@@ -217,6 +217,52 @@ namespace DailyFranchise.UI.Tests
             Assert.That(fa.ListRenderCount, Is.EqualTo(lists), "선택·제시액은 목록을 다시 만들지 않는다");
         }
 
+        static string[] NewsCells(int index) =>
+            Root.Q("news-" + index).Query<Label>().ToList().Select(l => l.text).ToArray();
+
+        [UnityTest]
+        public IEnumerator Phase28_방출과_FA_영입이_말머리를_달고_리그_뉴스_패널에_바로_오른다()
+        {
+            var r = RenderAt1080();
+            yield return null;
+            var news = Root.Q("news");
+            Assert.That(news.childCount, Is.EqualTo(1));
+            Assert.That(news[0].ClassListContains("news-empty"), Is.True, "새 시즌은 빈 피드");
+
+            var manager = SeasonManager.Instance;
+            manager.NegotiationRandom = new FixedRandom(0.0);
+            Lobby.ReleasePlayer(Heongon);
+            yield return null;
+            Assert.That(NewsCells(0), Is.EqualTo(new[] { "[단독]", "삼성 라이온즈, 성적 부진으로 김헌곤 방출 결정.", "2026 · 5.15 (금)" }));
+            Assert.That(Root.Q("news-0").Q<Label>(className: "news-tag").ClassListContains("news-tag--exclusive"), Is.True);
+            Assert.That(Root.Q("news-0").ClassListContains("news-row--latest"), Is.True);
+
+            Lobby.OpenFaMarket();
+            yield return null;
+            Submit(Root.Q<Button>("fa-negotiate"));
+            yield return null;
+            Assert.That(NewsCells(0), Is.EqualTo(new[] { "[오피셜]", "삼성 라이온즈, FA 시장에서 김헌곤과 ₩ 1억 2,540만에 전격 계약!", "2026 · 5.15 (금)" }));
+            Assert.That(Root.Q("news-0").Q<Label>(className: "news-tag").ClassListContains("news-tag--official"), Is.True);
+            Assert.That(NewsCells(1)[1], Is.EqualTo("삼성 라이온즈, 성적 부진으로 김헌곤 방출 결정."));
+            Assert.That(Root.Q("news-1").ClassListContains("news-row--latest"), Is.False);
+            Lobby.FaMarket.Close();
+            yield return null;
+            AssertLayout("뉴스 2건");
+
+            // 뉴스는 5건까지만 보이고 저장된다
+            for (int i = 0; i < 6; i++)
+                manager.Season.AddNews(new NewsItem(NewsKind.League, NewsWriter.LeagueTag, "KIA 타이거즈", $"KIA 타이거즈, 한화 이글스에 1{i}:2 대승", 2026, "5.15 (금)"));
+            manager.Saves.Save(manager.Season);
+            Dispose(r);
+            DestroyManager();
+            yield return null;
+            SceneManager.LoadScene(SeasonManager.LobbyScene);
+            yield return WaitForLobby();
+            Assert.That(SeasonManager.Instance.Season.RecentNews.Count, Is.EqualTo(8));
+            Assert.That(Root.Q("news").childCount, Is.EqualTo(LobbyController.NewsShown), "패널은 최신 5건");
+            Assert.That(NewsCells(0)[1], Is.EqualTo("KIA 타이거즈, 한화 이글스에 15:2 대승"));
+        }
+
         [UnityTest]
         public IEnumerator 방출한_선수와_다시_협상해_성공하면_벤치로_돌아오고_페이롤이_새_계약으로_잡히며_저장된다()
         {
