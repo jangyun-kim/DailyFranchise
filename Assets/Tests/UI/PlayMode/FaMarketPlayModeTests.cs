@@ -155,7 +155,7 @@ namespace DailyFranchise.UI.Tests
             var release = Root.Q("bench-1").Q<Button>(className: "lobby-release");
             Assert.That(release.enabledSelf, Is.True);
             Assert.That(release.tooltip, Is.EqualTo("방출 · 위약금 −₩5,700만 (연봉 50%)"));
-            Assert.That(Root.Q("lineup-1").Q<Button>(className: "lobby-release"), Is.Null, "선발 타순 행에는 방출 버튼이 없다");
+            Assert.That(Root.Q("lineup-1").Q<Button>(className: "lobby-release").enabledSelf, Is.True, "Phase 30: 선발 타자도 방출할 수 있다");
             Assert.That(Root.Q("rotation").Q<Button>(className: "lobby-release"), Is.Null, "로테이션도 없다");
             Assert.That(Root.Q("bullpen").Children().Count(), Is.EqualTo(7), "1군 불펜 칩 7개");
             AssertLayout("1군 26명 로비");

@@ -291,6 +291,7 @@ namespace DailyFranchise.App
                 RenderRotation(mine, season);
                 // 1군 엔트리 밖 퓨처스 선수 수 (Phase 26.5 — 실제 데이터는 구단 전체 선수단이다)
                 Q<Label>("bench-title").text = mine.Reserves.Count > 0 ? $"벤치 · 퓨처스 {mine.Reserves.Count}명 대기" : "벤치";
+                RenderFuturesRookies(mine);
                 Q<Label>("roster-source").text = $"표시 데이터: {MasterDatabase.RosterFileName} ({db.Season})";
                 RenderSelection();
                 return;
@@ -306,10 +307,26 @@ namespace DailyFranchise.App
             Q("bullpen").Clear();
             Q("roster").Clear();
             Q("bench").Clear();
+            RenderFuturesRookies(null);
             Q<Label>("roster-source").text = _manager.IsDatabaseReady ? $"표시 데이터: {MasterDatabase.RosterFileName} — 내 구단 선수 없음" : "";
             Q<Label>("lineup-hint").text = _manager.IsDatabaseReady
                 ? $"{season.MyTeam} 선수 데이터가 없습니다. 선수 CSV를 확인하세요."
                 : "선수 데이터 불러오는 중…";
+        }
+
+        /// <summary>
+        /// 퓨처스 신인 한 줄 (Phase 30): "퓨처스 신인 4명 · 김민준 C 19세 외 3명" (첫 지명), 툴팁은 전원 (라운드·위치·나이·주요 기록).
+        /// 1군 선수단(벤치 포함)의 신인은 벤치 행에 이미 보이므로 퓨처스에 있는 신인만. 없으면 숨긴다.
+        /// </summary>
+        void RenderFuturesRookies(TeamRoster roster)
+        {
+            var label = Q<Label>("futures-rookies");
+            var rookies = roster?.Reserves.Where(RookieGenerator.IsRookie).ToList() ?? new List<PlayerData>();
+            SetVisible(label, rookies.Count > 0);
+            label.text = rookies.Count == 0 ? ""
+                : $"퓨처스 신인 {rookies.Count}명 · {rookies[0].Name} {rookies[0].Position} {rookies[0].Age}세"
+                  + (rookies.Count > 1 ? $" 외 {rookies.Count - 1}명" : "");
+            label.tooltip = string.Join("\n", rookies.Select(p => $"{p.Name} ({p.Memo}) · {PositionMatcher.Label(p.Position)} · {p.Age}세 · {StoveLeague.KeyStat(p)}"));
         }
 
         /// <summary>
@@ -397,7 +414,8 @@ namespace DailyFranchise.App
         }
 
         /// <summary>
-        /// 라인업 행: 순번 · 위치 · 이름 · 배지 · 컨디션 · 투타. 벤치 행은 순번·투타 대신 끝에 [방출] (투타는 이름 툴팁).
+        /// 라인업 행: 순번 · 위치 · 이름 · 배지 · 컨디션 · 나이 · [방출]. 벤치 행은 순번 없이 (투타는 이름 툴팁).
+        /// 선발 타자 [방출]은 Phase 30부터 — 빈 타순은 같은 수비 위치 선수가 메운다.
         /// </summary>
         VisualElement SpotRow(LineupSpot spot, string order, PlayerData p)
         {
@@ -416,7 +434,8 @@ namespace DailyFranchise.App
                     name,
                     BadgeCell(TagOf(p)),
                     ConditionCell(_manager.Season.ConditionOf(p.Id)),
-                    AgeCell(p));
+                    AgeCell(p),
+                    ReleaseButton(p));
             name.tooltip = ScenarioRosterSource.HandednessText(p);
             row.name = spot.IsBench ? $"bench-{spot.Index + 1}" : $"lineup-{spot.Index + 1}";
             row.userData = spot;
@@ -457,15 +476,21 @@ namespace DailyFranchise.App
             return button;
         }
 
-        /// <summary>선수 방출 (벤치 행·불펜 칩의 [방출]). 결과는 라인업 안내 줄에 보인다.</summary>
+        /// <summary>
+        /// 선수 방출 (라인업·벤치 행·불펜 칩의 [방출]). 결과는 라인업 안내 줄에 보인다. 선발 타자였으면 그 타순을 누가 메웠는지도
+        /// ("포수 자리: 이병헌").
+        /// </summary>
         public ReleaseOutcome ReleasePlayer(string playerId)
         {
             if (_manager == null) return null;
             string name = _manager.Rosters?.Find(playerId).player?.Name ?? playerId;
+            int slot = _manager.CurrentLineup?.Batting.Select(s => s.PlayerId).ToList().IndexOf(playerId) ?? -1;
             _selection.Clear();
             var outcome = _manager.Release(playerId);
+            var filler = outcome.Released && slot >= 0 ? _manager.MyRoster?.AtOrder(slot + 1) : null;
             _notice = outcome.Released
                 ? $"방출 · {name} → FA 시장 (위약금 {FranchiseFinance.BudgetDeltaText(-outcome.Penalty)})"
+                  + (filler != null ? $" · {PositionMatcher.Label(filler.Position)} 자리: {filler.Name}" : "")
                 : StoveLeague.ReleaseBlockText(outcome.Block);
             RenderSelection();
             return outcome;
@@ -507,7 +532,7 @@ namespace DailyFranchise.App
         string NameAt(LineupSpot spot)
         {
             var id = _card.PlayerAt(spot);
-            return id == null ? null : _manager.Database.FindPlayer(id)?.Name ?? id;
+            return id == null ? null : _manager.Rosters?.Find(id).player?.Name ?? _manager.Database?.FindPlayer(id)?.Name ?? id;
         }
 
         void RenderTeamStats(SeasonState season)

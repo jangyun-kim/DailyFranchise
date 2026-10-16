@@ -291,11 +291,12 @@ namespace DailyFranchise.UI.Tests
         }
 
         [Test]
-        public void 선발_타순과_로테이션_선수는_방출할_수_없고_예산이_위약금보다_적어도_막는다()
+        public void 로테이션_투수는_방출할_수_없고_예산이_위약금보다_적어도_막는다()
         {
             var s = SeasonState.CreateDummy();
             var busan = Db.GetRoster(Busan);
-            Assert.That(StoveLeague.CheckRelease(s, Book(s), busan.AtOrder(1).Id), Is.EqualTo(ReleaseBlock.Starter));
+            // Phase 30: 선발 타자는 방출할 수 있다 (빈 타순은 같은 수비 위치 선수가 메운다 — RookieDraftTests)
+            Assert.That(StoveLeague.CheckRelease(s, Book(s), busan.AtOrder(1).Id), Is.EqualTo(ReleaseBlock.None));
             Assert.That(StoveLeague.CheckRelease(s, Book(s), busan.Starters[0].Id), Is.EqualTo(ReleaseBlock.Starter));
             Assert.That(StoveLeague.CheckRelease(s, Book(s), "BW004"), Is.EqualTo(ReleaseBlock.NotMine));
             Assert.That(StoveLeague.CheckRelease(s, Book(s), null), Is.EqualTo(ReleaseBlock.NotMine));

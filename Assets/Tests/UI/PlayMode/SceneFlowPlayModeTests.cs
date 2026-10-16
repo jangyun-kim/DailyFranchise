@@ -264,6 +264,82 @@ namespace DailyFranchise.UI.Tests
             Assert.That(SeasonManager.Instance.MyRoster.Lineup[0].Age, Is.EqualTo(SeasonManager.Instance.Database.FindPlayer(SeasonManager.Instance.MyRoster.Lineup[0].Id).Age + 1));
         }
 
+        [UnityTest]
+        public IEnumerator Phase30_결산_뒤_퓨처스_신인이_로비에_보이고_주전_포수를_방출하면_포수가_포수_자리를_메운다()
+        {
+            var manager = SeasonManager.Instance;
+            while (!manager.Season.IsSeasonFinished)
+            {
+                manager.Season.StartNextGame();
+                manager.AdvanceSeason(manager.Season.ScheduleScore(4, 2));
+            }
+            yield return RestartFromLobby();
+            manager = SeasonManager.Instance;
+            manager.AgingRandom = new SeededRandom(3030);
+            var root = LobbyRoot();
+            Assert.That(root.Q<Label>("futures-rookies").resolvedStyle.display, Is.EqualTo(DisplayStyle.None), "결산 전에는 신인 없음");
+
+            Submit(root.Q<Button>("start-game")); // [시즌 결산 및 2027 시즌 준비]
+            yield return null;
+
+            // 1) 퓨처스 신인 3~5명 (18~22세)이 로비 한 줄에, 드래프트 뉴스가 뉴스 패널에
+            var rookies = manager.Season.Rookies;
+            Assert.That(rookies.Count, Is.InRange(RookieDraft.MinPicks, RookieDraft.MaxPicks));
+            Assert.That(rookies.All(r => r.Age >= 18 && r.Age <= 22), Is.True);
+            var futures = root.Q<Label>("futures-rookies");
+            Assert.That(futures.resolvedStyle.display, Is.EqualTo(DisplayStyle.Flex));
+            Assert.That(futures.text, Is.EqualTo($"퓨처스 신인 {rookies.Count}명 · {rookies[0].Name} {rookies[0].Position} {rookies[0].Age}세 외 {rookies.Count - 1}명"));
+            foreach (var r in rookies) Assert.That(futures.tooltip, Does.Contain($"{r.Name} ({r.Memo})").And.Contain($"{r.Age}세"));
+            var newsTexts = Enumerable.Range(0, LobbyController.NewsShown)
+                .Select(i => root.Q("news-" + i)).Where(r => r != null)
+                .Select(r => string.Join(" ", r.Query<Label>().ToList().Select(l => l.text))).ToList();
+            Assert.That(newsTexts.Any(t => t.StartsWith($"[드래프트] 삼성 라이온즈, 1라운드에서 특급 유망주 {rookies[0].Name}(")), Is.True,
+                string.Join(" | ", newsTexts));
+            Assert.That(root.Q<Label>("last-result").text, Does.EndWith($"신인 {rookies.Count}명"));
+
+            // 1920×1080에서 신인 줄·선발 타자 [방출] 버튼이 패널을 넘치지 않는다
+            var doc = Object.FindAnyObjectByType<LobbyController>().GetComponent<UIDocument>();
+            var rt = new RenderTexture(1920, 1080, 24);
+            rt.Create();
+            var panel = Object.Instantiate(doc.panelSettings);
+            panel.targetTexture = rt;
+            doc.panelSettings = panel;
+            yield return null;
+            yield return null;
+            root = LobbyRoot();
+            var issues = LayoutChecker.Check(root.Q("screen"));
+            Assert.That(issues, Is.Empty, string.Join("\n", issues));
+
+            // 2) 주전 포수 [방출] → 포수 자리는 포수가 (외야수 김헌곤이 아니라)
+            var mine = manager.MyRoster;
+            var catcher = mine.Lineup.Single(p => p.Position == "C");
+            var row = root.Q("lineup-" + catcher.Order);
+            var release = row.Q<Button>(className: "lobby-release");
+            Assert.That(release.enabledSelf, Is.True, release.tooltip);
+            Submit(release);
+            yield return null;
+
+            var filler = manager.MyRoster.AtOrder(catcher.Order);
+            Assert.That(filler.Id, Is.Not.EqualTo(catcher.Id));
+            Assert.That(filler.Position, Is.EqualTo("C"));
+            var original = manager.Rosters.Find(filler.Id).player ?? manager.Season.Rookies.FirstOrDefault(r => r.Id == filler.Id);
+            Assert.That(original?.Position ?? "C", Is.EqualTo("C"), $"{filler.Name}의 원래 위치도 포수");
+            Assert.That(filler.Name, Is.Not.EqualTo("김헌곤"));
+            Assert.That(root.Q<Label>("lineup-hint").text, Does.Contain($"포수 자리: {filler.Name}"));
+            Assert.That(root.Q("lineup-" + catcher.Order).Q<Label>(className: "col-name").text, Is.EqualTo(filler.Name));
+            Assert.That(manager.RosterProblem, Is.Null, "경기를 치를 수 있다");
+
+            // 3) 재시작해도 신인·방출이 남는다
+            var ids = rookies.Select(r => r.Id).ToList();
+            yield return RestartFromLobby();
+            Assert.That(SeasonManager.Instance.Season.Rookies.Select(r => r.Id), Is.EqualTo(ids));
+            Assert.That(SeasonManager.Instance.MyRoster.AtOrder(catcher.Order).Id, Is.EqualTo(filler.Id));
+            Assert.That(SeasonManager.Instance.Rosters.Get("삼성 라이온즈").Reserves.Count(RookieGenerator.IsRookie), Is.EqualTo(ids.Count));
+            rt.Release();
+            Object.Destroy(rt);
+            Object.Destroy(panel);
+        }
+
         /// <summary>로비에서 경기를 시작해 승부처까지 간 뒤, 고정 난수로 작전을 고르고 끝까지 보낸 다음 [경기 종료].</summary>
         static IEnumerator PlayGame(TacticKind? tactic, double roll)
         {

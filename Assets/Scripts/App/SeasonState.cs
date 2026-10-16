@@ -484,6 +484,24 @@ namespace DailyFranchise.App
             ProgressionVersion++;
         }
 
+        readonly List<PlayerData> _rookies = new List<PlayerData>();
+
+        /// <summary>
+        /// 드래프트로 생긴 가상 신인 (Phase 30, 지명 순). 마스터 CSV에 없는 선수라 기록 전체를 <see cref="PlayerData"/> 그대로
+        /// 시즌과 함께 저장한다. <see cref="PlayerData.Team"/>이 지명 구단이고, 선수단 장부가 그 구단 퓨처스 끝에 넣는다
+        /// (<see cref="LeagueRosterBook.Build"/>). 나이·폼·은퇴는 다른 선수처럼 <see cref="Progression"/>으로 바뀐다.
+        /// </summary>
+        public IReadOnlyList<PlayerData> Rookies => _rookies;
+
+        /// <summary>신인을 더한다. ID가 비었거나 이미 있으면 무시하고 false.</summary>
+        public bool AddRookie(PlayerData rookie)
+        {
+            if (rookie == null || string.IsNullOrEmpty(rookie.Id) || string.IsNullOrEmpty(rookie.Team)) return false;
+            if (_rookies.Any(r => r.Id == rookie.Id)) return false;
+            _rookies.Add(rookie);
+            return true;
+        }
+
         /// <summary>리그 뉴스 보관 개수 (Phase 28). 넘치면 오래된 뉴스부터 버린다 — 저장 파일이 커지지 않게.</summary>
         public const int MaxNews = 15;
 
@@ -684,6 +702,7 @@ namespace DailyFranchise.App
         /// <param name="league">
         /// 지금 리그 선수단 장부 (Phase 29). 난수와 함께 넘기면 모든 선수를 한 살 먹이고 에이징 커브·은퇴를 처리한다
         /// (<see cref="OffseasonAging"/>). 은퇴 선수가 사용자 라인업 카드에 있으면 벤치에서 빼고, 타순이면 카드를 버린다(기본 라인업).
+        /// 그 뒤 신인 드래프트 (Phase 30, <see cref="RookieDraft"/>): 선수단이 있는 구단마다 신인 3~5명을 퓨처스에 넣는다.
         /// </param>
         /// <returns>끝난 시즌 요약.</returns>
         public SeasonRollover TransitionToNextSeason(LeagueRosterBook league = null, IRandomSource agingRandom = null)
@@ -727,6 +746,7 @@ namespace DailyFranchise.App
             {
                 summary.Aging = OffseasonAging.Process(this, league, agingRandom);
                 DropRetiredFromLineup();
+                summary.Draft = RookieDraft.Process(this, league, agingRandom);
             }
             return summary;
         }
@@ -795,6 +815,7 @@ namespace DailyFranchise.App
                 {
                     Id = p.PlayerId, AgeDelta = p.AgeDelta, Form = p.Form, Retired = p.Retired, RetiredYear = p.RetiredYear,
                 }).ToList(),
+                Rookies = _rookies.ToList(),
                 News = _news.Select(n => new NewsData
                 {
                     Kind = (int)n.Kind, Tag = n.Tag, Team = n.Team, Headline = n.Headline, Year = n.Year, Date = n.Date,
@@ -894,6 +915,10 @@ namespace DailyFranchise.App
                 foreach (var p in data.Progression)
                     if (p != null && !string.IsNullOrEmpty(p.Id))
                         season.SetProgression(new PlayerProgression(p.Id, p.AgeDelta, p.Form, p.Retired, p.RetiredYear));
+            // 신인이 없는 이전 저장 파일(Phase 30 이전)은 빈 목록. ID·구단이 빈 항목과 중복 ID는 건너뛴다.
+            if (data.Rookies != null)
+                foreach (var r in data.Rookies)
+                    season.AddRookie(r);
             // 뉴스가 없는 이전 저장 파일(Phase 28 이전)은 빈 피드. 본문이 빈 항목은 건너뛰고, 모르는 종류는 General,
             // 보관 개수를 넘는 파일은 최근 것만 남는다 (AddNews).
             if (data.News != null)
@@ -1026,15 +1051,19 @@ namespace DailyFranchise.App
         public long CapFlex { get; }
         /// <summary>오프시즌 에이징 결과 (Phase 29). 장부 없이 결산했으면 null.</summary>
         public AgingReport Aging { get; internal set; }
+        /// <summary>신인 드래프트 결과 (Phase 30). 장부 없이 결산했으면 null.</summary>
+        public DraftReport Draft { get; internal set; }
 
-        /// <summary>"2026 시즌 최종 3위 · 78승 64패 2무 · 은퇴 2명" (무승부·은퇴가 없으면 생략).</summary>
+        /// <summary>"2026 시즌 최종 3위 · 78승 64패 2무 · 은퇴 2명 · 신인 4명" (무승부·은퇴·신인이 없으면 생략, 신인은 내 구단 지명 수).</summary>
         public string Text
         {
             get
             {
                 string record = Draws == 0 ? $"{Wins}승 {Losses}패" : $"{Wins}승 {Losses}패 {Draws}무";
                 string text = Rank > 0 ? $"{Year} 시즌 최종 {Rank}위 · {record}" : $"{Year} 시즌 · {record}";
-                return Aging != null && Aging.Retired.Count > 0 ? $"{text} · 은퇴 {Aging.Retired.Count}명" : text;
+                if (Aging != null && Aging.Retired.Count > 0) text += $" · 은퇴 {Aging.Retired.Count}명";
+                int mine = Draft?.MyPicks.Count ?? 0;
+                return mine > 0 ? $"{text} · 신인 {mine}명" : text;
             }
         }
     }

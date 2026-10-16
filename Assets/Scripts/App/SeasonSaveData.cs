@@ -87,6 +87,12 @@ namespace DailyFranchise.App
 
         /// <summary>선수 변동치 (Phase 29, 선수 ID 순). 없는 이전 저장 파일은 모두 원본 그대로 (마스터 CSV는 바꾸지 않는다).</summary>
         public List<ProgressionData> Progression = new List<ProgressionData>();
+
+        /// <summary>
+        /// 드래프트 신인 (Phase 30, 지명 순). 마스터 CSV에 없는 선수라 기록 전체를 <see cref="DailyFranchise.Sim.Data.PlayerData"/> 그대로 담는다.
+        /// 없는 이전 저장 파일은 빈 목록.
+        /// </summary>
+        public List<DailyFranchise.Sim.Data.PlayerData> Rookies = new List<DailyFranchise.Sim.Data.PlayerData>();
     }
 
     [Serializable]

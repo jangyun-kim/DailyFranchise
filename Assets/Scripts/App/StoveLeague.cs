@@ -65,10 +65,13 @@ namespace DailyFranchise.App
     /// 방출된 선수는 소속 없는 자유계약 명단(<see cref="FreeAgentTeam"/>)으로 가고 FA 시장에 다시 나온다.
     /// 옮긴 선수는 새 구단 소속 사본으로 타자는 벤치 끝, 투수(선발 포함)는 불펜 끝에 들어간다.
     /// 원 소속 구단의 빈자리:
-    /// - 선발 타자: 벤치 첫 타자가 그 타순·수비 위치로 올라온다. 벤치가 없으면 리그 평균 "대체 선수"가 채운다.
+    /// - 선발 타자 (Phase 30 "김헌곤 룰", <see cref="PositionMatcher"/>): 빠진 선수의 수비 위치에 맞는 선수가 그 타순·위치로 올라온다 —
+    ///   벤치 같은 위치 → 퓨처스 같은 위치 → 벤치 같은 수비군 → 퓨처스 같은 수비군 (포수는 포수만). 구단에 맞는 선수가 없으면
+    ///   그 위치의 리그 평균 "대체 선수"가 채운다 (포수 자리에 외야수를 세우지 않는다).
     /// - 벤치·불펜: 빼고 순번을 다시 매긴다.
     /// - 선발 투수: 빼고 순번을 다시 매긴다. 선발이 하나도 안 남으면 불펜 첫 투수(없으면 대체 투수)가 선발로 간다.
     /// 장부와 맞지 않는 기록(선수 없음·이미 다른 구단)은 건너뛴다 (DB가 바뀐 이전 저장 파일 대비).
+    /// 드래프트 신인 (Phase 30, <see cref="SeasonState.Rookies"/>): 이적 기록보다 먼저 지명 구단의 퓨처스 끝에 들어간다.
     /// </summary>
     public sealed class LeagueRosterBook
     {
@@ -111,8 +114,12 @@ namespace DailyFranchise.App
         /// 선수 변동치 (Phase 29, <see cref="SeasonState.Progression"/>). 은퇴 선수는 이적 기록 적용 뒤 빼고(빈자리는 이적과 같은 규칙,
         /// 퓨처스에서도 뺀다), 변동치가 있는 선수는 나이·폼을 덧씌운 사본으로 바꾼다. 변동치가 없는 구단은 그대로(같은 참조).
         /// </param>
+        /// <param name="rookies">
+        /// 드래프트 신인 (Phase 30, <see cref="SeasonState.Rookies"/>). 선수단이 있는 지명 구단의 퓨처스 끝에 넣는다
+        /// (선수단이 없는 구단·이미 있는 ID는 건너뛴다). 신인이 없는 구단은 그대로(같은 참조).
+        /// </param>
         public static LeagueRosterBook Build(MasterDatabase db, IEnumerable<SigningRecord> signings,
-            IReadOnlyDictionary<string, PlayerProgression> progression = null)
+            IReadOnlyDictionary<string, PlayerProgression> progression = null, IEnumerable<PlayerData> rookies = null)
         {
             var rosters = new Dictionary<string, TeamRoster>();
             if (db != null)
@@ -121,6 +128,7 @@ namespace DailyFranchise.App
                     var r = db.GetRoster(team);
                     if (r != null) rosters[team] = r;
                 }
+            if (rookies != null) AddRookies(rosters, rookies);
             rosters[FreeAgentTeam] = new TeamRoster(FreeAgentTeam, null, null, null, null);
             var book = new LeagueRosterBook(rosters, new List<SigningRecord>());
             var applied = new List<SigningRecord>();
@@ -139,17 +147,30 @@ namespace DailyFranchise.App
             return new LeagueRosterBook(rosters, applied);
         }
 
+        static void AddRookies(Dictionary<string, TeamRoster> rosters, IEnumerable<PlayerData> rookies)
+        {
+            var known = new HashSet<string>(rosters.Values.SelectMany(r => AllOf(r).Concat(r.Reserves)).Select(p => p.Id));
+            foreach (var group in rookies.Where(p => p?.Id != null && p.Team != null).GroupBy(p => p.Team))
+            {
+                if (!rosters.TryGetValue(group.Key, out var r)) continue;
+                var fresh = group.Where(p => known.Add(p.Id)).ToList();
+                if (fresh.Count > 0)
+                    rosters[group.Key] = new TeamRoster(r.Team, r.Lineup, r.Bench, r.Starters, r.Bullpen, r.Reserves.Concat(fresh).ToList());
+            }
+        }
+
         /// <summary>은퇴 선수를 빼고, 변동치가 있는 선수에 나이·폼을 덧씌운다 (Phase 29).</summary>
         static void ApplyProgression(Dictionary<string, TeamRoster> rosters, IReadOnlyDictionary<string, PlayerProgression> progression)
         {
             foreach (var team in rosters.Keys.ToList())
             {
                 var r = rosters[team];
-                foreach (var gone in AllOf(r).Where(p => progression.TryGetValue(p.Id, out var d) && d.Retired).ToList())
-                    r = Remove(r, AllOf(r).First(p => p.Id == gone.Id));
+                // 퓨처스 은퇴자를 먼저 뺀다 — 1군 빈자리를 퓨처스에서 메울 때(Phase 30) 은퇴 선수가 올라오지 않게.
                 if (r.Reserves.Any(p => progression.TryGetValue(p.Id, out var d) && d.Retired))
                     r = new TeamRoster(r.Team, r.Lineup, r.Bench, r.Starters, r.Bullpen,
                         r.Reserves.Where(p => !(progression.TryGetValue(p.Id, out var d) && d.Retired)).ToList());
+                foreach (var gone in AllOf(r).Where(p => progression.TryGetValue(p.Id, out var d) && d.Retired).ToList())
+                    r = Remove(r, AllOf(r).First(p => p.Id == gone.Id));
                 if (AllOf(r).Concat(r.Reserves).Any(p => progression.ContainsKey(p.Id)))
                     r = new TeamRoster(r.Team, Overlay(r.Lineup, progression), Overlay(r.Bench, progression),
                         Overlay(r.Starters, progression), Overlay(r.Bullpen, progression), Overlay(r.Reserves, progression));
@@ -179,19 +200,19 @@ namespace DailyFranchise.App
             var bench = from.Bench.Where(p => p.Id != player.Id).ToList();
             var starters = from.Starters.Where(p => p.Id != player.Id).ToList();
             var bullpen = from.Bullpen.Where(p => p.Id != player.Id).ToList();
+            var reserves = from.Reserves.ToList();
 
             int hole = lineup.FindIndex(p => p.Id == player.Id);
             if (hole >= 0)
             {
                 var gone = lineup[hole];
-                PlayerData up;
-                if (bench.Count > 0)
+                var pick = PositionMatcher.Pick(gone.Position, bench, reserves);
+                if (pick != null)
                 {
-                    up = bench[0].CloneAs(RosterRole.Lineup, gone.Order, gone.Position);
-                    bench.RemoveAt(0);
+                    bench.Remove(pick);
+                    reserves.Remove(pick);
                 }
-                else up = ReplacementBatter(from.Team, gone);
-                lineup[hole] = up;
+                lineup[hole] = pick != null ? pick.CloneAs(RosterRole.Lineup, gone.Order, gone.Position) : ReplacementBatter(from.Team, gone);
             }
             if (starters.Count == 0 && from.Starters.Count > 0)
             {
@@ -203,13 +224,13 @@ namespace DailyFranchise.App
                 else starters.Add(ReplacementPitcher(from.Team, player));
             }
             return new TeamRoster(from.Team, lineup, Renumber(bench, RosterRole.Bench), Renumber(starters, RosterRole.Starter),
-                Renumber(bullpen, RosterRole.Bullpen), from.Reserves);
+                Renumber(bullpen, RosterRole.Bullpen), reserves.Count == from.Reserves.Count ? from.Reserves : reserves);
         }
 
         static List<PlayerData> Renumber(List<PlayerData> players, RosterRole role) =>
             players.Select((p, i) => p.Order == i + 1 && p.Role == role ? p : p.CloneAs(role, i + 1, p.Position)).ToList();
 
-        /// <summary>리그 평균 기록의 대체 타자 (빠진 선수의 타순·수비 위치).</summary>
+        /// <summary>리그 평균 기록의 대체 타자 (빠진 선수의 타순·수비 위치 — 구단에 그 위치를 맡을 선수가 없을 때).</summary>
         static PlayerData ReplacementBatter(string team, PlayerData gone) => new PlayerData
         {
             Id = ReplacementPrefix + gone.Id, Name = "대체 선수", Team = team, Role = RosterRole.Lineup,
@@ -285,7 +306,7 @@ namespace DailyFranchise.App
         None,
         /// <summary>내 구단 선수가 아니다.</summary>
         NotMine,
-        /// <summary>선발 타순·선발 로테이션 선수 — 먼저 벤치로 내려야 한다.</summary>
+        /// <summary>선발 로테이션 투수 — 먼저 불펜으로 내려야 한다 (Phase 30부터 선발 타자는 방출할 수 있다).</summary>
         Starter,
         /// <summary>예산 &lt; 위약금.</summary>
         Budget,
@@ -311,7 +332,8 @@ namespace DailyFranchise.App
     /// - [확정 영입]: TP 100을 쓰고 요구액 그대로 100% 영입.
     /// - 막는 조건: 정원(26·벤치 5·불펜 7), 예산 &lt; 수수료, 페이롤 + 제시액 &gt; 시즌 캡.
     /// - 페이롤: 영입 선수는 계약 연봉, 나머지는 WAR 연봉, 대체 선수는 최저 연봉.
-    /// - 방출 (Phase 26): 벤치·불펜 선수만. 위약금 = 연봉의 50% (예산에서 즉시), 선수는 자유계약으로 시장에 돌아간다.
+    /// - 방출 (Phase 26): 위약금 = 연봉의 50% (예산에서 즉시), 선수는 자유계약으로 시장에 돌아간다. 선발 로테이션 투수는 막는다.
+    ///   선발 타자 (Phase 30): 빈자리를 같은 수비 위치 선수로 메우게 된 뒤로(<see cref="PositionMatcher"/>) 방출할 수 있다.
     /// - 캡 기준 (Phase 26): 리그 개막 평균 페이롤 × 1.25 (<see cref="OpeningCap"/>).
     /// - 리그 뉴스 (Phase 28): 영입 [오피셜] · 협상 결렬 [속보] · 방출 [단독]을 시즌 뉴스에 발행한다.
     /// </summary>
@@ -453,14 +475,15 @@ namespace DailyFranchise.App
             return p == null ? 0 : ReleasePenaltyOf(SalaryOf(p, season.MyTeam, season.Signings));
         }
 
-        /// <summary>방출할 수 있는지. 벤치·불펜 선수만, 위약금을 낼 예산이 있어야 한다.</summary>
+        /// <summary>방출할 수 있는지. 선발 로테이션이 아닌 1군 선수, 위약금을 낼 예산이 있어야 한다.</summary>
         public static ReleaseBlock CheckRelease(SeasonState season, LeagueRosterBook book, string playerId)
         {
             if (season.InProgress != null) return ReleaseBlock.InGame;
             var mine = book?.Get(season.MyTeam);
             if (mine == null || playerId == null) return ReleaseBlock.NotMine;
-            if (mine.Lineup.Any(p => p.Id == playerId) || mine.Starters.Any(p => p.Id == playerId)) return ReleaseBlock.Starter;
-            if (!mine.Bench.Concat(mine.Bullpen).Any(p => p.Id == playerId)) return ReleaseBlock.NotMine;
+            if (mine.Starters.Any(p => p.Id == playerId)) return ReleaseBlock.Starter;
+            if (LeagueRosterBook.IsReplacement(mine.Lineup.FirstOrDefault(p => p.Id == playerId))) return ReleaseBlock.NotMine;
+            if (!mine.Lineup.Concat(mine.Bench).Concat(mine.Bullpen).Any(p => p.Id == playerId)) return ReleaseBlock.NotMine;
             if (ReleasePenalty(season, book, playerId) > season.Budget) return ReleaseBlock.Budget;
             return ReleaseBlock.None;
         }
@@ -506,7 +529,7 @@ namespace DailyFranchise.App
             {
                 case ReleaseBlock.None: return "";
                 case ReleaseBlock.NotMine: return "내 구단 선수가 아닙니다.";
-                case ReleaseBlock.Starter: return "선발 타순·로테이션 선수는 벤치로 내린 뒤 방출할 수 있습니다.";
+                case ReleaseBlock.Starter: return "선발 로테이션 투수는 방출할 수 없습니다.";
                 case ReleaseBlock.Budget: return "예산이 위약금보다 적어 방출할 수 없습니다.";
                 case ReleaseBlock.InGame: return "경기 중에는 방출할 수 없습니다.";
                 default: throw new ArgumentOutOfRangeException(nameof(block), block, null);

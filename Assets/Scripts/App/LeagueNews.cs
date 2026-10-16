@@ -34,6 +34,8 @@ namespace DailyFranchise.App
         Retirement = 10,
         /// <summary>오프시즌 폭풍 성장 (Phase 29).</summary>
         Breakout = 11,
+        /// <summary>신인 드래프트 (Phase 30).</summary>
+        Draft = 12,
     }
 
     /// <summary>
@@ -86,6 +88,7 @@ namespace DailyFranchise.App
         public const string ClubTag = "[구단]";
         public const string RetirementTag = "[은퇴]";
         public const string BreakoutTag = "[성장]";
+        public const string DraftTag = "[드래프트]";
 
         /// <summary>두 팀 득점 합이 이 이상이면 난타전.</summary>
         public const int SlugfestRuns = 15;
@@ -212,6 +215,14 @@ namespace DailyFranchise.App
         public static NewsItem Breakout(string team, string playerName, double gain, int year) =>
             new NewsItem(NewsKind.Breakout, BreakoutTag, team,
                 $"{(team == LeagueRosterBook.FreeAgentTeam ? "자유계약" : team)} {playerName}, 비시즌 폭풍 성장! 기량 {AgingCurve.FormText(gain)}",
+                year, StoveLeagueDate);
+
+        /// <summary>
+        /// 신인 지명: "삼성 라이온즈, 1라운드에서 특급 유망주 김민준(포수) 지명!" (2라운드부터는 "유망주").
+        /// </summary>
+        public static NewsItem Drafted(string team, string playerName, string position, int round, int year) =>
+            new NewsItem(NewsKind.Draft, DraftTag, team,
+                $"{team}, {round}라운드에서 {(round <= 1 ? "특급 유망주" : "유망주")} {playerName}({PositionMatcher.Label(position)}) 지명!",
                 year, StoveLeagueDate);
 
         /// <summary>시즌 결산: "2026 시즌 종료! 2027 스토브리그 개막 · 삼성 라이온즈 최종 3위".</summary>

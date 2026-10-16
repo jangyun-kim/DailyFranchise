@@ -206,7 +206,8 @@ namespace DailyFranchise.UI.Tests
         public void 선수_방출이면_단독_뉴스가_쌓이고_막히면_없다()
         {
             var s = SeasonState.CreateDummy();
-            Assert.That(StoveLeague.Release(s, Book(s), "WV001").Released, Is.False, "선발 타순은 방출 불가");
+            Assert.That(StoveLeague.Release(s, Book(s), Db.GetRoster(Samsung).Starters[0].Id).Released, Is.False,
+                "로테이션 투수는 방출 불가 (Phase 30부터 선발 타자는 방출 가능)");
             Assert.That(s.RecentNews, Is.Empty);
 
             var o = StoveLeague.Release(s, Book(s), "WV010");

@@ -128,6 +128,41 @@ namespace DailyFranchise.Sim.Data
         }
 
         /// <summary>
+        /// 선수단이 바뀐 뒤(방출·은퇴로 카드 선수가 빠지거나, 빈자리를 채운 선수가 새로 들어옴) 카드를 최대한 살린 사본 (Phase 30).
+        /// 남은 선발은 타순·수비 위치 그대로 두고, 빠진 타순은 그 수비 위치에 맞는 선수(<see cref="PositionMatcher"/> —
+        /// 카드 벤치 → 선수단에 새로 들어온 선수 순)로 채우며, 나머지는 벤치로 간다. 맞는 선수가 없는 자리가 있으면
+        /// (포수 자리에 포수가 없는 등) 억지로 채우지 않고 null — 그때는 선수단 기본 라인업(장부가 위치 맞춰 채운 것)을 쓴다.
+        /// 이미 맞는 카드면 사본을 그대로 돌려준다.
+        /// </summary>
+        public LineupCard Repair(TeamRoster roster)
+        {
+            if (roster == null) return null;
+            if (Matches(roster)) return Clone();
+            var byId = roster.Lineup.Concat(roster.Bench).GroupBy(p => p.Id).ToDictionary(g => g.Key, g => g.First());
+            var cardIds = new HashSet<string>(_batting.Select(s => s.PlayerId).Concat(_bench));
+            var bench = _bench.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
+            var added = roster.Lineup.Concat(roster.Bench).Where(p => !cardIds.Contains(p.Id)).ToList();
+
+            var batting = new LineupSlot[BattingSlots];
+            for (int i = 0; i < BattingSlots; i++)
+            {
+                var slot = _batting[i];
+                if (byId.ContainsKey(slot.PlayerId))
+                {
+                    batting[i] = slot;
+                    continue;
+                }
+                var pick = PositionMatcher.Pick(slot.Position, bench, added);
+                if (pick == null) return null;
+                bench.Remove(pick);
+                added.Remove(pick);
+                batting[i] = new LineupSlot(pick.Id, slot.Position);
+            }
+            var repaired = new LineupCard(batting, bench.Concat(added).Select(p => p.Id));
+            return repaired.Matches(roster) ? repaired : null;
+        }
+
+        /// <summary>
         /// 이 카드대로 선수단을 다시 짠다. 선발은 타순·수비 위치를, 벤치는 순서와 그 벤치 자리의 보직 이름
         /// (원래 그 자리 선수의 보직, 예: "대타")을 받는다. 기록은 원본 그대로이며 원본 선수단은 바꾸지 않는다.
         /// </summary>

@@ -302,6 +302,18 @@ Label {
     margin-top: 14px;
 }
 
+/* 퓨처스 신인 한 줄 (Phase 30) */
+.futures-rookies {
+    margin-top: 6px;
+    height: 20px;
+    font-size: 12px;
+    color: #3FB950;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    -unity-text-align: middle-left;
+}
+
 .lobby-row--selectable:hover {
     background-color: var(--panel-2);
 }

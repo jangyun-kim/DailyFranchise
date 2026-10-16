@@ -115,6 +115,7 @@ namespace DailyFranchise.App
         SeasonState _bookSeason;
         int _bookSignings = -1;
         int _bookProgression = -1;
+        int _bookRookies = -1;
 
         /// <summary>
         /// 리그 선수단 장부 (선수 DB + 영입 기록, Phase 25). 영입 기록이 바뀌었을 때만 다시 짠다. DB를 읽기 전이면 null.
@@ -125,10 +126,11 @@ namespace DailyFranchise.App
             {
                 if (Database == null) return null;
                 if (_book == null || _bookDatabase != Database || _bookSeason != Season || _bookSignings != Season.Signings.Count
-                    || _bookProgression != Season.ProgressionVersion)
+                    || _bookProgression != Season.ProgressionVersion || _bookRookies != Season.Rookies.Count)
                 {
-                    _book = LeagueRosterBook.Build(Database, Season.Signings, Season.Progression);
-                    (_bookDatabase, _bookSeason, _bookSignings, _bookProgression) = (Database, Season, Season.Signings.Count, Season.ProgressionVersion);
+                    _book = LeagueRosterBook.Build(Database, Season.Signings, Season.Progression, Season.Rookies);
+                    (_bookDatabase, _bookSeason, _bookSignings, _bookProgression, _bookRookies) =
+                        (Database, Season, Season.Signings.Count, Season.ProgressionVersion, Season.Rookies.Count);
                     // 재정 기준 (Phase 26): 캡 기준은 리그 개막 평균 페이롤 × 1.25, 페이롤은 지금 내 구단 1군 연봉 합계.
                     Season.SetSalaryCapBase(StoveLeague.OpeningCap(Database));
                     Season.SetPayroll(StoveLeague.Payroll(_book.Get(Season.MyTeam), Season.Signings));
@@ -160,7 +162,8 @@ namespace DailyFranchise.App
         static SigningOutcome Blocked(FreeAgent agent) => new SigningOutcome { Agent = agent, Block = SigningBlock.InGame };
 
         /// <summary>
-        /// 선수 방출 (Phase 26): 벤치·불펜 선수만, 위약금(연봉 50%)을 예산에서 내고 자유계약으로 시장에 돌려보낸다.
+        /// 선수 방출 (Phase 26): 선발 로테이션이 아닌 1군 선수 (Phase 30부터 선발 타자도), 위약금(연봉 50%)을 예산에서 내고
+        /// 자유계약으로 시장에 돌려보낸다. 사용자 라인업 타순 선수였으면 빈 타순을 같은 수비 위치 선수로 채운 카드를 저장한다.
         /// 방출했으면 바로 저장하고 알린다.
         /// </summary>
         public ReleaseOutcome Release(string playerId)
@@ -170,6 +173,7 @@ namespace DailyFranchise.App
             var outcome = StoveLeague.Release(Season, Rosters, playerId); // [단독] 방출 뉴스 발행
             if (!outcome.Released) return outcome;
             _ = Rosters; // 장부·페이롤 다시 짜기
+            if (Season.MyLineup != null) Season.MyLineup = CurrentLineup; // 고친 카드 (못 고치면 기본 라인업 카드)
             PublishChemistry(chemistry);
             Saves.Save(Season);
             StoveChanged?.Invoke();
@@ -266,6 +270,8 @@ namespace DailyFranchise.App
 
         /// <summary>
         /// 지금 쓰는 라인업 카드: 저장된 사용자 라인업이 DB 선수단과 맞으면 그것, 아니면 DB 기본 라인업.
+        /// Phase 30: 방출 등으로 카드 선수가 빠졌으면 먼저 카드를 고쳐 쓴다 (<see cref="LineupCard.Repair"/> — 빠진 타순을 같은 수비
+        /// 위치 선수로 채우고 나머지 타순은 그대로). 고칠 수 없으면 기본 라인업.
         /// 선수단이 없으면 null. 돌려준 카드를 고쳐도 시즌에는 반영되지 않는다 (<see cref="SwapLineup"/>을 쓴다).
         /// </summary>
         public LineupCard CurrentLineup
@@ -275,7 +281,7 @@ namespace DailyFranchise.App
                 var roster = DefaultMyRoster;
                 if (roster == null) return null;
                 var saved = Season.MyLineup;
-                return saved != null && saved.Matches(roster) ? saved.Clone() : LineupCard.FromRoster(roster);
+                return saved?.Repair(roster) ?? LineupCard.FromRoster(roster);
             }
         }
 

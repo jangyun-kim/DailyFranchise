@@ -69,6 +69,8 @@
                 <ui:VisualElement name="roster" />
                 <ui:Label name="bench-title" class="section-title bench-title" text="벤치" />
                 <ui:VisualElement name="bench" />
+                <!-- Phase 30: 드래프트 신인 중 퓨처스에 있는 선수 한 줄 -->
+                <ui:Label name="futures-rookies" class="futures-rookies" text="" />
                 <ui:Label name="lineup-hint" class="lineup-hint" text="" />
                 <ui:Label name="roster-source" class="footnote" text="" />
             </ui:VisualElement>

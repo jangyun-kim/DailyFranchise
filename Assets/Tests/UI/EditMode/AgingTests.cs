@@ -175,8 +175,9 @@ namespace DailyFranchise.UI.Tests
             }
 
             Assert.That(s.RecentNews.Select(n => n.Text), Does.Contain("[은퇴] 삼성 라이온즈의 오승환, 정든 그라운드를 떠나 현역 은퇴 선언!"));
-            Assert.That(s.RecentNews.Last().Kind, Is.EqualTo(NewsKind.Retirement), "은퇴 뉴스가 가장 최신");
-            Assert.That(summary.Text, Does.EndWith($"은퇴 {aging.Retired.Count}명"));
+            Assert.That(s.RecentNews.Last(n => n.Kind != NewsKind.Draft).Kind, Is.EqualTo(NewsKind.Retirement),
+                "은퇴 뉴스가 가장 최신 (Phase 30부터 그 뒤에 신인 드래프트 뉴스)");
+            Assert.That(summary.Text, Does.EndWith($"은퇴 {aging.Retired.Count}명 · 신인 {summary.Draft.MyPicks.Count}명"));
         }
 
         static void PlayOut(SeasonState s)

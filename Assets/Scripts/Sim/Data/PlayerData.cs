@@ -27,7 +27,9 @@ namespace DailyFranchise.Sim.Data
     /// <summary>
     /// 외부 데이터(CSV 등)에서 읽은 선수 한 명. 경기 판정에는 아직 쓰지 않고 표시용으로만 쓴다.
     /// 야수 기록은 타자 칸, 투수 기록은 투수 칸만 의미가 있다.
+    /// [Serializable]: 드래프트로 생긴 신인(Phase 30, 마스터 CSV에 없는 선수)을 시즌 저장 파일에 이 형태 그대로 담는다.
     /// </summary>
+    [Serializable]
     public sealed class PlayerData
     {
         public string Id;
