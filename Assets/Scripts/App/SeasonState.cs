@@ -216,6 +216,93 @@ namespace DailyFranchise.App
             return UnlockedSlots & ~before;
         }
 
+        /// <summary>프런트 신뢰도 TP (Phase 23, <see cref="FrontOfficeTrust"/>). 0~200. 시즌과 함께 저장된다.</summary>
+        public int TrustPoints { get; private set; }
+        /// <summary>이번 시즌에 적립한 TP (상한 <see cref="FrontOfficeTrust.MaxSeasonEarn"/>).</summary>
+        public int TrustEarnedThisSeason { get; private set; }
+        /// <summary>이번 시즌 캡에서 빼는 상환액 (직전 시즌 신뢰 대출의 50%).</summary>
+        public int CapRepay { get; private set; }
+        /// <summary>이번 시즌 신뢰 대출로 늘린 캡 (최대 기본 캡의 10%).</summary>
+        public int CapFlex { get; private set; }
+
+        /// <summary>이번 시즌 샐러리캡 = 기본 캡 − 상환 + 대출.</summary>
+        public int SalaryCap => FrontOfficeTrust.EffectiveCap(FrontOfficeTrust.BaseSalaryCap, CapRepay, CapFlex);
+
+        /// <summary>신뢰도 상태를 범위 안으로 맞춰 정한다 (불러오기·테스트용).</summary>
+        public void SetTrust(int trust, int earnedThisSeason, int capRepay, int capFlex)
+        {
+            TrustPoints = Math.Max(0, Math.Min(FrontOfficeTrust.MaxTrust, trust));
+            TrustEarnedThisSeason = Math.Max(0, Math.Min(FrontOfficeTrust.MaxSeasonEarn, earnedThisSeason));
+            CapRepay = Math.Max(0, Math.Min(FrontOfficeTrust.BaseSalaryCap, capRepay));
+            CapFlex = Math.Max(0, Math.Min(FrontOfficeTrust.MaxFlexOf(FrontOfficeTrust.BaseSalaryCap), capFlex));
+        }
+
+        /// <summary>TP를 적립한다. TP 상한·시즌 적립 상한을 넘는 부분은 버린다.</summary>
+        /// <returns>실제로 적립한 양.</returns>
+        public int EarnTrust(int amount)
+        {
+            int room = Math.Min(FrontOfficeTrust.MaxTrust - TrustPoints, FrontOfficeTrust.MaxSeasonEarn - TrustEarnedThisSeason);
+            int earned = Math.Max(0, Math.Min(amount, room));
+            TrustPoints += earned;
+            TrustEarnedThisSeason += earned;
+            return earned;
+        }
+
+        /// <summary>
+        /// 영입 협상 한 번. 수수료를 예산에서 내고 천장 반영 성공률로 판정한다. 하드 천장이면 난수를 뽑지 않는다.
+        /// 성공하면 천장 카운터(TP 최대 100)를 초기화하고, 결렬이면 성의 있는 제시일 때 수수료를 TP로 환급한다.
+        /// 예산이 수수료보다 적으면 시도하지 않는다.
+        /// </summary>
+        public NegotiationResult Negotiate(int offer, int ask, IRandomSource random)
+        {
+            if (random == null) throw new ArgumentNullException(nameof(random));
+            double rate = FrontOfficeTrust.SuccessRate(offer, ask, TrustPoints);
+            int fee = FrontOfficeTrust.FeeOf(ask);
+            if (Budget < fee) return new NegotiationResult(false, false, false, rate, 0, 0);
+
+            ApplyFinance(new FinanceChange(-fee, 0));
+            bool ceiling = TrustPoints >= FrontOfficeTrust.Ceiling;
+            bool signed = ceiling || random.NextDouble() < rate;
+            int delta;
+            if (signed)
+            {
+                delta = -Math.Min(TrustPoints, FrontOfficeTrust.Ceiling);
+                TrustPoints += delta;
+            }
+            else
+            {
+                delta = EarnTrust(FrontOfficeTrust.RefundOnFailure(offer, ask));
+            }
+            return new NegotiationResult(true, signed, ceiling, rate, fee, delta);
+        }
+
+        /// <summary>
+        /// TP를 써서 이번 시즌 캡을 늘린다 (신뢰 대출). 시즌 대출 한도(기본 캡의 10%)와 가진 TP 안에서만 쓰고,
+        /// 한도를 채우는 데 필요한 만큼만 TP를 깎는다.
+        /// </summary>
+        /// <returns>이번에 늘어난 캡.</returns>
+        public int BorrowCap(int trust)
+        {
+            int room = FrontOfficeTrust.MaxFlexOf(FrontOfficeTrust.BaseSalaryCap) - CapFlex;
+            int usable = Math.Min(Math.Max(0, trust), TrustPoints);
+            usable = Math.Min(usable, (room + FrontOfficeTrust.CapPerTrust - 1) / FrontOfficeTrust.CapPerTrust);
+            int flex = Math.Min(room, FrontOfficeTrust.FlexFor(usable, FrontOfficeTrust.BaseSalaryCap));
+            TrustPoints -= usable;
+            CapFlex += flex;
+            return flex;
+        }
+
+        /// <summary>
+        /// 시즌 마감: 이번 대출의 50%를 다음 시즌 상환으로 넘기고 대출·시즌 적립을 비우며, TP는 100까지만 이월한다.
+        /// </summary>
+        public void CloseTrustSeason()
+        {
+            CapRepay = FrontOfficeTrust.NextRepay(CapFlex);
+            CapFlex = 0;
+            TrustEarnedThisSeason = 0;
+            TrustPoints = Math.Min(TrustPoints, FrontOfficeTrust.CarryOver);
+        }
+
         readonly Dictionary<string, int> _conditions = new Dictionary<string, int>();
 
         /// <summary>
@@ -447,6 +534,11 @@ namespace DailyFranchise.App
                 FanApproval = FanApproval,
                 HasFandom = true,
                 FandomSlots = (int)UnlockedSlots,
+                HasTrust = true,
+                TrustPoints = TrustPoints,
+                TrustEarnedThisSeason = TrustEarnedThisSeason,
+                CapRepay = CapRepay,
+                CapFlex = CapFlex,
                 Conditions = _conditions.OrderBy(kv => kv.Key, StringComparer.Ordinal)
                     .Select(kv => new ConditionData { Id = kv.Key, Value = kv.Value }).ToList(),
                 LastStarters = _lastStarters.OrderBy(kv => kv.Key, StringComparer.Ordinal)
@@ -521,6 +613,8 @@ namespace DailyFranchise.App
             if (data.HasFinance) season.SetFinance(data.Budget, data.FanApproval);
             // 팬덤 슬롯이 없는 이전 저장 파일(Phase 22 이전)은 해금 없음에서 시작한다. 모르는 비트는 버린다.
             if (data.HasFandom) season.SetUnlockedSlots((FandomSlot)data.FandomSlots);
+            // 신뢰도 필드가 없는 이전 저장 파일은 TP 0·대출 없음에서 시작한다. 범위 밖 값은 범위 안으로 맞춘다.
+            if (data.HasTrust) season.SetTrust(data.TrustPoints, data.TrustEarnedThisSeason, data.CapRepay, data.CapFlex);
             // 컨디션 목록이 없는 이전 저장 파일(Phase 21 이전)은 전원 보통(3)에서 시작한다 (기록 없음 = 보통).
             // ID가 빈 항목은 건너뛰고, 범위 밖 값은 1~5로 맞춘다.
             if (data.Conditions != null)
