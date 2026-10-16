@@ -589,3 +589,227 @@ Label {
 .chem-badge--speed { background-color: #4C9BE8; }
 .chem-badge--glove { background-color: #3FB950; }
 .chem-badge--power { background-color: #E5534B; }
+
+/* ───────── 투수진 (Phase 25: 순위표 아래) ───────── */
+.bullpen-list {
+    height: 44px;
+    font-size: 14px;
+    color: var(--muted);
+    white-space: normal;
+    -unity-text-align: upper-left;
+}
+
+/* ───────── 스토브리그 FA 시장 모달 (Phase 25) ───────── */
+.fa-modal {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.72);
+}
+
+.fa-modal--open {
+    display: flex;
+}
+
+.fa-modal__window {
+    width: 1520px;
+    height: 860px;
+    padding: 16px 20px;
+    border-width: 1px;
+    border-radius: 8px;
+    border-color: var(--line);
+    background-color: var(--panel);
+}
+
+.fa-modal__header {
+    height: 56px;
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 12px;
+    border-bottom-width: 1px;
+    border-color: var(--line);
+}
+
+.fa-modal__title {
+    width: 280px;
+    height: 40px;
+    font-size: 24px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.fa-modal__summary {
+    flex-grow: 1;
+    flex-direction: row;
+    align-items: center;
+}
+
+.fa-modal__stat {
+    height: 30px;
+    margin-right: 28px;
+    font-size: 16px;
+    -unity-text-align: middle-left;
+}
+
+.unity-button.fa-modal__close {
+    width: 110px;
+    height: 40px;
+    margin: 0;
+    padding: 0;
+    font-size: 16px;
+}
+
+.fa-modal__body {
+    flex-grow: 1;
+    flex-direction: row;
+}
+
+.fa-modal__market {
+    width: 900px;
+    margin-right: 20px;
+}
+
+/* 시장 열 (900px) */
+.fa-row > Label { font-size: 15px; }
+.fa-col-name { flex-grow: 1; padding-left: 8px; }
+.fa-col-team { width: 140px; color: var(--muted); }
+.fa-col-pos { width: 70px; color: var(--muted); }
+.fa-col-age { width: 60px; }
+.fa-col-war { width: 70px; -unity-text-align: middle-right; }
+.fa-col-key { width: 130px; -unity-text-align: middle-right; color: var(--muted); }
+.fa-col-ask { width: 140px; -unity-text-align: middle-right; padding-right: 8px; color: var(--accent); }
+
+.lobby-row.fa-row--item {
+    height: 36px;
+}
+
+.fa-row--item:hover {
+    background-color: var(--panel-2);
+}
+
+.fa-row--selected {
+    background-color: var(--panel-2);
+    border-left-width: 3px;
+    border-color: var(--accent);
+}
+
+.fa-row--selected > Label {
+    -unity-font-style: bold;
+}
+
+.fa-modal__table {
+    flex-grow: 1;
+    padding: 12px 16px;
+    border-radius: 6px;
+    background-color: var(--panel-2);
+}
+
+.fa-modal__label {
+    height: 22px;
+    font-size: 13px;
+    color: var(--muted);
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.fa-modal__label--gap {
+    margin-top: 14px;
+}
+
+.fa-modal__player-name {
+    height: 40px;
+    font-size: 26px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.fa-modal__line {
+    height: 26px;
+    font-size: 15px;
+    -unity-text-align: middle-left;
+}
+
+.fa-modal__offer {
+    height: 52px;
+    flex-direction: row;
+    align-items: center;
+}
+
+.unity-button.fa-modal__step {
+    width: 64px;
+    height: 40px;
+    margin: 0 6px 0 0;
+    font-size: 15px;
+}
+
+.fa-modal__offer-value {
+    flex-grow: 1;
+    height: 40px;
+    margin-right: 6px;
+    font-size: 18px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+}
+
+.fa-modal__odds {
+    height: 56px;
+    margin-top: 6px;
+    font-size: 32px;
+    -unity-font-style: bold;
+    color: var(--accent);
+    -unity-text-align: middle-left;
+}
+
+.fa-modal__warning {
+    height: 26px;
+    font-size: 15px;
+    color: #E5534B;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.fa-modal__actions {
+    height: 64px;
+    flex-direction: row;
+    align-items: center;
+    margin-top: 10px;
+}
+
+.unity-button.fa-modal__action {
+    flex-grow: 1;
+    flex-basis: 0;
+    height: 56px;
+    margin: 0 10px 0 0;
+    font-size: 18px;
+    -unity-font-style: bold;
+}
+
+.unity-button.fa-modal__action:last-child {
+    margin-right: 0;
+}
+
+.unity-button.fa-modal__action--primary {
+    border-color: var(--accent);
+    background-color: var(--accent);
+    color: #0E1319;
+}
+
+.unity-button.fa-modal__action:disabled {
+    opacity: 0.4;
+}
+
+.fa-modal__result {
+    height: 48px;
+    margin-top: 10px;
+    font-size: 15px;
+    white-space: normal;
+    -unity-text-align: upper-left;
+}
+
+.fa-modal__result--success { color: #3FB950; -unity-font-style: bold; }
+.fa-modal__result--failure { color: #E3B341; }

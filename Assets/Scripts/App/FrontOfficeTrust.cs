@@ -36,9 +36,10 @@ namespace DailyFranchise.App
     /// - 연봉 = ₩30,000 + max(0, WAR) × ₩150,000, 기본 샐러리캡 C = ₩6,000,000 (평균 팀 연봉 ≈ C)
     /// - 협상 수수료 = 요구액 × 5% (시도마다 예산에서 나간다)
     /// - 기본 성공률 = clamp(0.5 + 2.5 × (제시/요구 − 1), 5%, 95%)
-    /// - 소프트 천장: + 0.5 × TP / 100, 하드 천장: TP ≥ 100이면 100%
+    /// - 소프트 천장: + 0.5 × min(TP, 100) / 100 (일반 협상)
+    /// - 하드 천장 (Phase 25): TP ≥ 100이면 [확정 영입]을 따로 고를 수 있다 — TP 100을 쓰고 요구액 그대로 100% 영입
     /// - 결렬 환급: 제시/요구 ≥ 0.9(성의 있는 제시)일 때만 TP += floor(수수료 / ₩1,000)
-    /// - 성공하면 천장 카운터가 초기화된다: TP −= min(TP, 100)
+    /// - 일반 협상이 성공하면 천장 카운터가 초기화된다: TP −= min(TP, 100)
     /// - TP 상한 200, 한 시즌 적립 상한 150, 시즌이 끝나면 100까지만 이월
     ///
     /// 신뢰 대출 (캡 유동성):
@@ -84,13 +85,18 @@ namespace DailyFranchise.App
             return Math.Max(MinSuccessRate, Math.Min(MaxSuccessRate, 0.5 + 2.5 * (r - 1)));
         }
 
-        /// <summary>천장 반영 성공률: TP ≥ 100이면 1, 아니면 min(1, 기본 + 0.5 × TP / 100).</summary>
+        /// <summary>
+        /// 일반 협상 성공률 (소프트 천장) = min(1, 기본 + 0.5 × min(TP, 100) / 100).
+        /// 하드 천장은 확률이 아니라 별도 행동이다 (<see cref="CanUseCeiling"/>, <see cref="SeasonState.SignWithCeiling"/>).
+        /// </summary>
         public static double SuccessRate(int offer, int ask, int trust)
         {
             double rate = BaseSuccessRate(offer, ask);
-            if (trust >= Ceiling) return 1;
-            return Math.Min(1, rate + SoftPityWeight * Math.Max(0, trust) / Ceiling);
+            return Math.Min(1, rate + SoftPityWeight * Math.Max(0, Math.Min(trust, Ceiling)) / Ceiling);
         }
+
+        /// <summary>[확정 영입]을 쓸 수 있는지 (TP ≥ 100).</summary>
+        public static bool CanUseCeiling(int trust) => trust >= Ceiling;
 
         /// <summary>결렬 시 환급 TP. 성의 없는 제시(90% 미만)는 0.</summary>
         public static int RefundOnFailure(int offer, int ask) => IsGoodFaith(offer, ask) ? FeeOf(ask) / WonPerTrust : 0;
@@ -107,9 +113,9 @@ namespace DailyFranchise.App
         /// <summary>로비 표기 "24 / 200".</summary>
         public static string TrustText(int trust) => $"{trust} / {MaxTrust}";
 
-        /// <summary>로비 보조 줄: 천장까지 남은 TP, 천장 도달이면 "확정 영입 가능".</summary>
+        /// <summary>로비 툴팁: 천장까지 남은 TP, 천장 도달이면 "확정 영입 가능".</summary>
         public static string CeilingText(int trust) =>
-            trust >= Ceiling ? "천장 도달 · 다음 협상 확정 영입" : $"천장까지 {Ceiling - trust} TP";
+            trust >= Ceiling ? "천장 도달 · 확정 영입 가능" : $"천장까지 {Ceiling - trust} TP";
 
         /// <summary>시즌 캡 = 기본 캡 − 상환 + Flex (0 이상).</summary>
         public static int EffectiveCap(int baseCap, int repay, int flex) => (int)Math.Max(0, (long)baseCap - repay + flex);

@@ -104,6 +104,57 @@ namespace DailyFranchise.App
         /// <summary>내 구단 라인업이 바뀌었을 때 (로비 다시 그리기용).</summary>
         public event Action LineupChanged;
 
+        /// <summary>FA 협상을 시도했을 때 — 예산·TP·영입이 바뀌었을 수 있다 (로비·FA 시장 다시 그리기용, Phase 25).</summary>
+        public event Action StoveChanged;
+
+        /// <summary>FA 협상 성공 판정 난수 (리그·컨디션 난수와 분리). 테스트는 고정 값을 넣는다.</summary>
+        public IRandomSource NegotiationRandom { get; set; } = SeededRandom.FromClock();
+
+        LeagueRosterBook _book;
+        MasterDatabase _bookDatabase;
+        SeasonState _bookSeason;
+        int _bookSignings = -1;
+
+        /// <summary>
+        /// 리그 선수단 장부 (선수 DB + 영입 기록, Phase 25). 영입 기록이 바뀌었을 때만 다시 짠다. DB를 읽기 전이면 null.
+        /// </summary>
+        public LeagueRosterBook Rosters
+        {
+            get
+            {
+                if (Database == null) return null;
+                if (_book == null || _bookDatabase != Database || _bookSeason != Season || _bookSignings != Season.Signings.Count)
+                {
+                    _book = LeagueRosterBook.Build(Database, Season.Signings);
+                    (_bookDatabase, _bookSeason, _bookSignings) = (Database, Season, Season.Signings.Count);
+                }
+                return _book;
+            }
+        }
+
+        /// <summary>FA 시장 (내 구단이 아닌 선수, WAR 순). 요구액은 지금 팬 만족도 구간 기준.</summary>
+        public IReadOnlyList<FreeAgent> Market =>
+            StoveLeague.Market(Rosters, Season.MyTeam, FranchiseFinance.MoodOf(Season.FanApproval));
+
+        /// <summary>FA 일반 협상. 시도했으면(막히지 않았으면) 바로 저장하고 알린다.</summary>
+        public SigningOutcome Negotiate(FreeAgent agent, int offer) =>
+            Finish(_loading || Rosters == null ? Blocked(agent) : StoveLeague.Negotiate(Season, Rosters, agent, offer, NegotiationRandom));
+
+        /// <summary>[확정 영입] (TP 100 소모). 시도했으면 바로 저장하고 알린다.</summary>
+        public SigningOutcome SignWithCeiling(FreeAgent agent) =>
+            Finish(_loading || Rosters == null ? Blocked(agent) : StoveLeague.SignWithCeiling(Season, Rosters, agent));
+
+        static SigningOutcome Blocked(FreeAgent agent) => new SigningOutcome { Agent = agent, Block = SigningBlock.InGame };
+
+        SigningOutcome Finish(SigningOutcome outcome)
+        {
+            if (outcome.Block != SigningBlock.None) return outcome;
+            Saves.Save(Season);
+            StoveChanged?.Invoke();
+            if (outcome.Signed) LineupChanged?.Invoke();
+            return outcome;
+        }
+
         public SaveManager Saves { get; private set; }
         /// <summary>시작할 때 시즌을 어떻게 얻었는지 (불러옴 / 새 시즌 / 손상 복구).</summary>
         public SeasonLoadStatus LoadStatus { get; private set; }
@@ -152,8 +203,8 @@ namespace DailyFranchise.App
             DatabaseReady?.Invoke();
         }
 
-        /// <summary>선수 DB의 내 구단 기본 선수단 (라인업 변경 전). DB가 없거나 내 구단 데이터가 없으면 null.</summary>
-        public TeamRoster DefaultMyRoster => Database?.GetRoster(Season.MyTeam);
+        /// <summary>선수 DB + 영입 기록의 내 구단 기본 선수단 (라인업 변경 전). DB가 없거나 내 구단 데이터가 없으면 null.</summary>
+        public TeamRoster DefaultMyRoster => Rosters?.Get(Season.MyTeam);
 
         /// <summary>
         /// 지금 쓰는 라인업 카드: 저장된 사용자 라인업이 DB 선수단과 맞으면 그것, 아니면 DB 기본 라인업.
@@ -240,7 +291,7 @@ namespace DailyFranchise.App
         /// 직전 선발 다음 순번 중 컨디션이 보통 이상인 투수(<see cref="RotationPicker"/>)다. 원본 선수단은 바꾸지 않는다.
         /// </summary>
         public TeamRoster GameRosterOf(string team) =>
-            RotationPicker.Apply(team == Season.MyTeam ? MyRoster : Database?.GetRoster(team), Season, Season.LastStarterOf(team));
+            RotationPicker.Apply(team == Season.MyTeam ? MyRoster : Rosters?.Get(team), Season, Season.LastStarterOf(team));
 
         TeamRoster RosterOf(string team) => GameRosterOf(team);
 

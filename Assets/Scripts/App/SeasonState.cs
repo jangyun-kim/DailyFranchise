@@ -249,9 +249,9 @@ namespace DailyFranchise.App
         }
 
         /// <summary>
-        /// 영입 협상 한 번. 수수료를 예산에서 내고 천장 반영 성공률로 판정한다. 하드 천장이면 난수를 뽑지 않는다.
-        /// 성공하면 천장 카운터(TP 최대 100)를 초기화하고, 결렬이면 성의 있는 제시일 때 수수료를 TP로 환급한다.
-        /// 예산이 수수료보다 적으면 시도하지 않는다.
+        /// 영입 협상 한 번 (수수료만 다룬다 — 계약금은 <see cref="StoveLeague"/>가 낸다). 수수료를 예산에서 내고
+        /// 소프트 천장 성공률로 판정한다. 성공하면 천장 카운터(TP 최대 100)를 초기화하고, 결렬이면 성의 있는 제시일 때
+        /// 수수료를 TP로 환급한다. 예산이 수수료보다 적으면 시도하지 않는다.
         /// </summary>
         public NegotiationResult Negotiate(int offer, int ask, IRandomSource random)
         {
@@ -261,8 +261,7 @@ namespace DailyFranchise.App
             if (Budget < fee) return new NegotiationResult(false, false, false, rate, 0, 0);
 
             ApplyFinance(new FinanceChange(-fee, 0));
-            bool ceiling = TrustPoints >= FrontOfficeTrust.Ceiling;
-            bool signed = ceiling || random.NextDouble() < rate;
+            bool signed = random.NextDouble() < rate;
             int delta;
             if (signed)
             {
@@ -273,7 +272,20 @@ namespace DailyFranchise.App
             {
                 delta = EarnTrust(FrontOfficeTrust.RefundOnFailure(offer, ask));
             }
-            return new NegotiationResult(true, signed, ceiling, rate, fee, delta);
+            return new NegotiationResult(true, signed, false, rate, fee, delta);
+        }
+
+        /// <summary>
+        /// 하드 천장 [확정 영입] (Phase 25): TP 100을 쓰고 난수 없이 영입한다. 수수료는 낸다 (계약금은 <see cref="StoveLeague"/>).
+        /// TP가 100 미만이거나 예산이 수수료보다 적으면 시도하지 않는다.
+        /// </summary>
+        public NegotiationResult SignWithCeiling(int ask)
+        {
+            int fee = FrontOfficeTrust.FeeOf(ask);
+            if (!FrontOfficeTrust.CanUseCeiling(TrustPoints) || Budget < fee) return new NegotiationResult(false, false, false, 1, 0, 0);
+            ApplyFinance(new FinanceChange(-fee, 0));
+            TrustPoints -= FrontOfficeTrust.Ceiling;
+            return new NegotiationResult(true, true, true, 1, fee, -FrontOfficeTrust.Ceiling);
         }
 
         /// <summary>
@@ -301,6 +313,23 @@ namespace DailyFranchise.App
             CapFlex = 0;
             TrustEarnedThisSeason = 0;
             TrustPoints = Math.Min(TrustPoints, FrontOfficeTrust.CarryOver);
+        }
+
+        readonly List<SigningRecord> _signings = new List<SigningRecord>();
+
+        /// <summary>FA 영입 기록 (Phase 25, 영입 순). 선수단은 "선수 DB + 이 기록"으로 다시 짠다 (<see cref="LeagueRosterBook"/>). 시즌과 함께 저장된다.</summary>
+        public IReadOnlyList<SigningRecord> Signings => _signings;
+
+        /// <summary>
+        /// 영입 기록을 남긴다. 타자이고 사용자 라인업 카드가 있으면 그 카드 벤치 끝에도 넣는다
+        /// (카드가 새 선수단과 계속 맞도록 — 안 넣으면 기본 라인업으로 돌아간다).
+        /// </summary>
+        public void AddSigning(SigningRecord record, bool isBatter)
+        {
+            _signings.Add(record ?? throw new ArgumentNullException(nameof(record)));
+            if (isBatter && MyLineup != null && record.ToTeam == MyTeam && !MyLineup.Bench.Contains(record.PlayerId)
+                && MyLineup.Batting.All(s => s.PlayerId != record.PlayerId))
+                MyLineup = new LineupCard(MyLineup.Batting, MyLineup.Bench.Append(record.PlayerId));
         }
 
         readonly Dictionary<string, int> _conditions = new Dictionary<string, int>();
@@ -534,6 +563,10 @@ namespace DailyFranchise.App
                 FanApproval = FanApproval,
                 HasFandom = true,
                 FandomSlots = (int)UnlockedSlots,
+                Signings = _signings.Select(s => new SigningData
+                {
+                    PlayerId = s.PlayerId, FromTeam = s.FromTeam, ToTeam = s.ToTeam, Salary = s.Salary,
+                }).ToList(),
                 HasTrust = true,
                 TrustPoints = TrustPoints,
                 TrustEarnedThisSeason = TrustEarnedThisSeason,
@@ -615,6 +648,11 @@ namespace DailyFranchise.App
             if (data.HasFandom) season.SetUnlockedSlots((FandomSlot)data.FandomSlots);
             // 신뢰도 필드가 없는 이전 저장 파일은 TP 0·대출 없음에서 시작한다. 범위 밖 값은 범위 안으로 맞춘다.
             if (data.HasTrust) season.SetTrust(data.TrustPoints, data.TrustEarnedThisSeason, data.CapRepay, data.CapFlex);
+            // 영입 기록이 없는 이전 저장 파일은 빈 목록. 빈 칸이 있는 항목은 건너뛴다 (선수 DB와 맞지 않는 기록은 장부가 건너뛴다).
+            if (data.Signings != null)
+                foreach (var s in data.Signings)
+                    if (s != null && !string.IsNullOrEmpty(s.PlayerId) && !string.IsNullOrEmpty(s.FromTeam) && !string.IsNullOrEmpty(s.ToTeam))
+                        season._signings.Add(new SigningRecord(s.PlayerId, s.FromTeam, s.ToTeam, s.Salary));
             // 컨디션 목록이 없는 이전 저장 파일(Phase 21 이전)은 전원 보통(3)에서 시작한다 (기록 없음 = 보통).
             // ID가 빈 항목은 건너뛰고, 범위 밖 값은 1~5로 맞춘다.
             if (data.Conditions != null)

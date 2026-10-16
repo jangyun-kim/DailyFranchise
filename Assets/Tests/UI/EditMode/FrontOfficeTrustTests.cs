@@ -41,7 +41,7 @@ namespace DailyFranchise.UI.Tests
         {
             Assert.That(FrontOfficeTrust.TrustText(24), Is.EqualTo("24 / 200"));
             Assert.That(FrontOfficeTrust.CeilingText(24), Is.EqualTo("천장까지 76 TP"));
-            Assert.That(FrontOfficeTrust.CeilingText(100), Is.EqualTo("천장 도달 · 다음 협상 확정 영입"));
+            Assert.That(FrontOfficeTrust.CeilingText(100), Is.EqualTo("천장 도달 · 확정 영입 가능"));
         }
 
         [TestCase(480_000, 0.50)]
@@ -56,12 +56,16 @@ namespace DailyFranchise.UI.Tests
         }
 
         [Test]
-        public void 소프트_천장은_TP_비례로_오르고_TP_100이면_확정()
+        public void 소프트_천장은_TP_100까지_비례로_오르고_하드_천장은_확률이_아니라_별도_행동이다()
         {
             Assert.That(FrontOfficeTrust.SuccessRate(Ask, Ask, 0), Is.EqualTo(0.5).Within(Eps));
             Assert.That(FrontOfficeTrust.SuccessRate(Ask, Ask, 40), Is.EqualTo(0.7).Within(Eps));
             Assert.That(FrontOfficeTrust.SuccessRate(Ask, Ask, 99), Is.EqualTo(0.995).Within(Eps));
-            Assert.That(FrontOfficeTrust.SuccessRate(240_000, Ask, 100), Is.EqualTo(1), "헐값이어도 하드 천장");
+            // Phase 25: 하드 천장은 [확정 영입] 행동으로 분리 → 헐값 제시는 TP 100이어도 0.05 + 0.5
+            Assert.That(FrontOfficeTrust.SuccessRate(240_000, Ask, 100), Is.EqualTo(0.55).Within(Eps));
+            Assert.That(FrontOfficeTrust.SuccessRate(240_000, Ask, 200), Is.EqualTo(0.55).Within(Eps), "TP 100 넘는 몫은 더하지 않는다");
+            Assert.That(FrontOfficeTrust.CanUseCeiling(99), Is.False);
+            Assert.That(FrontOfficeTrust.CanUseCeiling(100), Is.True);
             Assert.That(FrontOfficeTrust.SuccessRate(566_400, Ask, 60), Is.EqualTo(1), "1을 넘지 않는다");
             Assert.Throws<ArgumentOutOfRangeException>(() => FrontOfficeTrust.BaseSuccessRate(1, 0));
         }
@@ -111,7 +115,7 @@ namespace DailyFranchise.UI.Tests
         }
 
         [Test]
-        public void 연속_결렬은_소프트_천장으로_확률을_올리고_TP_100에서_난수_없이_확정_영입한다()
+        public void 연속_결렬은_소프트_천장으로_확률을_올리고_성공하면_천장_카운터_100만_쓴다()
         {
             var s = SeasonState.CreateDummy();
             var random = new FixedRandom(0.999);
@@ -125,12 +129,33 @@ namespace DailyFranchise.UI.Tests
             Assert.That(rates, Is.EqualTo(new[] { 0.50, 0.62, 0.74, 0.86, 0.98 }).Within(Eps));
             Assert.That(s.TrustPoints, Is.EqualTo(120));
 
-            var ceiling = s.Negotiate(Ask, Ask, random);
-            Assert.That((ceiling.Signed, ceiling.CeilingUsed, ceiling.SuccessRate), Is.EqualTo((true, true, 1.0)));
-            Assert.That(ceiling.TrustDelta, Is.EqualTo(-100));
+            // TP 120: 소프트 천장 0.5 + 0.5 = 100% (일반 협상이라 난수는 뽑는다)
+            var sixth = s.Negotiate(Ask, Ask, random);
+            Assert.That((sixth.Signed, sixth.CeilingUsed, sixth.SuccessRate), Is.EqualTo((true, false, 1.0)));
+            Assert.That(sixth.TrustDelta, Is.EqualTo(-100));
             Assert.That(s.TrustPoints, Is.EqualTo(20), "천장 카운터 100만 소모, 남는 TP는 유지");
-            Assert.That(random.Draws, Is.EqualTo(5), "하드 천장은 난수를 뽑지 않는다");
-            Assert.That(s.Budget, Is.EqualTo(5_000_000 - Fee * 6), "확정 영입도 수수료는 낸다");
+            Assert.That(random.Draws, Is.EqualTo(6));
+            Assert.That(s.Budget, Is.EqualTo(5_000_000 - Fee * 6));
+        }
+
+        [Test]
+        public void 확정_영입은_TP_100과_수수료를_쓰고_난수_없이_성공한다()
+        {
+            var s = SeasonState.CreateDummy();
+            s.SetTrust(120, 0, 0, 0);
+            var r = s.SignWithCeiling(Ask);
+            Assert.That((r.Attempted, r.Signed, r.CeilingUsed, r.SuccessRate), Is.EqualTo((true, true, true, 1.0)));
+            Assert.That((r.Fee, r.TrustDelta), Is.EqualTo((Fee, -100)));
+            Assert.That((s.TrustPoints, s.Budget), Is.EqualTo((20, 5_000_000 - Fee)));
+
+            var none = s.SignWithCeiling(Ask);
+            Assert.That((none.Attempted, none.Signed), Is.EqualTo((false, false)), "TP 20");
+            Assert.That((s.TrustPoints, s.Budget), Is.EqualTo((20, 5_000_000 - Fee)), "아무것도 바뀌지 않는다");
+
+            s.SetTrust(100, 0, 0, 0);
+            s.SetFinance(Fee - 1, 50);
+            Assert.That(s.SignWithCeiling(Ask).Attempted, Is.False, "수수료를 낼 예산이 없다");
+            Assert.That(s.TrustPoints, Is.EqualTo(100));
         }
 
         [Test]

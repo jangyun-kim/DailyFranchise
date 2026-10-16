@@ -911,7 +911,7 @@ namespace DailyFranchise.UI.Tests
         }
 
         [UnityTest]
-        public IEnumerator 프런트_오피스에_신뢰도_TP와_팬덤_특전_해금_상태가_보이고_FA_버튼은_잠겨_있다()
+        public IEnumerator 프런트_오피스에_신뢰도_TP와_팬덤_특전_해금_상태가_보이고_FA_버튼이_열려_있다()
         {
             var manager = SeasonManager.Instance;
             var lobby = Object.FindAnyObjectByType<LobbyController>();
@@ -924,7 +924,7 @@ namespace DailyFranchise.UI.Tests
                 Assert.That(root.Q("fo-slot-" + name).ClassListContains("fo-slot--locked"), Is.True, name);
 
             var fa = root.Q<Button>("scout-fa");
-            Assert.That((fa.text, fa.enabledSelf), Is.EqualTo(("스카우트 / FA", false)));
+            Assert.That((fa.text, fa.enabledSelf), Is.EqualTo(("스카우트 / FA", true)), "Phase 25: 선수 DB가 있으면 FA 시장이 열린다");
 
             manager.Season.SetTrust(150, 0, 0, 0);
             manager.Season.SetUnlockedSlots(FandomSlot.Uniform | FandomSlot.Cheerleader);
@@ -935,7 +935,7 @@ namespace DailyFranchise.UI.Tests
             root = LobbyRoot();
             Assert.That(root.Q<Label>("fo-trust").text, Is.EqualTo("150 / 200"));
             Assert.That(root.Q("fo-trust-fill").style.width.value, Is.EqualTo(Length.Percent(75)));
-            Assert.That(root.Q("fo-trust-gauge").tooltip, Is.EqualTo("천장 도달 · 다음 협상 확정 영입"));
+            Assert.That(root.Q("fo-trust-gauge").tooltip, Is.EqualTo("천장 도달 · 확정 영입 가능"));
             Assert.That(root.Q("fo-slot-uniform").ClassListContains("fo-slot--unlocked"), Is.True);
             Assert.That(root.Q("fo-slot-ceremony").ClassListContains("fo-slot--locked"), Is.True);
             Assert.That(root.Q("fo-slot-cheerleader").ClassListContains("fo-slot--unlocked"), Is.True);

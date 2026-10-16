@@ -69,8 +69,6 @@
                 <ui:VisualElement name="roster" />
                 <ui:Label name="bench-title" class="section-title bench-title" text="벤치" />
                 <ui:VisualElement name="bench" />
-                <ui:Label name="rotation-title" class="section-title rotation-title" text="선발 로테이션 · 컨디션이 좋은 투수부터 등판" />
-                <ui:VisualElement name="rotation" />
                 <ui:Label name="lineup-hint" class="lineup-hint" text="" />
                 <ui:Label name="roster-source" class="footnote" text="" />
             </ui:VisualElement>
@@ -136,6 +134,11 @@
                     <ui:Label class="col-gb" text="승차" />
                 </ui:VisualElement>
                 <ui:VisualElement name="standings" />
+                <!-- Phase 25: 벤치가 5명까지 늘 수 있어 투수진(선발 로테이션·불펜)은 순위표 아래로 옮겼다 -->
+                <ui:Label name="rotation-title" class="section-title rotation-title" text="선발 로테이션 · 컨디션이 좋은 투수부터 등판" />
+                <ui:VisualElement name="rotation" />
+                <ui:Label name="bullpen-title" class="section-title rotation-title" text="불펜" />
+                <ui:Label name="bullpen" class="bullpen-list" text="" />
             </ui:VisualElement>
         </ui:VisualElement>
 
@@ -149,10 +152,64 @@
                 <ui:Label class="section-title" text="다음 경기" />
                 <ui:Label name="next-game" class="next-game" text="—" />
             </ui:VisualElement>
-            <!-- Phase 24: 스토브리그(스카우트·FA) 진입 자리. 아직 비활성. -->
-            <ui:Button name="scout-fa" class="btn btn--scout" text="스카우트 / FA" enabled="false" tooltip="스토브리그 모드에서 열립니다" />
+            <!-- 스토브리그(스카우트·FA) 진입 (Phase 25) -->
+            <ui:Button name="scout-fa" class="btn btn--scout" text="스카우트 / FA" />
             <ui:Button name="game-mode" class="btn btn--mode" text="진행: 퀵 시뮬 (8회부터)" />
             <ui:Button name="start-game" class="btn btn--primary" text="다음 경기 시작" />
+        </ui:VisualElement>
+
+        <!-- Phase 25: 스토브리그 FA 시장 모달 (열기 클래스가 붙을 때만 보인다) -->
+        <ui:VisualElement name="fa-modal" class="fa-modal">
+            <ui:VisualElement class="fa-modal__window">
+                <ui:VisualElement class="fa-modal__header">
+                    <ui:Label class="fa-modal__title" text="스토브리그 · FA 시장" />
+                    <ui:VisualElement class="fa-modal__summary">
+                        <ui:Label name="fa-budget" class="fa-modal__stat" text="—" />
+                        <ui:Label name="fa-cap" class="fa-modal__stat" text="—" />
+                        <ui:Label name="fa-trust" class="fa-modal__stat" text="—" />
+                        <ui:Label name="fa-roster" class="fa-modal__stat" text="—" />
+                    </ui:VisualElement>
+                    <ui:Button name="fa-close" class="btn fa-modal__close" text="닫기" />
+                </ui:VisualElement>
+                <ui:VisualElement class="fa-modal__body">
+                    <ui:VisualElement class="fa-modal__market">
+                        <ui:VisualElement class="lobby-row lobby-row--head fa-row">
+                            <ui:Label class="fa-col-name" text="이름" />
+                            <ui:Label class="fa-col-team" text="소속" />
+                            <ui:Label class="fa-col-pos" text="포지션" />
+                            <ui:Label class="fa-col-age" text="나이" />
+                            <ui:Label class="fa-col-war" text="WAR" />
+                            <ui:Label class="fa-col-key" text="핵심 기록" />
+                            <ui:Label class="fa-col-ask" text="요구액" />
+                        </ui:VisualElement>
+                        <ui:VisualElement name="fa-list" />
+                        <ui:Label name="fa-market-note" class="footnote" text="" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="fa-table" class="fa-modal__table">
+                        <ui:Label class="fa-modal__label" text="협상 테이블" />
+                        <ui:Label name="fa-player-name" class="fa-modal__player-name" text="—" />
+                        <ui:Label name="fa-player-meta" class="fa-modal__line" text="" />
+                        <ui:Label name="fa-ask" class="fa-modal__line" text="" />
+                        <ui:Label class="fa-modal__label fa-modal__label--gap" text="제시액" />
+                        <ui:VisualElement class="fa-modal__offer">
+                            <ui:Button name="fa-offer-minus5" class="btn fa-modal__step" text="−5%" />
+                            <ui:Button name="fa-offer-minus1" class="btn fa-modal__step" text="−1%" />
+                            <ui:Label name="fa-offer" class="fa-modal__offer-value" text="—" />
+                            <ui:Button name="fa-offer-plus1" class="btn fa-modal__step" text="+1%" />
+                            <ui:Button name="fa-offer-plus5" class="btn fa-modal__step" text="+5%" />
+                        </ui:VisualElement>
+                        <ui:Label name="fa-odds" class="fa-modal__odds" text="—" />
+                        <ui:Label name="fa-fee" class="fa-modal__line" text="" />
+                        <ui:Label name="fa-after" class="fa-modal__line" text="" />
+                        <ui:Label name="fa-warning" class="fa-modal__warning" text="" />
+                        <ui:VisualElement class="fa-modal__actions">
+                            <ui:Button name="fa-negotiate" class="btn fa-modal__action fa-modal__action--primary" text="협상 시도" />
+                            <ui:Button name="fa-ceiling" class="btn fa-modal__action" text="확정 영입 (TP 100 소모)" />
+                        </ui:VisualElement>
+                        <ui:Label name="fa-result" class="fa-modal__result" text="" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+            </ui:VisualElement>
         </ui:VisualElement>
     </ui:VisualElement>
 </ui:UXML>

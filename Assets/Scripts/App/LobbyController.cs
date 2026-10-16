@@ -27,7 +27,8 @@ namespace DailyFranchise.App
     /// 흥행 시스템(Phase 24): 프런트 오피스 넷째 칸에 신뢰도 TP 게이지와 팬덤 특전 슬롯(해금/잠김),
     /// 라인업 패널 위에 팀 케미스트리(<see cref="ChemistryRules.Evaluate"/>)와 행마다 성향 배지(주·수·장).
     /// 케미스트리는 라인업을 그릴 때(진입·DB 로드·교체 이벤트)만 판정하고, 결과가 바뀐 경우에만 문구를 바꾼다.
-    /// 하단에 아직 비활성인 [스카우트 / FA] 버튼.
+    /// 스토브리그(Phase 25): 하단 [스카우트 / FA]로 FA 시장 모달(<see cref="FaMarketView"/>)을 연다 (선수 DB가 있고 경기 중이 아닐 때).
+    /// 벤치가 5명까지 늘 수 있어 투수진(선발 로테이션·불펜)은 순위표 아래에 그린다.
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class LobbyController : MonoBehaviour
@@ -35,6 +36,8 @@ namespace DailyFranchise.App
         VisualElement _root;
         Button _start;
         Button _mode;
+        Button _scout;
+        FaMarketView _fa;
         SeasonManager _manager;
         readonly LineupSelection _selection = new LineupSelection();
 
@@ -42,6 +45,9 @@ namespace DailyFranchise.App
         public Func<DateTime> Clock { get; set; } = () => DateTime.Now;
         /// <summary>지금 그린 라인업 카드. 선수 DB가 없으면 null (교체 불가).</summary>
         LineupCard _card;
+
+        /// <summary>FA 시장 모달 (로비가 켜져 있을 때만).</summary>
+        public FaMarketView FaMarket => _fa;
 
         /// <summary>현재 라인업 선택 상태 (테스트·진단용).</summary>
         public LineupSelection Selection => _selection;
@@ -62,10 +68,14 @@ namespace DailyFranchise.App
             _start.clicked += OnStartClicked;
             _mode = _root.Q<Button>("game-mode");
             _mode.clicked += OnModeClicked;
+            _scout = _root.Q<Button>("scout-fa");
+            _scout.clicked += OnScoutClicked;
             _manager = SeasonManager.EnsureExists();
+            _fa = new FaMarketView(_root, _manager);
             _manager.ModeChanged += Render;
             _manager.DatabaseReady += OnDatabaseReady;
             _manager.LineupChanged += OnLineupChanged;
+            _manager.StoveChanged += OnStoveChanged;
             _selection.Clear();
             _chemistryKey = null;
             Render();
@@ -75,20 +85,42 @@ namespace DailyFranchise.App
         {
             if (_start != null) _start.clicked -= OnStartClicked;
             if (_mode != null) _mode.clicked -= OnModeClicked;
+            if (_scout != null) _scout.clicked -= OnScoutClicked;
             if (_manager != null)
             {
                 _manager.ModeChanged -= Render;
                 _manager.DatabaseReady -= OnDatabaseReady;
                 _manager.LineupChanged -= OnLineupChanged;
+                _manager.StoveChanged -= OnStoveChanged;
             }
+            _fa?.Detach();
+            _fa = null;
             _start = null;
             _mode = null;
+            _scout = null;
             _manager = null;
         }
 
         void OnDatabaseReady() => Render();
 
         void OnModeClicked() => _manager?.ToggleFullInningMode();
+
+        /// <summary>[스카우트 / FA]: FA 시장 모달을 연다. 선수 DB가 없거나 경기 중이면 무시한다.</summary>
+        public void OpenFaMarket()
+        {
+            if (_manager == null || !_manager.IsDatabaseReady || _manager.Season.InProgress != null) return;
+            _fa.Open();
+        }
+
+        void OnScoutClicked() => OpenFaMarket();
+
+        /// <summary>협상 뒤: 예산·TP가 바뀌었을 수 있어 헤더를 다시 그린다 (선수단은 영입 시 LineupChanged로).</summary>
+        void OnStoveChanged()
+        {
+            var season = _manager.Season;
+            RenderFrontOffice(season);
+            Q<Label>("my-record").text = RecordText(season);
+        }
 
         void OnLineupChanged()
         {
@@ -126,10 +158,7 @@ namespace DailyFranchise.App
             var season = _manager.Season;
             Q<Label>("season-title").text = season.SeasonTitle;
             Q<Label>("my-team").text = season.MyTeam;
-            var me = season.MyStanding;
-            Q<Label>("my-record").text = me == null
-                ? "—"
-                : $"{me.Rank}위 · {me.Wins}승 {me.Losses}패 {me.Draws}무 · 승률 {me.WinPctText} · 진행 {season.GamesPlayed} / {season.Schedule.Count}경기";
+            Q<Label>("my-record").text = RecordText(season);
 
             RenderFrontOffice(season);
             RenderRoster(season);
@@ -146,8 +175,17 @@ namespace DailyFranchise.App
                 : $"경기 {next.Number} · {next.Date} · {next.MatchupText} · {next.Stadium}";
             _start.text = next == null ? "시즌 종료" : !_manager.IsDatabaseReady ? "선수 데이터 불러오는 중…" : "다음 경기 시작";
             _start.SetEnabled(next != null && season.InProgress == null && _manager.IsDatabaseReady);
+            _scout.SetEnabled(_manager.IsDatabaseReady && season.InProgress == null);
             _mode.text = _manager.FullInningMode ? "진행: 풀 이닝 (1회부터)" : "진행: 퀵 시뮬 (8회부터)";
             _mode.EnableInClassList("btn--active", _manager.FullInningMode);
+        }
+
+        static string RecordText(SeasonState season)
+        {
+            var me = season.MyStanding;
+            return me == null
+                ? "—"
+                : $"{me.Rank}위 · {me.Wins}승 {me.Losses}패 {me.Draws}무 · 승률 {me.WinPctText} · 진행 {season.GamesPlayed} / {season.Schedule.Count}경기";
         }
 
         void RenderRoster(SeasonState season)
@@ -171,6 +209,8 @@ namespace DailyFranchise.App
             _selection.Clear();
             Q("rotation").Clear();
             SetVisible(Q("rotation-title"), false);
+            SetVisible(Q("bullpen-title"), false);
+            Q<Label>("bullpen").text = "";
             var roster = new DummyScenarioData();
             FillDummy(Q("roster"), roster, roster.GetLineup(roster.MyTeam));
             FillDummy(Q("bench"), roster, roster.GetBench(roster.MyTeam));
@@ -215,6 +255,10 @@ namespace DailyFranchise.App
             var container = Q("rotation");
             container.Clear();
             SetVisible(Q("rotation-title"), roster.Starters.Count > 0);
+            SetVisible(Q("bullpen-title"), true);
+            Q<Label>("bullpen-title").text = $"불펜 {roster.Bullpen.Count}명";
+            Q<Label>("bullpen").text = roster.Bullpen.Count == 0 ? "없음"
+                : string.Join(" · ", roster.Bullpen.Select(p => $"{p.Name}({p.Position})"));
             var today = RotationPicker.Pick(roster, season, season.LastStarterOf(roster.Team));
             foreach (var p in roster.Starters)
             {
