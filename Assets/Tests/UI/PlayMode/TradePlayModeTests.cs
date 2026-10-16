@@ -218,10 +218,11 @@ namespace DailyFranchise.UI.Tests
             Assert.That(manager.Season.Signings.Count, Is.EqualTo(2));
             Assert.That(LineupName(4), Is.EqualTo("진세훈"), "라인업 즉시 반영 (김헌곤 룰 — 받은 1루수가 그 자리로)");
             Assert.That(manager.Season.Payroll, Is.EqualTo(payroll - 477_000_000 + 342_000_000));
-            Assert.That(Text("lineup-hint"), Is.EqualTo("트레이드 성사 · 표준혁 <-> 진세훈 (LG 트윈스) · 진세훈 선발 라인업 합류 · 1루수 자리: 진세훈"));
+            Assert.That(Text("lineup-hint"), Is.EqualTo("트레이드 성사 · 표준혁 내주고 진세훈 영입 (LG 트윈스) · 진세훈 선발 라인업 합류 · 1루수 자리: 진세훈"));
             Assert.That(Root.Q("news-0").Q<Label>(className: "news-tag").text, Is.EqualTo("[오피셜]"));
             Assert.That(Root.Q("news-0").Q<Label>(className: "news-text").text,
-                Is.EqualTo("삼성 라이온즈, LG 트윈스와 1:1 대형 트레이드 성사! (표준혁 <-> 진세훈)"));
+                Is.EqualTo("삼성 라이온즈, LG 트윈스와 1:1 대형 트레이드 성사!\n(표준혁\u00A0내주고\u00A0진세훈\u00A0영입)"),
+                "Phase 35: 괄호 덩어리는 다음 줄에 통째로");
             Assert.That(fa.IsOpen, Is.True, "FA 모달은 열린 채 트레이드 데스크에 결과");
             Assert.That(Text("fa-trade-result"), Does.StartWith("트레이드 성사 · 표준혁 → LG 트윈스 · 진세훈 → 선발 라인업 합류"));
             Assert.That(fa.TradePageOf("BW004"), Is.EqualTo(-1));
@@ -251,7 +252,7 @@ namespace DailyFranchise.UI.Tests
             Assert.That(Text("fa-title"), Is.EqualTo("스토브리그 · FA 시장"));
             Assert.That(Root.Q("fa-table").resolvedStyle.display, Is.EqualTo(DisplayStyle.Flex));
             Assert.That(Root.Q("fa-trade-panel").resolvedStyle.display, Is.EqualTo(DisplayStyle.None));
-            Assert.That(Root.Q("fa-list").childCount, Is.EqualTo(15), "2개 구단 데이터라 FA 시장에는 LG 선수도 그대로 (Phase 25 규칙)");
+            Assert.That(Root.Q("fa-list").childCount, Is.Zero, "Phase 35: FA 시장은 자유계약 선수만 — LG 선수는 타 구단 명단(트레이드)에만");
             Assert.That(Root.Q<Button>("fa-tab-market").ClassListContains("fa-tab--active"), Is.True);
         }
     }

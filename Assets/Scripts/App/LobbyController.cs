@@ -81,7 +81,7 @@ namespace DailyFranchise.App
             _campClose.clicked += CloseCampReport;
             _manager = SeasonManager.EnsureExists();
             _fa = new FaMarketView(_root, _manager, OpenPlayer);
-            _detail = new PlayerDetailView(_root, _manager, ReleasePlayer, BeginSwapFrom, TradePlayer);
+            _detail = new PlayerDetailView(_root, _manager, ReleasePlayer, BeginSwapFrom, TradePlayer, MovePlayer);
             _manager.ModeChanged += Render;
             _manager.DatabaseReady += OnDatabaseReady;
             _manager.LineupChanged += OnLineupChanged;
@@ -217,7 +217,7 @@ namespace DailyFranchise.App
                 string tagClass = NewsTagClass(n.Tag);
                 if (tagClass != null) tag.AddToClassList(tagClass);
                 row.Add(tag);
-                var text = Cell(n.Headline, "news-text");
+                var text = Cell(NewsWriter.DisplayText(n.Headline), "news-text"); // Phase 35: 묶은 덩어리는 줄바꿈 없이
                 text.tooltip = n.Text;
                 row.Add(text);
                 row.Add(Cell(n.Date.Length == 0 ? $"{n.Year}" : $"{n.Year} · {n.Date}", "news-date"));
@@ -813,10 +813,25 @@ namespace DailyFranchise.App
             {
                 var q = outcome.Quote;
                 var filler = slot >= 0 ? _manager.MyRoster?.AtOrder(slot + 1) : null;
-                _notice = $"트레이드 성사 · {q.Mine.Name} <-> {q.Theirs.Name} ({q.Partner}) · {q.Theirs.Name} {TradeDesk.ArrivalText(q.Arrival)} 합류"
+                _notice = $"트레이드 성사 · {q.Mine.Name} 내주고 {q.Theirs.Name} 영입 ({q.Partner}) · {q.Theirs.Name} {TradeDesk.ArrivalText(q.Arrival)} 합류"
                           + (filler != null ? $" · {PositionMatcher.Label(filler.Position)} 자리: {filler.Name}" : "");
             }
             _fa?.ReportTrade(outcome);
+            RenderSelection();
+            return outcome;
+        }
+
+        /// <summary>
+        /// 1군 등록·말소 (선수 상세 모달에서 맞바꿀 선수를 골랐을 때, Phase 35). 되면 라인업 안내 줄에
+        /// "1군 등록 · 김민준 (벤치) · 퓨처스 말소 · 소윤호"를 보인다. 막힌 이유는 모달이 보인다.
+        /// </summary>
+        public RosterMoveOutcome MovePlayer(string a, string b)
+        {
+            if (_manager == null) return null;
+            _selection.Clear();
+            var outcome = _manager.MoveRoster(a, b);
+            if (outcome.Moved)
+                _notice = $"1군 등록 · {outcome.Up.Name} ({(outcome.Up.IsPitcher ? "불펜" : "벤치")}) · 퓨처스 말소 · {outcome.Down.Name}";
             RenderSelection();
             return outcome;
         }

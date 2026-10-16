@@ -43,16 +43,29 @@ namespace DailyFranchise.App
         string _themeClass;
         string _tradeText = "";
         bool _tradeRejected;
+        string _moveText = "";
+        readonly Func<string, string, RosterMoveOutcome> _move;
+        readonly Button _moveButton;
+        readonly Button _movePrev;
+        readonly Button _moveNext;
 
+        /// <param name="move">[1군 등록·말소]에서 맞바꿀 선수를 골랐을 때 (보고 있는 선수 ID, 고른 선수 ID) — 로비가 SeasonManager에 맡기고 안내한다.</param>
         /// <param name="trade">[트레이드 제안]에서 보낼 선수를 골랐을 때 (내 선수 ID, 받을 선수 ID) — 로비가 SeasonManager에 제안하고 결과를 안내한다.</param>
         public PlayerDetailView(VisualElement root, SeasonManager manager, Func<string, ReleaseOutcome> release, Action<LineupSpot> pick,
-            Func<string, string, TradeOutcome> trade)
+            Func<string, string, TradeOutcome> trade, Func<string, string, RosterMoveOutcome> move)
         {
             _root = root ?? throw new ArgumentNullException(nameof(root));
             _manager = manager ?? throw new ArgumentNullException(nameof(manager));
             _release = release ?? throw new ArgumentNullException(nameof(release));
             _pick = pick ?? throw new ArgumentNullException(nameof(pick));
             _trade = trade ?? throw new ArgumentNullException(nameof(trade));
+            _move = move ?? throw new ArgumentNullException(nameof(move));
+            _moveButton = root.Q<Button>("pd-move");
+            _movePrev = root.Q<Button>("pd-move-prev");
+            _moveNext = root.Q<Button>("pd-move-next");
+            _moveButton.clicked += OnMove;
+            _movePrev.clicked += PrevMovePage;
+            _moveNext.clicked += NextMovePage;
             _window = root.Q("pd-window");
             _tradeButton = root.Q<Button>("pd-trade");
             _tradeButton.clicked += OnTrade;
@@ -85,6 +98,9 @@ namespace DailyFranchise.App
             for (int i = 0; i < _offerGroups.Length; i++) _offerGroups[i].clicked -= _groupHandlers[i];
             _offerPrev.clicked -= PrevOfferPage;
             _offerNext.clicked -= NextOfferPage;
+            _moveButton.clicked -= OnMove;
+            _movePrev.clicked -= PrevMovePage;
+            _moveNext.clicked -= NextMovePage;
             _modal.UnregisterCallback<ClickEvent>(OnBackdrop);
         }
 
@@ -161,6 +177,9 @@ namespace DailyFranchise.App
             Team = null;
             TradePicking = false;
             _tradeText = "";
+            MovePicking = false;
+            MovePage = 0;
+            _moveText = "";
             SetTheme(null);
         }
 
@@ -194,6 +213,9 @@ namespace DailyFranchise.App
             Team = team;
             TradePicking = false;
             _tradeText = "";
+            MovePicking = false;
+            MovePage = 0;
+            _moveText = "";
             SetTheme(team);
             _modal.AddToClassList("pd-modal--open");
             Render();
@@ -249,21 +271,130 @@ namespace DailyFranchise.App
                 + (Math.Abs(p.Form) >= 0.005 ? $" · 에이징 폼 {AgingCurve.FormText(p.Form)}" : "");
 
             bool other = IsOtherTeam;
-            Show("pd-swap-title", !other);
-            Show("pd-swap", !other);
-            Show("pd-train-row", !other);
-            Show("pd-train-note", !other);
-            Show("pd-danger", !other);
+            bool moving = !other && MovePicking; // 맞바꿀 선수를 고르는 동안은 교체·훈련·방출을 접어 한 화면에 담는다
+            Show("pd-swap-title", !other && !moving);
+            Show("pd-swap", !other && !moving);
+            Show("pd-train-row", !other && !moving);
+            Show("pd-train-note", !other && !moving);
+            Show("pd-danger", !other && !moving);
             Show("pd-trade-zone", other);
+            Show("pd-move-zone", !other);
             if (other)
             {
                 _pickButton.style.display = DisplayStyle.None;
                 RenderTrade(p);
                 return;
             }
+            RenderMove(roster, p);
+            if (moving)
+            {
+                _pickButton.style.display = DisplayStyle.None;
+                return;
+            }
             RenderSwap(roster, p);
             RenderTraining(p);
             RenderRelease(p, roster.Reserves.Contains(p));
+        }
+
+        /// <summary>[1군 등록·말소]를 눌러 맞바꿀 선수를 고르는 중인지 (Phase 35).</summary>
+        public bool MovePicking { get; private set; }
+
+        /// <summary>맞바꿀 선수 목록의 지금 쪽 (0부터).</summary>
+        public int MovePage { get; private set; }
+
+        /// <summary>맞바꿀 선수 한 쪽의 버튼 수 (2열 × 7줄).</summary>
+        public const int MovePageSize = 14;
+
+        /// <summary>마지막 맞바꾸기 결과 문구 (막힌 이유). 없으면 "".</summary>
+        public string MoveResultText => _moveText;
+
+        void OnMove() => PressMove();
+        void PrevMovePage() => StepMovePage(-1);
+        void NextMovePage() => StepMovePage(1);
+
+        /// <summary>맞바꿀 선수 쪽을 넘긴다 (처음·끝에서 멈춘다 — 그리면서 맞춘다).</summary>
+        public void StepMovePage(int delta)
+        {
+            MovePage = Math.Max(0, MovePage + delta);
+            if (IsOpen) Render();
+        }
+
+        /// <summary>[1군 등록·말소] / [취소]: 맞바꿀 선수 목록을 열고 닫는다. 내 선수가 아니거나 맞바꿀 수 없는 선수면 false.</summary>
+        public bool PressMove()
+        {
+            var roster = _manager.MyRoster;
+            if (IsOtherTeam || PlayerId == null || roster == null || !RosterMoves.IsMovable(roster, PlayerId)) return false;
+            MovePicking = !MovePicking;
+            MovePage = 0;
+            _moveText = "";
+            Render();
+            return true;
+        }
+
+        /// <summary>
+        /// 보고 있는 선수와 <paramref name="otherId"/>를 1군 ↔ 퓨처스로 맞바꾼다 (로비 → SeasonManager). 되면 모달을 닫고,
+        /// 막히면 모달을 열어 둔 채 이유를 보인다. 내 선수를 보고 있지 않으면 null.
+        /// </summary>
+        public RosterMoveOutcome MoveWith(string otherId)
+        {
+            if (IsOtherTeam || PlayerId == null) return null;
+            var outcome = _move(PlayerId, otherId);
+            if (outcome == null) return null;
+            if (outcome.Moved)
+            {
+                Close();
+                return outcome;
+            }
+            _moveText = RosterMoves.BlockText(outcome.Block);
+            if (IsOpen) Render();
+            return outcome;
+        }
+
+        /// <summary>
+        /// 1군 등록·말소 구역 (Phase 35): 1군 벤치·불펜 선수면 [1군 말소], 퓨처스 선수면 [1군 등록]. 선발 타순·로테이션은 잠그고 이유를 보인다.
+        /// 고르는 중이면 맞바꿀 상대 (벤치 ↔ 퓨처스 타자, 불펜 ↔ 퓨처스 투수) 버튼을 쪽으로 나눠 보인다.
+        /// </summary>
+        void RenderMove(TeamRoster roster, PlayerData p)
+        {
+            bool futures = RosterMoves.IsFutures(roster, p.Id);
+            bool starter = RosterMoves.IsStarter(roster, p.Id);
+            var partners = RosterMoves.Partners(roster, p.Id);
+            string where = p.IsPitcher ? "불펜" : "벤치";
+            _moveButton.text = MovePicking ? "취소" : futures ? $"1군 등록 · {where}와 맞바꾸기" : "1군 말소 · 퓨처스와 맞바꾸기";
+            bool open = _manager.Season.InProgress == null && !starter && partners.Count > 0;
+            _moveButton.SetEnabled(open || MovePicking);
+            Q<Label>("pd-move-note").text = starter ? RosterMoves.BlockText(RosterMoveBlock.Starter)
+                : partners.Count == 0 ? (futures ? $"1군 {where}에 맞바꿀 선수가 없습니다." : $"퓨처스에 맞바꿀 {(p.IsPitcher ? "투수" : "타자")}가 없습니다.")
+                : futures ? $"1군 {where} 한 명과 자리를 바꿉니다 · 정원 그대로"
+                : $"퓨처스 {(p.IsPitcher ? "투수" : "타자")} 한 명과 자리를 바꿉니다 · 정원 그대로";
+            var result = Q<Label>("pd-move-result");
+            result.text = _moveText;
+            result.EnableInClassList("pd-trade__result--blocked", _moveText.Length > 0);
+            result.style.display = _moveText.Length > 0 ? DisplayStyle.Flex : DisplayStyle.None;
+
+            var list = Q("pd-move-list");
+            list.Clear();
+            list.style.display = MovePicking ? DisplayStyle.Flex : DisplayStyle.None;
+            int pages = Math.Max(1, (partners.Count + MovePageSize - 1) / MovePageSize);
+            MovePage = Math.Min(MovePage, pages - 1);
+            Show("pd-move-pager", MovePicking && pages > 1);
+            if (!MovePicking) return;
+            Q<Label>("pd-move-page").text = $"{MovePage + 1} / {pages}쪽";
+            _movePrev.SetEnabled(MovePage > 0);
+            _moveNext.SetEnabled(MovePage < pages - 1);
+            foreach (var c in partners.Skip(MovePage * MovePageSize).Take(MovePageSize))
+            {
+                string id = c.Id;
+                var button = new Button(() => MoveWith(id))
+                {
+                    name = "pd-move-" + id,
+                    text = $"{c.Name} · {(futures ? where : "퓨처스")} · {c.Position}" + (c.Age > 0 ? $" · {c.Age}세" : "") +
+                           $" · {StoveLeague.KeyStat(c)} · {PlayerCondition.Label(_manager.Season.ConditionOf(id))}",
+                };
+                button.AddToClassList("btn");
+                button.AddToClassList("pd-offer");
+                list.Add(button);
+            }
         }
 
         void Show(string name, bool visible) => Q(name).style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;

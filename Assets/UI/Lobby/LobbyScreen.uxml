@@ -304,6 +304,20 @@
                     <ui:Button name="pd-train" class="btn pd-train" text="스프링캠프 특별 훈련 (CP 1 소모)" />
                 </ui:VisualElement>
                 <ui:Label name="pd-train-note" class="pd-train-note" text="" />
+                <!-- Phase 35: 1군 등록/말소 (벤치·불펜 <-> 퓨처스 1:1 맞바꾸기) -->
+                <ui:VisualElement name="pd-move-zone" class="pd-trade pd-move">
+                    <ui:VisualElement class="pd-trade__head">
+                        <ui:Label name="pd-move-note" class="pd-trade__note" text="" />
+                        <ui:Button name="pd-move" class="btn pd-trade__btn pd-move__btn" text="1군 말소 · 퓨처스와 맞바꾸기" />
+                    </ui:VisualElement>
+                    <ui:Label name="pd-move-result" class="pd-trade__result" text="" />
+                    <ui:VisualElement name="pd-move-list" class="pd-trade__list" />
+                    <ui:VisualElement name="pd-move-pager" class="pd-trade__pager">
+                        <ui:Button name="pd-move-prev" class="btn pd-trade__page-btn" text="◀" />
+                        <ui:Label name="pd-move-page" class="pd-trade__page" text="—" />
+                        <ui:Button name="pd-move-next" class="btn pd-trade__page-btn" text="▶" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
                 <!-- Phase 34: 타 구단 선수 — 트레이드 제안 (보낼 내 선수 고르기) -->
                 <ui:VisualElement name="pd-trade-zone" class="pd-trade">
                     <ui:VisualElement class="pd-trade__head">

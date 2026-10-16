@@ -145,7 +145,7 @@ namespace DailyFranchise.App
             }
         }
 
-        /// <summary>FA 시장 (내 구단이 아닌 선수, WAR 순). 요구액은 지금 팬 만족도 구간 기준.</summary>
+        /// <summary>FA 시장 (자유계약 선수만 — Phase 35, WAR 순). 요구액은 지금 팬 만족도 구간 기준.</summary>
         public IReadOnlyList<FreeAgent> Market =>
             StoveLeague.Market(Rosters, Season.MyTeam, FranchiseFinance.MoodOf(Season.FanApproval));
 
@@ -185,6 +185,25 @@ namespace DailyFranchise.App
             StoveChanged?.Invoke();
             LineupChanged?.Invoke();
             NewsChanged?.Invoke();
+            return outcome;
+        }
+
+        /// <summary>
+        /// 1군 등록·말소 (Phase 35, <see cref="RosterMoves"/>): 1군 벤치·불펜 선수와 퓨처스 선수를 1:1로 맞바꾼다 (순서 무관).
+        /// 막히면 아무것도 바꾸지 않는다. 되면 장부·페이롤을 다시 짜고 라인업 카드를 고쳐 저장한 뒤 알린다.
+        /// </summary>
+        public RosterMoveOutcome MoveRoster(string a, string b)
+        {
+            if (_loading || Rosters == null) return new RosterMoveOutcome { Block = RosterMoveBlock.InGame };
+            var chemistry = ChemistryKinds();
+            var outcome = RosterMoves.Apply(Season, MyRoster, a, b);
+            if (!outcome.Moved) return outcome;
+            _ = Rosters; // 장부·페이롤 다시 짜기
+            if (Season.MyLineup != null) Season.MyLineup = CurrentLineup;
+            PublishChemistry(chemistry);
+            Saves.Save(Season);
+            StoveChanged?.Invoke();
+            LineupChanged?.Invoke();
             return outcome;
         }
 

@@ -119,7 +119,11 @@ namespace DailyFranchise.UI.Tests
 
             var news = s.RecentNews.Last();
             Assert.That(news.Kind, Is.EqualTo(NewsKind.Trade));
-            Assert.That(news.Text, Is.EqualTo("[오피셜] 삼성 라이온즈, LG 트윈스와 1:1 대형 트레이드 성사! (표준혁 <-> 진세훈)"));
+            Assert.That(news.Text, Is.EqualTo("[오피셜] 삼성 라이온즈, LG 트윈스와 1:1 대형 트레이드 성사! (표준혁\u00A0내주고\u00A0진세훈\u00A0영입)"),
+                "Phase 35: 괄호 안은 줄바꿈 없는 공백으로 한 덩어리");
+            Assert.That(NewsWriter.DisplayText(news.Headline), Does.EndWith("성사!\n(표준혁\u00A0내주고\u00A0진세훈\u00A0영입)"),
+                "화면에서는 덩어리 앞에서 줄을 바꿔 통째로 다음 줄에");
+            Assert.That(NewsWriter.DisplayText("보통 뉴스 한 줄"), Is.EqualTo("보통 뉴스 한 줄"), "묶은 덩어리가 없으면 그대로");
 
             Assert.That(TradeDesk.Targets(book, Samsung, s.Signings).Any(t => t.Id == "WV004"), Is.True, "보낸 선수는 이제 LG 명단");
             Assert.That(TradeDesk.Quote(s, book, "WV004", "BW005").Block, Is.EqualTo(TradeBlock.NotMine), "이미 보낸 선수");

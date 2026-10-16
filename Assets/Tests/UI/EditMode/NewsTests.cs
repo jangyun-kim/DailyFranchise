@@ -165,8 +165,14 @@ namespace DailyFranchise.UI.Tests
 
         static LeagueRosterBook Book(SeasonState s) => LeagueRosterBook.Build(Db, s.Signings);
 
-        static FreeAgent Agent(SeasonState s, string id) =>
-            StoveLeague.Market(Book(s), s.MyTeam, FranchiseFinance.MoodOf(s.FanApproval)).First(a => a.Id == id);
+        /// <summary>Phase 35: FA 시장은 자유계약 선수만 — LG 선수는 먼저 LG가 방출해 자유계약으로 보낸다.</summary>
+        static FreeAgent Agent(SeasonState s, string id)
+        {
+            var (owner, _) = Book(s).Find(id);
+            if (owner != null && owner.Team != LeagueRosterBook.FreeAgentTeam && owner.Team != s.MyTeam)
+                s.AddSigning(new SigningRecord(id, owner.Team, LeagueRosterBook.FreeAgentTeam, 0), false);
+            return StoveLeague.Market(Book(s), s.MyTeam, FranchiseFinance.MoodOf(s.FanApproval)).First(a => a.Id == id);
+        }
 
         [Test]
         public void FA_영입이면_오피셜_뉴스가_쌓인다()

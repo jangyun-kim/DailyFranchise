@@ -435,6 +435,19 @@ namespace DailyFranchise.App
                 MyLineup = new LineupCard(MyLineup.Batting, MyLineup.Bench.Where(id => id != record.PlayerId));
         }
 
+        /// <summary>
+        /// 1군 ↔ 퓨처스 맞바꾸기 기록을 남긴다 (Phase 35, <see cref="SigningRecord.Move"/>). 사용자 라인업 카드가 있고 말소된 선수가 카드 벤치에
+        /// 있으면 그 자리에 올라온 선수를 넣는다 (카드가 새 선수단과 계속 맞도록).
+        /// </summary>
+        public void AddRosterMove(SigningRecord record)
+        {
+            if (record == null) throw new ArgumentNullException(nameof(record));
+            if (!record.IsRosterMove) throw new ArgumentException("1군 ↔ 퓨처스 맞바꾸기 기록이 아니다.", nameof(record));
+            _signings.Add(record);
+            if (MyLineup != null && record.FromTeam == MyTeam && MyLineup.Bench.Contains(record.PlayerId))
+                MyLineup = new LineupCard(MyLineup.Batting, MyLineup.Bench.Select(id => id == record.PlayerId ? record.CallUpId : id));
+        }
+
         readonly Dictionary<string, int> _conditions = new Dictionary<string, int>();
 
         /// <summary>
@@ -950,7 +963,7 @@ namespace DailyFranchise.App
                 FandomSlots = (int)UnlockedSlots,
                 Signings = _signings.Select(s => new SigningData
                 {
-                    PlayerId = s.PlayerId, FromTeam = s.FromTeam, ToTeam = s.ToTeam, Salary = s.Salary, Trade = s.IsTrade,
+                    PlayerId = s.PlayerId, FromTeam = s.FromTeam, ToTeam = s.ToTeam, Salary = s.Salary, Trade = s.IsTrade, CallUp = s.CallUpId,
                 }).ToList(),
                 HasTrust = true,
                 TrustPoints = TrustPoints,
@@ -1063,7 +1076,9 @@ namespace DailyFranchise.App
             if (data.Signings != null)
                 foreach (var s in data.Signings)
                     if (s != null && !string.IsNullOrEmpty(s.PlayerId) && !string.IsNullOrEmpty(s.FromTeam) && !string.IsNullOrEmpty(s.ToTeam))
-                        season._signings.Add(new SigningRecord(s.PlayerId, s.FromTeam, s.ToTeam, Scaled(s.Salary, money), s.Trade));
+                        season._signings.Add(string.IsNullOrEmpty(s.CallUp)
+                            ? new SigningRecord(s.PlayerId, s.FromTeam, s.ToTeam, Scaled(s.Salary, money), s.Trade)
+                            : SigningRecord.Move(s.FromTeam, s.PlayerId, s.CallUp));
             // 컨디션 목록이 없는 이전 저장 파일(Phase 21 이전)은 전원 보통(3)에서 시작한다 (기록 없음 = 보통).
             // ID가 빈 항목은 건너뛰고, 범위 밖 값은 1~5로 맞춘다.
             if (data.Conditions != null)

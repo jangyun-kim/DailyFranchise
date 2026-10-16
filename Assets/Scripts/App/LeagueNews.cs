@@ -192,9 +192,33 @@ namespace DailyFranchise.App
                 ? $"{team}, 확정 영입 카드로 {playerName} 영입! (연봉 {FranchiseFinance.BudgetText(salary)})"
                 : $"{team}, FA 시장에서 {WaGwa(playerName)} {FranchiseFinance.BudgetText(salary)}에 전격 계약!", year, date);
 
-        /// <summary>1:1 트레이드: "삼성 라이온즈, LG 트윈스와 1:1 대형 트레이드 성사! (A <-> B)" (A = 보낸 선수).</summary>
+        /// <summary>
+        /// 1:1 트레이드: "삼성 라이온즈, LG 트윈스와 1:1 대형 트레이드 성사! (A 내주고 B 영입)" (A = 보낸 선수).
+        /// Phase 35: 예전 "(A &lt;-&gt; B)"는 줄바꿈 엔진이 하이픈 뒤에서 끊어("&lt;-" / "&gt;") 읽기 어려웠다 — 하이픈 없는 문장으로 바꾸고,
+        /// 괄호 덩어리는 줄바꿈 없는 공백(NBSP)으로 묶어 표시(<see cref="DisplayText"/>)할 때 한 줄로 내린다.
+        /// </summary>
         public static NewsItem Traded(string team, string partner, string sentName, string receivedName, int year, string date) =>
-            new NewsItem(NewsKind.Trade, OfficialTag, team, $"{team}, {WaGwa(partner)} 1:1 대형 트레이드 성사! ({sentName} <-> {receivedName})", year, date);
+            new NewsItem(NewsKind.Trade, OfficialTag, team,
+                $"{team}, {WaGwa(partner)} 1:1 대형 트레이드 성사! " + Unbroken($"({sentName} 내주고 {receivedName} 영입)"), year, date);
+
+        /// <summary>줄바꿈 없는 공백 (U+00A0).</summary>
+        public const char NoBreakSpace = ' ';
+
+        /// <summary>공백을 줄바꿈 없는 공백으로 바꿔 한 덩어리로 묶는다 (<see cref="DisplayText"/>가 이 덩어리를 끊지 않는다).</summary>
+        public static string Unbroken(string text) => text?.Replace(' ', NoBreakSpace);
+
+        /// <summary>
+        /// 화면에 그릴 헤드라인: 줄바꿈 없는 공백으로 묶은 덩어리가 있으면 그 앞에서 줄을 바꿔 덩어리를 다음 줄에 통째로 둔다.
+        /// UI Toolkit 글자 엔진은 한글을 글자 사이마다 끊을 수 있어 NBSP·&lt;nobr&gt;로도 "(표준혁 내" / "주고 …)" 끊김을 막지 못했다
+        /// (Phase 35 실측). 저장·비교용 문장(<see cref="NewsItem.Headline"/>)은 그대로다.
+        /// </summary>
+        public static string DisplayText(string headline)
+        {
+            int nb = string.IsNullOrEmpty(headline) ? -1 : headline.IndexOf(NoBreakSpace);
+            if (nb < 0) return headline;
+            int space = headline.LastIndexOf(' ', nb);
+            return space < 0 ? headline : headline.Substring(0, space) + "\n" + headline.Substring(space + 1);
+        }
 
         public static NewsItem NegotiationFailed(string team, string playerName, int year, string date) =>
             new NewsItem(NewsKind.NegotiationFailed, BreakingTag, team, $"{playerName}, {team}의 제안 거절… 협상 결렬", year, date);

@@ -11,6 +11,8 @@ namespace DailyFranchise.App
     /// <summary>
     /// 이적 한 건 (Phase 25 영입, Phase 26 방출). 시즌과 함께 저장되고, 선수단은 "선수 DB + 이적 기록"으로 다시 짠다.
     /// 받는 구단이 <see cref="LeagueRosterBook.FreeAgentTeam"/>이면 방출이다.
+    /// Phase 35: 같은 구단 안의 1군 ↔ 퓨처스 맞바꾸기(<see cref="Move"/>)도 같은 목록에 차례대로 남긴다 — 트레이드·방출과 순서가 섞여도
+    /// 다시 짤 때 그때와 같은 선수단이 나오도록.
     /// </summary>
     public sealed class SigningRecord
     {
@@ -25,6 +27,22 @@ namespace DailyFranchise.App
             Salary = Math.Max(0, salary);
             IsTrade = trade;
         }
+
+        /// <summary>
+        /// 1군 말소·퓨처스 등록 맞바꾸기 (Phase 35): <paramref name="sendDownId"/>(1군 벤치·불펜)가 퓨처스로, <paramref name="callUpId"/>(퓨처스)가
+        /// 그 1군 자리로. 같은 구단 안이라 연봉 기록이 아니다 (<see cref="Salary"/> 0, 계약 연봉을 바꾸지 않는다).
+        /// </summary>
+        public static SigningRecord Move(string team, string sendDownId, string callUpId)
+        {
+            if (string.IsNullOrEmpty(callUpId)) throw new ArgumentException("올릴 선수 ID가 비어 있다.", nameof(callUpId));
+            return new SigningRecord(sendDownId, team, team, 0) { CallUpId = callUpId };
+        }
+
+        /// <summary>1군 ↔ 퓨처스 맞바꾸기에서 1군으로 올라온 선수 (Phase 35). 이적 기록이면 null.</summary>
+        public string CallUpId { get; private set; }
+
+        /// <summary>1군 ↔ 퓨처스 맞바꾸기 기록인지 (Phase 35). <see cref="PlayerId"/>가 말소된 선수.</summary>
+        public bool IsRosterMove => CallUpId != null;
 
         /// <summary>1:1 트레이드의 한쪽인지 (Phase 34).</summary>
         public bool IsTrade { get; }
@@ -171,6 +189,15 @@ namespace DailyFranchise.App
             for (int i = 0; i < list.Count; i++)
             {
                 var s = list[i];
+                if (s != null && s.IsRosterMove)
+                {
+                    if (rosters.TryGetValue(s.FromTeam, out var team) && TryMove(team, s.PlayerId, s.CallUpId, out var moved))
+                    {
+                        rosters[s.FromTeam] = moved;
+                        applied.Add(s);
+                    }
+                    continue;
+                }
                 if (s == null || s.FromTeam == s.ToTeam) continue;
                 if (s.IsTrade && i + 1 < list.Count && IsTradePair(s, list[i + 1]))
                 {
@@ -189,6 +216,30 @@ namespace DailyFranchise.App
                 rosters[s.ToTeam] = Add(to, player);
                 applied.Add(s);
             }
+        }
+
+        /// <summary>
+        /// 1군 ↔ 퓨처스 맞바꾸기 (Phase 35): 1군 타자(선발 타순·벤치)나 불펜 투수 <paramref name="downId"/>와 같은 종류(타자·투수)의
+        /// 퓨처스 선수 <paramref name="upId"/>가 자리를 바꾼다. 올라온 선수는 내려간 선수의 그 자리·순번을, 내려간 선수는 올라온 선수의
+        /// 퓨처스 순번을 잇는다 — 1군 정원·벤치·불펜 수가 그대로다. 선발 로테이션 투수·대체 선수·종류가 다르면 false (바꾸지 않는다).
+        /// 사용자 라인업 카드는 따로 고친다 (<see cref="SeasonState.AddRosterMove"/>) — 카드의 선발 타자는 막는 쪽이 호출한 곳이다.
+        /// </summary>
+        public static bool TryMove(TeamRoster r, string downId, string upId, out TeamRoster moved)
+        {
+            moved = r;
+            if (r == null) return false;
+            var up = r.Reserves.FirstOrDefault(p => p.Id == upId);
+            var down = r.Lineup.Concat(r.Bench).Concat(r.Bullpen).FirstOrDefault(p => p.Id == downId);
+            if (up == null || down == null || IsReplacement(up) || IsReplacement(down) || up.IsPitcher != down.IsPitcher) return false;
+            var raised = up.CloneAs(down.Role, down.Order, down.Role == RosterRole.Lineup ? down.Position : up.Position);
+            raised.Team = r.Team;
+            var lowered = down.CloneAs(down.IsPitcher ? RosterRole.Bullpen : RosterRole.Bench, up.Order, down.Position);
+            lowered.Team = r.Team;
+            List<PlayerData> Replace(IEnumerable<PlayerData> list, PlayerData gone, PlayerData with) =>
+                list.Select(p => p.Id == gone.Id ? with : p).ToList();
+            moved = new TeamRoster(r.Team, Replace(r.Lineup, down, raised), Replace(r.Bench, down, raised), r.Starters,
+                Replace(r.Bullpen, down, raised), Replace(r.Reserves, up, lowered));
+            return true;
         }
 
         static bool IsTradePair(SigningRecord a, SigningRecord b) =>
@@ -373,7 +424,7 @@ namespace DailyFranchise.App
     public enum SigningBlock
     {
         None,
-        /// <summary>이미 내 구단 선수 (또는 시장에 없는 선수).</summary>
+        /// <summary>자유계약 선수가 아님 (내 구단·타 구단 선수 — Phase 35부터 타 구단 선수는 트레이드로만).</summary>
         NotAvailable,
         RosterFull,
         BenchFull,
@@ -426,7 +477,7 @@ namespace DailyFranchise.App
 
     /// <summary>
     /// 스토브리그 FA 시장 규칙 (Phase 25, Phase 26 재정 현실화). 순수 C#.
-    /// - 시장: 리그 선수단 장부에서 내 구단이 아닌 선수 전원 (자유계약 포함, 대체 선수 제외), WAR 높은 순.
+    /// - 시장 (Phase 35): 리그 선수단 장부의 자유계약 명단만 (방출·은퇴 전 선수 — 타 구단 선수는 트레이드 탭), 대체 선수 제외, WAR 높은 순.
     /// - 요구액 = 연봉 × (1 + 인기 보정): 경기 전 팬 만족도 구간 Happy 0% · Normal 10% · Angry 20% (인기 없는 구단엔 더 비싸게).
     /// - 협상: 수수료(요구액 5%)는 시도마다 예산에서. 연봉(제시액)은 영입 때 내지 않고 페이롤에 잡혀 경기마다 ÷144씩 나간다.
     ///   성공률은 <see cref="FrontOfficeTrust.SuccessRate"/>.
@@ -473,7 +524,7 @@ namespace DailyFranchise.App
         public static IReadOnlyList<FreeAgent> Market(LeagueRosterBook book, string myTeam, FanMood mood)
         {
             if (book == null) return Array.Empty<FreeAgent>();
-            return book.Rosters.Where(r => r.Team != myTeam)
+            return book.Rosters.Where(r => r.Team == LeagueRosterBook.FreeAgentTeam && r.Team != myTeam)
                 .SelectMany(r => LeagueRosterBook.AllOf(r).Select(p => (r.Team, p)))
                 .Where(x => !LeagueRosterBook.IsReplacement(x.p))
                 .Select(x =>
@@ -490,7 +541,7 @@ namespace DailyFranchise.App
         {
             long? contract = null;
             foreach (var s in signings ?? Enumerable.Empty<SigningRecord>())
-                if (s.PlayerId == p.Id && s.ToTeam == team) contract = s.Salary;
+                if (!s.IsRosterMove && s.PlayerId == p.Id && s.ToTeam == team) contract = s.Salary;
             return contract ?? (LeagueRosterBook.IsReplacement(p) ? FrontOfficeTrust.MinSalary : FrontOfficeTrust.SalaryOf(p.War));
         }
 
@@ -522,7 +573,7 @@ namespace DailyFranchise.App
         {
             if (season.InProgress != null) return SigningBlock.InGame;
             var (owner, _) = book.Find(agent.Id);
-            if (owner == null || owner.Team == season.MyTeam) return SigningBlock.NotAvailable;
+            if (owner == null || owner.Team != LeagueRosterBook.FreeAgentTeam) return SigningBlock.NotAvailable; // Phase 35: 자유계약만 (타 구단 선수는 트레이드로)
             var roster = RosterBlock(book.Get(season.MyTeam), agent.Player);
             if (roster != SigningBlock.None) return roster;
             if (ceiling && !FrontOfficeTrust.CanUseCeiling(season.TrustPoints)) return SigningBlock.Trust;

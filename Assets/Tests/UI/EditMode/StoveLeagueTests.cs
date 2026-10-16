@@ -34,25 +34,54 @@ namespace DailyFranchise.UI.Tests
 
         static LeagueRosterBook Book(SeasonState s) => LeagueRosterBook.Build(Db, s.Signings);
 
-        static FreeAgent Agent(SeasonState s, string id) =>
-            StoveLeague.Market(Book(s), s.MyTeam, FranchiseFinance.MoodOf(s.FanApproval)).First(a => a.Id == id);
+        /// <summary>
+        /// Phase 35: FA 시장은 자유계약 선수만이라, 서울 선수를 데려오려면 먼저 서울이 방출해 자유계약으로 보낸다
+        /// (CPU 구단 방출 기록 — 서울의 빈자리는 예전 영입 때와 같은 규칙으로 메워진다).
+        /// </summary>
+        static void Free(SeasonState s, string id)
+        {
+            if (Book(s).Find(id).roster?.Team == Seoul) s.AddSigning(new SigningRecord(id, Seoul, Fa, 0), false);
+        }
 
-        static SigningOutcome Sign(SeasonState s, string id) =>
-            StoveLeague.Negotiate(s, Book(s), Agent(s, id), Agent(s, id).Ask, Win);
+        static FreeAgent Agent(SeasonState s, string id)
+        {
+            Free(s, id);
+            return StoveLeague.Market(Book(s), s.MyTeam, FranchiseFinance.MoodOf(s.FanApproval)).First(a => a.Id == id);
+        }
+
+        /// <summary>내 구단으로 온 기록 (영입·트레이드 — 서울 방출 기록 제외).</summary>
+        static SigningRecord[] Mine(SeasonState s) => s.Signings.Where(r => r.ToTeam == Busan).ToArray();
+
+        static SigningOutcome Sign(SeasonState s, string id)
+        {
+            var agent = Agent(s, id); // 먼저 자유계약으로 보낸 뒤 장부를 짠다
+            return StoveLeague.Negotiate(s, Book(s), agent, agent.Ask, Win);
+        }
+
+        /// <summary>자유계약으로 보낸 뒤의 장부로 검사한다.</summary>
+        static SigningBlock Check(SeasonState s, string id, long offer)
+        {
+            var agent = Agent(s, id);
+            return StoveLeague.Check(s, Book(s), agent, offer);
+        }
 
         static long Payroll(SeasonState s) => StoveLeague.Payroll(Book(s).Get(Busan), s.Signings);
 
         // ---------- 시장 ----------
 
         [Test]
-        public void 시장은_내_구단이_아닌_선수를_WAR_순으로_보이고_요구액은_연봉에_인기_보정을_더한다()
+        public void 시장은_자유계약_선수만_WAR_순으로_보이고_요구액은_연봉에_인기_보정을_더한다()
         {
             var s = SeasonState.CreateDummy();
+            Assert.That(StoveLeague.Market(Book(s), s.MyTeam, FanMood.Normal), Is.Empty,
+                "Phase 35: 타 구단(서울) 선수는 FA 시장에 나오지 않는다 — 트레이드 탭에서만");
+            foreach (var id in new[] { "BW004", "BW010", "BW011" }) Free(s, id);
             var market = StoveLeague.Market(Book(s), s.MyTeam, FanMood.Normal);
-            Assert.That(market.Count, Is.EqualTo(15));
-            Assert.That(market.All(a => a.Team == Seoul), Is.True);
-            Assert.That(market[0].Id, Is.EqualTo("BW010"), "WAR 2.52");
+            Assert.That(market.Select(a => a.Id), Is.EqualTo(new[] { "BW010", "BW004", "BW011" }), "WAR 2.52 · 2.08 · …");
+            Assert.That(market.All(a => a.Team == Fa), Is.True, "소속이 자유계약인 선수만");
             Assert.That(market.Select(a => a.Player.War), Is.Ordered.Descending);
+            Assert.That(StoveLeague.Market(Book(s), Seoul, FanMood.Normal).Select(a => a.Id), Is.EquivalentTo(market.Select(a => a.Id)),
+                "어느 구단 시점이든 같은 자유계약 명단 (삼성 선수는 나오지 않는다)");
 
             var bw004 = market.First(a => a.Id == "BW004"); // WAR 2.08
             Assert.That((bw004.Salary, bw004.Ask), Is.EqualTo((342_000_000L, 376_200_000L)), "Normal +10%");
@@ -107,7 +136,8 @@ namespace DailyFranchise.UI.Tests
             Assert.That((o.Block, o.Signed, o.Salary), Is.EqualTo((SigningBlock.None, true, 376_200_000L)));
             Assert.That(o.Negotiation.SuccessRate, Is.EqualTo(0.5).Within(1e-9));
             Assert.That(s.Budget, Is.EqualTo(Budget0 - 18_810_000), "계약금은 영입 때 내지 않는다 (Phase 26)");
-            Assert.That(s.Signings.Single().PlayerId, Is.EqualTo("BW004"));
+            Assert.That(Mine(s).Single().PlayerId, Is.EqualTo("BW004"));
+            Assert.That(Mine(s).Single().FromTeam, Is.EqualTo(Fa), "서울이 먼저 방출한 자유계약 선수");
 
             var book = Book(s);
             var busan = book.Get(Busan);
@@ -137,7 +167,7 @@ namespace DailyFranchise.UI.Tests
             var o = StoveLeague.Negotiate(s, Book(s), agent, agent.Ask, Lose);
             Assert.That((o.Block, o.Signed, o.Salary), Is.EqualTo((SigningBlock.None, false, 0L)));
             Assert.That((s.Budget, s.TrustPoints), Is.EqualTo((Budget0 - 18_810_000, 18)), "floor(1,881만 / 100만)");
-            Assert.That(s.Signings, Is.Empty);
+            Assert.That(Mine(s), Is.Empty);
             Assert.That(Book(s).Get(Busan), Is.SameAs(Db.GetRoster(Busan)), "영입이 없으면 DB 선수단 그대로");
 
             // 헐값(85%) 결렬은 환급 없음
@@ -167,9 +197,10 @@ namespace DailyFranchise.UI.Tests
         {
             var s = SeasonState.CreateDummy();
             s.SetTrust(99, 0, 0, 0);
-            var o = StoveLeague.SignWithCeiling(s, Book(s), Agent(s, "BW010"));
+            var ace = Agent(s, "BW010");
+            var o = StoveLeague.SignWithCeiling(s, Book(s), ace);
             Assert.That((o.Block, o.Signed), Is.EqualTo((SigningBlock.Trust, false)));
-            Assert.That((s.TrustPoints, s.Budget, s.Signings.Count), Is.EqualTo((99, Budget0, 0)));
+            Assert.That((s.TrustPoints, s.Budget, Mine(s).Length), Is.EqualTo((99, Budget0, 0)));
         }
 
         // ---------- 차단 ----------
@@ -190,7 +221,7 @@ namespace DailyFranchise.UI.Tests
             Assert.That(StoveLeague.CapRoom(s, Book(s)), Is.EqualTo(-20_000_000L));
             var blocked = StoveLeague.Negotiate(s, Book(s), agent, agent.Ask, Win);
             Assert.That(blocked.Block, Is.EqualTo(SigningBlock.SalaryCap));
-            Assert.That((s.Budget, s.Signings.Count), Is.EqualTo((Budget0, 0)), "막히면 수수료도 내지 않는다");
+            Assert.That((s.Budget, Mine(s).Length), Is.EqualTo((Budget0, 0)), "막히면 수수료도 내지 않는다");
         }
 
         [Test]
@@ -199,37 +230,43 @@ namespace DailyFranchise.UI.Tests
             var s = SeasonState.CreateDummy();
             foreach (var id in new[] { "BW008", "BW007" }) Assert.That(Sign(s, id).Signed, Is.True, id);
             Assert.That(Book(s).Get(Busan).Bench.Count, Is.EqualTo(5));
-            Assert.That(StoveLeague.Check(s, Book(s), Agent(s, "BW006"), 1), Is.EqualTo(SigningBlock.BenchFull));
+            Assert.That(Check(s, "BW006", 1), Is.EqualTo(SigningBlock.BenchFull));
             Assert.That(StoveLeague.BlockText(SigningBlock.BenchFull), Does.Contain("벤치 정원 5명").And.Contain("방출"));
 
             foreach (var id in new[] { "BW011", "BW015", "BW012", "BW014" }) Assert.That(Sign(s, id).Signed, Is.True, id);
             var busan = Book(s).Get(Busan);
             Assert.That((busan.Bullpen.Count, RosterLimits.CountOf(busan)), Is.EqualTo((7, 26)));
-            Assert.That(StoveLeague.Check(s, Book(s), Agent(s, "BW013"), 1), Is.EqualTo(SigningBlock.RosterFull));
-            Assert.That(StoveLeague.Check(s, Book(s), Agent(s, "BW006"), 1), Is.EqualTo(SigningBlock.RosterFull));
-
-            // 서울: 7·8번 대체 선수, 남은 선발 BW010·BW013, 불펜 없음
+            // 서울 (영입하려고 자유계약으로 보낸 자리 — 아래 검사도 BW013·BW006을 자유계약으로 보낸다): 7·8번 대체 선수, 남은 선발 BW010·BW013, 불펜 없음
             var seoul = Book(s).Get(Seoul);
             Assert.That(new[] { seoul.AtOrder(7).Id, seoul.AtOrder(8).Id }, Is.EqualTo(new[] { "REPL-BW007", "REPL-BW008" }));
             Assert.That(seoul.Starters.Select(p => p.Id), Is.EqualTo(new[] { "BW010", "BW013" }));
             Assert.That(seoul.Bullpen, Is.Empty);
 
+            Assert.That(Check(s, "BW013", 1), Is.EqualTo(SigningBlock.RosterFull));
+            Assert.That(Check(s, "BW006", 1), Is.EqualTo(SigningBlock.RosterFull));
+
             // 방출하면 자리가 난다
             Assert.That(StoveLeague.Release(s, Book(s), "BW008").Released, Is.True);
-            Assert.That(StoveLeague.Check(s, Book(s), Agent(s, "BW006"), 1), Is.EqualTo(SigningBlock.None));
+            Assert.That(Check(s, "BW006", 1), Is.EqualTo(SigningBlock.None));
         }
 
         [Test]
-        public void 이미_내_선수이거나_경기_중이면_막는다()
+        public void 이미_내_선수이거나_타_구단_선수이거나_경기_중이면_막는다()
         {
             var s = SeasonState.CreateDummy();
+            var bw010 = new FreeAgent(Db.FindPlayer("BW010"), Seoul, 408_000_000, 448_800_000);
+            Assert.That(StoveLeague.Check(s, Book(s), bw010, bw010.Ask), Is.EqualTo(SigningBlock.NotAvailable),
+                "Phase 35: 자유계약이 아닌 타 구단 선수는 협상할 수 없다 (트레이드로)");
+            Assert.That(StoveLeague.Negotiate(s, Book(s), bw010, bw010.Ask, Win).Signed, Is.False);
+            Assert.That(s.Signings, Is.Empty);
+
             var agent = Agent(s, "BW004");
             Assert.That(Sign(s, "BW004").Signed, Is.True);
             Assert.That(StoveLeague.Check(s, Book(s), agent, agent.Ask), Is.EqualTo(SigningBlock.NotAvailable));
 
             var t = SeasonState.CreateDummy();
             t.StartNextGame();
-            Assert.That(StoveLeague.Check(t, Book(t), Agent(t, "BW004"), 1), Is.EqualTo(SigningBlock.InGame));
+            Assert.That(Check(t, "BW004", 1), Is.EqualTo(SigningBlock.InGame));
         }
 
         // ---------- 방출 (Phase 26) ----------
@@ -256,7 +293,7 @@ namespace DailyFranchise.UI.Tests
             Assert.That(Payroll(s), Is.EqualTo(payroll - salary), "페이롤에서 빠진다");
 
             var market = StoveLeague.Market(book, Busan, FanMood.Normal);
-            Assert.That(market.Count, Is.EqualTo(16));
+            Assert.That(market.Count, Is.EqualTo(1), "Phase 35: 자유계약 선수만 (서울 선수 15명은 트레이드 탭)");
             Assert.That(market.Single(a => a.Id == "WV010").Team, Is.EqualTo(Fa));
         }
 
@@ -422,7 +459,7 @@ namespace DailyFranchise.UI.Tests
             var data = s.ToSaveData();
             data.Signings.Add(new SigningData { PlayerId = "", FromTeam = Seoul, ToTeam = Busan });
             data.Signings.Add(null);
-            Assert.That(SeasonState.FromSaveData(data).Signings.Count, Is.EqualTo(3), "빈 칸 항목은 건너뛴다");
+            Assert.That(SeasonState.FromSaveData(data).Signings.Count, Is.EqualTo(5), "빈 칸 항목은 건너뛴다 (서울 방출 2 · 영입 2 · 방출 1)");
         }
 
         [Test]
