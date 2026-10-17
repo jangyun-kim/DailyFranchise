@@ -720,17 +720,20 @@ namespace DailyFranchise.UI.Tests
             yield return null;
             Assert.That(lobbyView.PlayerDetail.IsOpen, Is.False);
             Assert.That(root.Q("lineup-3").ClassListContains("lobby-row--selected"), Is.True);
-            Assert.That(root.Q("bench-1").ClassListContains("lobby-row--swappable"), Is.True);
+            // Phase 40: 3루 자리에는 내야수만 — 벤치 외야수(김헌곤)는 강조되지 않고 내야수(안주형 2B)만
+            Assert.That(root.Q("bench-1").ClassListContains("lobby-row--swappable"), Is.False, "외야수는 3루에 못 선다");
+            Assert.That(root.Q("bench-5").ClassListContains("lobby-row--swappable"), Is.True);
             Assert.That(root.Q<Label>("lineup-hint").text, Does.StartWith("김영웅 선택됨"));
 
-            // 2) 벤치 1번 클릭 → 맞바꾸고 바로 다시 그림
-            Click(root.Q("bench-1"));
+            // 2) 외야수를 눌러도 바꾸지 않는다 → 벤치 5번(안주형) 클릭 → 맞바꾸고 바로 다시 그림
+            Assert.That(SeasonManager.Instance.CanSwapLineup(LineupSpot.Batting(3), LineupSpot.Bench(0)), Is.False);
+            Click(root.Q("bench-5"));
             yield return null;
-            Assert.That(Names(root.Q("roster"))[2], Is.EqualTo("김헌곤"));
+            Assert.That(Names(root.Q("roster"))[2], Is.EqualTo("안주형"));
             Assert.That(root.Q("lineup-3").Q<Label>(className: "col-pos").text, Is.EqualTo("3B"));
-            Assert.That(Names(root.Q("bench"))[0], Is.EqualTo("김영웅"));
+            Assert.That(Names(root.Q("bench"))[4], Is.EqualTo("김영웅"));
             Assert.That(root.Query(className: "lobby-row--selected").ToList(), Is.Empty, "교체 후 선택 해제");
-            Assert.That(File.ReadAllText(TestSavePath), Does.Contain("p_삼성_2024_김헌곤"), "세이브 파일에 덮어씀");
+            Assert.That(File.ReadAllText(TestSavePath), Does.Contain("p_삼성_2024_안주형"), "세이브 파일에 덮어씀");
 
             // 벤치끼리는 바꾸지 않고 선택만 옮긴다 (선택 중에는 행 클릭이 상세 대신 교체 대상 선택).
             lobbyView.ClickLineupSpot(LineupSpot.Bench(0));
@@ -738,14 +741,14 @@ namespace DailyFranchise.UI.Tests
             yield return null;
             Assert.That(root.Q("bench-2").ClassListContains("lobby-row--selected"), Is.True);
             Assert.That(root.Q("bench-1").ClassListContains("lobby-row--selected"), Is.False);
-            Assert.That(Names(root.Q("bench")), Is.EqualTo(new[] { "김영웅", "김현준", "윤정빈", "이병헌", "안주형" }));
+            Assert.That(Names(root.Q("bench")), Is.EqualTo(new[] { "김헌곤", "김현준", "윤정빈", "이병헌", "김영웅" }));
             Click(root.Q("bench-2")); // 취소
             yield return null;
 
             // 껐다 켜도 유지
             yield return RestartFromLobby();
             root = LobbyRoot();
-            Assert.That(Names(root.Q("roster"))[2], Is.EqualTo("김헌곤"));
+            Assert.That(Names(root.Q("roster"))[2], Is.EqualTo("안주형"));
             Assert.That(SeasonManager.Instance.Season.MyLineup, Is.Not.Null);
 
             // 3) 경기 진입: 좌측 타순과 타석 카드
@@ -757,10 +760,10 @@ namespace DailyFranchise.UI.Tests
             var gameRoot = game.GetComponent<UIDocument>().rootVisualElement;
             var lineupNames = gameRoot.Q("lineup").Query<Label>(className: "roster-name").ToList().Select(l => l.text).ToArray();
             Assert.That(lineupNames, Is.EqualTo(SeasonManager.Instance.MyRoster.Lineup.Select(p => p.Name)));
-            Assert.That(lineupNames[2], Is.EqualTo("김헌곤"));
-            Assert.That(gameRoot.Q("bench").Query<Label>(className: "roster-name").First().text, Is.EqualTo("김영웅"));
-            Assert.That(gameRoot.Q<Label>("batter-name").text, Is.EqualTo("김헌곤"), "장면의 3번 타자 자리");
-            Assert.That(game.Calculator.DecisionContext(game.Fixture.Branch, game.Fixture.Events).Batter.Name, Is.EqualTo("김헌곤"));
+            Assert.That(lineupNames[2], Is.EqualTo("안주형"));
+            Assert.That(gameRoot.Q("bench").Query<Label>(className: "roster-name").ToList().Last().text, Is.EqualTo("김영웅"));
+            Assert.That(gameRoot.Q<Label>("batter-name").text, Is.EqualTo("안주형"), "장면의 3번 타자 자리");
+            Assert.That(game.Calculator.DecisionContext(game.Fixture.Branch, game.Fixture.Events).Batter.Name, Is.EqualTo("안주형"));
         }
 
         [UnityTest]
@@ -1627,9 +1630,10 @@ namespace DailyFranchise.UI.Tests
             Assert.That(root.Q("rotation-2").ClassListContains("lobby-row--today"), Is.True, "다음 경기는 2번 선발");
             yield return CheckLobbyLayout("컨디션 1경기 후");
 
-            // 지친 3번 타자를 벤치(좋음)와 바꾸고 2경기 → 벤치로 간 선수는 회복, 새로 나간 선수는 하락
-            string tired = mine.AtOrder(3).Id, fresh = mine.Bench[0].Id;
-            Assert.That(manager.SwapLineup(LineupSpot.Batting(3), LineupSpot.Bench(0)), Is.True);
+            // 지친 3번 타자(3B)를 벤치 내야수(안주형 2B, 좋음)와 바꾸고 2경기 → 벤치로 간 선수는 회복, 새로 나간 선수는 하락
+            string tired = mine.AtOrder(3).Id, fresh = mine.Bench[4].Id;
+            Assert.That(manager.SwapLineup(LineupSpot.Batting(3), LineupSpot.Bench(0)), Is.False, "Phase 40: 외야수(김헌곤)는 3루 불가");
+            Assert.That(manager.SwapLineup(LineupSpot.Batting(3), LineupSpot.Bench(4)), Is.True);
             Assert.That(manager.GameRosterOf(manager.Season.MyTeam).StartingPitcher.Id, Is.EqualTo(mine.Starters[1].Id));
             yield return PlayDefaultGameAndReturn();
             Assert.That(manager.Season.ConditionOf(tired), Is.EqualTo(PlayerCondition.Normal), "지침(2) + 휴식 1 → 보통");

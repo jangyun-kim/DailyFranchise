@@ -373,7 +373,7 @@ namespace DailyFranchise.App
         {
             if (_loading || Season.InProgress != null) return false;
             var card = CurrentLineup;
-            if (card == null || !card.TrySwap(a, b)) return false;
+            if (card == null || !CanSwapLineup(card, a, b) || !card.TrySwap(a, b)) return false;
             var chemistry = ChemistryKinds();
             Season.MyLineup = card;
             PublishChemistry(chemistry);
@@ -381,6 +381,22 @@ namespace DailyFranchise.App
             LineupChanged?.Invoke();
             NewsChanged?.Invoke();
             return true;
+        }
+
+        /// <summary>
+        /// 두 자리를 맞바꿀 수 있는지 (Phase 40 — 이종 포지션 맞바꾸기 차단). <see cref="LineupCard.CanSwap"/>에 더해,
+        /// 벤치 ↔ 선발이면 벤치 선수가 그 타순의 수비 위치를 맡을 수 있어야 한다 (<see cref="PositionMatcher.FitOf"/>):
+        /// 포수 자리는 포수만, 내야·외야는 같은 수비군끼리, 지명타자 자리는 포수가 아닌 타자. 선발끼리는 타순만 바꾸므로 늘 된다.
+        /// </summary>
+        public bool CanSwapLineup(LineupSpot a, LineupSpot b) => CanSwapLineup(CurrentLineup, a, b);
+
+        bool CanSwapLineup(LineupCard card, LineupSpot a, LineupSpot b)
+        {
+            if (card == null || !card.CanSwap(a, b)) return false;
+            if (!a.IsBench && !b.IsBench) return true;
+            var (starter, bench) = a.IsBench ? (b, a) : (a, b);
+            var player = MyRoster == null ? null : LeagueRosterBook.AllOf(MyRoster).FirstOrDefault(p => p.Id == card.PlayerAt(bench));
+            return player != null && LineupFit.Allows(card.Batting[starter.Index].Position, player);
         }
 
         /// <summary>오프시즌 에이징 커브·은퇴 판정 난수 (Phase 29, 다른 난수와 분리). 테스트는 고정 Seed를 넣는다.</summary>

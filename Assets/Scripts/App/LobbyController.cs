@@ -298,7 +298,7 @@ namespace DailyFranchise.App
         {
             if (_card == null || !_card.Contains(spot) || _manager.Season.InProgress != null) return;
             _notice = null;
-            var result = _selection.Click(spot, _card.CanSwap);
+            var result = _selection.Click(spot, _manager.CanSwapLineup);
             if (result == LineupClick.Swap)
             {
                 var (first, second) = _selection.PendingSwap.Value;
@@ -944,7 +944,7 @@ namespace DailyFranchise.App
             {
                 if (!(row.userData is LineupSpot spot)) continue;
                 row.EnableInClassList("lobby-row--selected", selected == spot);
-                row.EnableInClassList("lobby-row--swappable", selected.HasValue && _card.CanSwap(selected.Value, spot));
+                row.EnableInClassList("lobby-row--swappable", selected.HasValue && _manager.CanSwapLineup(selected.Value, spot));
             }
 
             string name = selected.HasValue ? NameAt(selected.Value) : null;

@@ -743,16 +743,26 @@ namespace DailyFranchise.App
         /// <summary>교체 후보: 선발 타자면 벤치 선수 (같은 수비군 먼저, 컨디션 좋은 순), 벤치면 선발 타자 (컨디션 나쁜 순).</summary>
         public IReadOnlyList<PlayerData> SwapCandidates()
         {
-            var roster = _manager.MyRoster;
-            if (roster == null || PlayerId == null) return Array.Empty<PlayerData>();
-            var season = _manager.Season;
-            var lineupPlayer = roster.Lineup.FirstOrDefault(x => x.Id == PlayerId);
+            return SwapCandidatesFor(_manager.MyRoster, _manager.Season, PlayerId);
+        }
+
+        /// <summary>
+        /// 맞바꾸기 후보 (Phase 40, 순수 — EditMode 검증용). 선발 타자면 그 자리에 설 수 있는 벤치 선수(같은 위치 먼저 · 컨디션 좋은 순),
+        /// 벤치 선수면 그가 설 수 있는 선발 자리의 타자(컨디션 나쁜 순). 투수·퓨처스·모르는 선수면 빈 목록.
+        /// </summary>
+        public static IReadOnlyList<PlayerData> SwapCandidatesFor(TeamRoster roster, SeasonState season, string playerId)
+        {
+            if (roster == null || season == null || playerId == null) return Array.Empty<PlayerData>();
+            // Phase 40: 그 자리에 설 수 있는 선수만 (포수 ↔ 포수, 내야 ↔ 내야, 외야 ↔ 외야 — LineupFit). 같은 위치가 먼저.
+            var lineupPlayer = roster.Lineup.FirstOrDefault(x => x.Id == playerId);
             if (lineupPlayer != null)
-                return roster.Bench
-                    .OrderByDescending(b => PositionMatcher.FitOf(lineupPlayer.Position, b.Position) != PositionFit.None)
+                return roster.Bench.Where(b => LineupFit.Allows(lineupPlayer.Position, b))
+                    .OrderByDescending(b => PositionMatcher.FitOf(lineupPlayer.Position, b.Position))
                     .ThenByDescending(b => season.ConditionOf(b.Id)).ThenBy(b => b.Order).ToList();
-            if (roster.Bench.Any(x => x.Id == PlayerId))
-                return roster.Lineup.OrderBy(l => season.ConditionOf(l.Id)).ThenBy(l => l.Order).ToList();
+            var benchPlayer = roster.Bench.FirstOrDefault(x => x.Id == playerId);
+            if (benchPlayer != null)
+                return roster.Lineup.Where(l => LineupFit.Allows(l.Position, benchPlayer))
+                    .OrderBy(l => season.ConditionOf(l.Id)).ThenBy(l => l.Order).ToList();
             return Array.Empty<PlayerData>();
         }
 
@@ -771,8 +781,15 @@ namespace DailyFranchise.App
                 return;
             }
             bool starter = !spot.Value.IsBench;
-            title.text = starter ? "벤치 선수와 교체 (같은 수비군 · 컨디션 좋은 순)" : "선발 타자와 교체 (컨디션 나쁜 순)";
-            foreach (var c in SwapCandidates())
+            var candidates = SwapCandidates();
+            string label = PositionMatcher.Label(p.Position);
+            title.text = candidates.Count == 0
+                ? (starter ? $"{label} 자리를 맡을 벤치 선수가 없습니다 · 퓨처스 선수는 그 선수 상세 [계약·거취]에서 1군 등록"
+                    : $"{label}가 설 수 있는 선발 자리가 없습니다")
+                : starter ? (p.Position == PositionMatcher.Catcher ? "벤치 포수와 교체 (포수는 포수끼리 · 컨디션 좋은 순)"
+                    : "벤치 선수와 교체 (같은 수비군 · 컨디션 좋은 순)")
+                : "선발 타자와 교체 (설 수 있는 자리 · 컨디션 나쁜 순)";
+            foreach (var c in candidates)
             {
                 string id = c.Id;
                 int cond = _manager.Season.ConditionOf(id);
