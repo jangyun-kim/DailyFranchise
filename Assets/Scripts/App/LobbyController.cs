@@ -69,9 +69,15 @@ namespace DailyFranchise.App
         /// <summary>로비 뉴스 패널에 보이는 최신 뉴스 수.</summary>
         public const int NewsShown = 5;
 
+        /// <summary>런타임 툴팁 (마우스 호버·터치 길게 누르기).</summary>
+        public TouchTooltip Tooltips { get; private set; }
+
         void OnEnable()
         {
             _root = GetComponent<UIDocument>().rootVisualElement;
+            // Phase 43: 어떤 화면 비율에서도 16:9 레터박스, 터치 길게 누르기 툴팁
+            ScreenLetterbox.Apply(_root);
+            Tooltips = TouchTooltip.Install(_root);
             _start = _root.Q<Button>("start-game");
             _start.clicked += OnStartClicked;
             _mode = _root.Q<Button>("game-mode");

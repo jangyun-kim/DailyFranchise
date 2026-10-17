@@ -947,13 +947,16 @@ namespace DailyFranchise.UI.Tests
             var root = LobbyRoot();
             var rows = root.Q("roster").Children().Concat(root.Q("bench").Children()).ToList();
             Assert.That(rows.Count, Is.EqualTo(manager.MyRoster.Lineup.Count + manager.MyRoster.Bench.Count));
+            // Phase 43: 루트가 1920×1080 레터박스로 고정되어, 배치 모드의 작은 화면(배율 1 미만)에서는
+            // 요소 크기가 기기 픽셀 단위로 반올림된다. 정사각 비교는 기기 픽셀 1개만큼 허용한다.
+            float devicePixel = Mathf.Max(0.01f, root.panel.visualTree.layout.height / Mathf.Max(1, Screen.height));
             foreach (var row in rows)
             {
                 var face = row.Q(className: "col-face");
                 Assert.That(face, Is.Not.Null, row.name);
                 Assert.That(face.resolvedStyle.backgroundImage.sprite, Is.Not.Null, row.name + " 사진 또는 실루엣");
-                Assert.That(face.resolvedStyle.width, Is.EqualTo(face.resolvedStyle.height).Within(0.01f), "둥근 정사각 썸네일");
-                Assert.That(face.resolvedStyle.borderTopLeftRadius, Is.EqualTo(face.resolvedStyle.width / 2).Within(0.5f));
+                Assert.That(face.resolvedStyle.width, Is.EqualTo(face.resolvedStyle.height).Within(devicePixel + 0.01f), "둥근 정사각 썸네일");
+                Assert.That(face.resolvedStyle.borderTopLeftRadius, Is.EqualTo(face.resolvedStyle.width / 2).Within(0.5f + devicePixel));
             }
             foreach (var p in manager.MyRoster.Lineup)
                 Assert.That(root.Q("face-" + p.Id).resolvedStyle.backgroundImage.sprite, Is.SameAs(ImageResourceManager.Face(p.Id)));

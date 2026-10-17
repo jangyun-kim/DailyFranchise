@@ -353,6 +353,9 @@ namespace DailyFranchise.UI
             return $"컨디션 {PlayerCondition.Label(c)} ({c}/5)";
         }
 
+        /// <summary>런타임 툴팁 (마우스 호버·터치 길게 누르기).</summary>
+        public TouchTooltip Tooltips { get; private set; }
+
         void OnEnable()
         {
             Bind(GetComponent<UIDocument>().rootVisualElement);
@@ -851,6 +854,9 @@ namespace DailyFranchise.UI
         void Bind(VisualElement root)
         {
             _root = root;
+            // Phase 43: 어떤 화면 비율에서도 16:9 레터박스, 터치 길게 누르기 툴팁
+            ScreenLetterbox.Apply(root);
+            Tooltips = TouchTooltip.Install(root);
             _abs = new AbsZoneView(root);
             _field = new FieldView(root);
             _field.AnimationCompleted += OnFieldAnimationCompleted;
@@ -947,6 +953,7 @@ namespace DailyFranchise.UI
             // 투수 교체: 수비 이닝 작전 대기에서만 켜진다. 대타는 아직 범위 밖이라 계속 비활성.
             _pitchingButton = root.Q<Button>("tactic-pitching");
             _pitchingButton.clicked += OpenBullpen;
+            _pitchingButton.AddToClassList(TouchTooltip.HoldClass);
             _pitchingButton.RegisterCallback<PointerEnterEvent>(_ => { _previewPitching = true; RenderTactics(); });
             _pitchingButton.RegisterCallback<PointerLeaveEvent>(_ => { _previewPitching = false; RenderTactics(); });
             _bullpenModal = root.Q("bullpen-modal");
@@ -1002,6 +1009,8 @@ namespace DailyFranchise.UI
             var button = _root.Q<Button>(buttonName);
             button.text = TacticText.Label(kind);
             button.clicked += () => ChooseTactic(kind);
+            // 터치: 누르고 있으면 PointerEnter 미리보기, 길게 누른 뒤 떼면 실행하지 않는다.
+            button.AddToClassList(TouchTooltip.HoldClass);
             button.RegisterCallback<PointerEnterEvent>(_ => PreviewTactic(kind));
             button.RegisterCallback<PointerLeaveEvent>(_ => PreviewTactic(null));
             _tacticButtons[kind] = button;
