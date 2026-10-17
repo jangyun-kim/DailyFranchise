@@ -31,8 +31,10 @@ namespace DailyFranchise.UI.Tests
                 "KIA 타이거즈", "삼성 라이온즈", "LG 트윈스", "두산 베어스", "KT 위즈",
                 "SSG 랜더스", "롯데 자이언츠", "한화 이글스", "NC 다이노스", "키움 히어로즈",
             }));
-            Assert.That(db.Players.Count, Is.EqualTo(61), "파이썬 파이프라인 내보내기: 삼성 2024 전체 선수단");
-            Assert.That(db.Players.Select(p => p.Team).Distinct(), Is.EqualTo(new[] { "삼성 라이온즈" }), "약칭 '삼성' → 정식 이름");
+            // Phase 40.5: 파이썬 파이프라인 내보내기 — 2024 KBO 10개 구단 전체 선수단 (약칭 → 정식 이름)
+            Assert.That(db.Players.Count, Is.EqualTo(589));
+            Assert.That(db.Players.Select(p => p.Team).Distinct(), Is.EquivalentTo(db.Teams.Select(t => t.Name)), "10개 구단 모두 선수가 있다");
+            Assert.That(db.Players.Count(p => p.Team == "삼성 라이온즈"), Is.EqualTo(61), "삼성은 Phase 26.5와 같은 61명");
             Assert.That(db.Players.Select(p => p.Id), Is.Unique);
 
             var samsung = db.GetRoster("삼성 라이온즈");
@@ -44,7 +46,10 @@ namespace DailyFranchise.UI.Tests
             Assert.That((lead.BattingAverage, lead.HomeRuns, lead.Ops, lead.War), Is.EqualTo((0.343, 33, 1.044, 4.39)));
             Assert.That(samsung.StartingPitcher.Era, Is.EqualTo(3.43));
 
-            Assert.That(db.GetRoster("LG 트윈스"), Is.Null, "선수 데이터가 아직 없는 구단");
+            var lg = db.GetRoster("LG 트윈스");
+            Assert.That(lg, Is.Not.Null, "Phase 40.5: 타 구단도 실제 선수단");
+            Assert.That(lg.Lineup.Count, Is.EqualTo(9));
+            Assert.That(lg.Reserves, Is.Not.Empty, "1군/퓨처스 분리가 타 구단에도 적용"); 
             Assert.That(db.FindTeam("삼성 라이온즈").ShortName, Is.EqualTo("삼성"));
             Assert.That(db.FindPlayer("p_삼성_2024_구자욱").Name, Is.EqualTo("구자욱"));
             Assert.That(db.FindPlayer("WV003"), Is.Null, "가상 선수 데이터는 런타임에서 읽지 않는다");

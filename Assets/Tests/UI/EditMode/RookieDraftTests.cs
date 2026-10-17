@@ -122,22 +122,28 @@ namespace DailyFranchise.UI.Tests
             var summary = s.TransitionToNextSeason(Book(s), new SeededRandom(2027));
 
             var draft = summary.Draft;
-            Assert.That(draft.Picks.Count, Is.InRange(RookieDraft.MinPicks, RookieDraft.MaxPicks), "실제 데이터는 삼성 1개 구단");
-            Assert.That(draft.MyPicks.Select(p => p.Round), Is.EqualTo(Enumerable.Range(1, draft.Picks.Count)));
+            // Phase 40.5: 실제 데이터 10개 구단이 모두 3~5명씩 지명한다
+            int teams = Real.Teams.Count;
+            Assert.That(draft.Picks.Select(p => p.Team).Distinct().Count(), Is.EqualTo(teams));
+            Assert.That(draft.Picks.Count, Is.InRange(RookieDraft.MinPicks * teams, RookieDraft.MaxPicks * teams));
+            Assert.That(draft.MyPicks.Count, Is.InRange(RookieDraft.MinPicks, RookieDraft.MaxPicks));
+            Assert.That(draft.MyPicks.Select(p => p.Round), Is.EqualTo(Enumerable.Range(1, draft.MyPicks.Count)));
             Assert.That(s.Rookies.Select(r => r.Id), Is.EqualTo(draft.Picks.Select(p => p.Player.Id)));
-            Assert.That(s.Rookies.All(r => r.Team == Samsung && r.Age >= 18 && r.Age <= 22 && r.Id.StartsWith("p_rookie_2027_")), Is.True,
+            Assert.That(s.Rookies.All(r => r.Age >= 18 && r.Age <= 22 && r.Id.StartsWith("p_rookie_2027_")), Is.True,
                 "새 시즌 2027 신인");
+            Assert.That(s.Rookies.Where(r => r.Team == Samsung).Select(r => r.Id), Is.EqualTo(draft.MyPicks.Select(p => p.Player.Id)));
             Assert.That(Real.Players.Any(RookieGenerator.IsRookie), Is.False, "마스터 DB는 그대로");
 
             var after = Book(s).Get(Samsung);
-            Assert.That(after.Reserves.Where(RookieGenerator.IsRookie).Select(p => p.Id), Is.EquivalentTo(s.Rookies.Select(r => r.Id)),
+            Assert.That(after.Reserves.Where(RookieGenerator.IsRookie).Select(p => p.Id), Is.EquivalentTo(draft.MyPicks.Select(p => p.Player.Id)),
                 "신인은 퓨처스로 (1군 26명 정원·페이롤에 넣지 않는다)");
             Assert.That(RosterLimits.CountOf(after), Is.LessThanOrEqualTo(RosterLimits.MaxRoster));
-            Assert.That(summary.Text, Does.EndWith($"신인 {draft.Picks.Count}명"));
+            Assert.That(summary.Text, Does.EndWith($"신인 {draft.MyPicks.Count}명"));
 
             var news = s.LatestNews(1).Single();
             Assert.That(news.Kind, Is.EqualTo(NewsKind.Draft));
-            Assert.That(news.Text, Does.StartWith("[드래프트] 삼성 라이온즈, 1라운드에서 특급 유망주 " + draft.Picks[0].Player.Name + "(")
+            news = s.LatestNews(RookieDraft.MaxDraftNews).Last(); // 뉴스는 내 구단 1라운드 먼저 (가장 오래된 항목)
+            Assert.That(news.Text, Does.StartWith("[드래프트] 삼성 라이온즈, 1라운드에서 특급 유망주 " + draft.MyPicks[0].Player.Name + "(")
                 .And.EndWith(") 지명!"));
         }
 
@@ -148,7 +154,7 @@ namespace DailyFranchise.UI.Tests
             var s = FinishedSeason();
             var draft = s.TransitionToNextSeason(Book(s), new SeededRandom(1)).Draft;
             bool shortstopRetired = s.ProgressionOf(IdOf("이재현"))?.Retired == true;
-            if (!shortstopRetired) Assert.That(draft.Picks[0].Player.Position, Is.EqualTo("SS"));
+            if (!shortstopRetired) Assert.That(draft.MyPicks[0].Player.Position, Is.EqualTo("SS"));
 
             var depth = RookieDraft.TargetDepth.Keys.ToDictionary(k => k, k => RookieDraft.TargetDepth[k]);
             depth["C"] = 0;
@@ -161,6 +167,7 @@ namespace DailyFranchise.UI.Tests
             var s = FinishedSeason();
             s.TransitionToNextSeason(Book(s), new SeededRandom(4));
             var first = s.Rookies.ToList();
+            var firstMine = first.Where(r => r.Team == Samsung).ToList();
             while (!s.IsSeasonFinished)
             {
                 s.StartNextGame();
@@ -170,7 +177,7 @@ namespace DailyFranchise.UI.Tests
             Assert.That(s.Rookies.Take(first.Count), Is.EqualTo(first), "지난 신인은 그대로");
             Assert.That(s.Rookies.Count, Is.GreaterThanOrEqualTo(first.Count + RookieDraft.MinPicks));
             var book = Book(s).Get(Samsung);
-            foreach (var r in first.Where(r => s.ProgressionOf(r.Id)?.Retired != true))
+            foreach (var r in firstMine.Where(r => s.ProgressionOf(r.Id)?.Retired != true))
             {
                 var now = book.Reserves.Concat(LeagueRosterBook.AllOf(book)).Single(p => p.Id == r.Id);
                 Assert.That(now.Age, Is.EqualTo(r.Age + 1), r.Name);
@@ -195,7 +202,9 @@ namespace DailyFranchise.UI.Tests
                 Assert.That((b.BattingAverage, b.OnBasePercentage, b.Ops, b.War, b.Era, b.OpponentAverage, b.HomeRunsPer9, b.Fip, b.Whip),
                     Is.EqualTo((a.BattingAverage, a.OnBasePercentage, a.Ops, a.War, a.Era, a.OpponentAverage, a.HomeRunsPer9, a.Fip, a.Whip)));
             }
-            Assert.That(Book(loaded).Get(Samsung).Reserves.Count(RookieGenerator.IsRookie), Is.EqualTo(s.Rookies.Count));
+            Assert.That(Book(loaded).Get(Samsung).Reserves.Count(RookieGenerator.IsRookie), Is.EqualTo(s.Rookies.Count(r => r.Team == Samsung)));
+            Assert.That(Book(loaded).Rosters.Sum(r => r.Reserves.Count(RookieGenerator.IsRookie)), Is.EqualTo(s.Rookies.Count),
+                "타 구단 신인도 저장·불러오기 뒤 각 구단 퓨처스에");
 
             var old = JsonUtility.FromJson<SeasonSaveData>(json.Replace("\"Rookies\"", "\"Rookies_old\""));
             Assert.That(SeasonState.FromSaveData(old).Rookies, Is.Empty, "Phase 30 이전 파일");

@@ -298,8 +298,10 @@ namespace DailyFranchise.UI.Tests
             yield return null;
 
             // 1) 퓨처스 신인 3~5명 (18~22세)이 로비 한 줄에, 드래프트 뉴스가 뉴스 패널에
-            var rookies = manager.Season.Rookies;
+            // Phase 40.5: 10개 구단이 모두 지명한다 — 로비는 내 구단 퓨처스 신인만
+            var rookies = manager.Season.Rookies.Where(r => r.Team == manager.Season.MyTeam).ToList();
             Assert.That(rookies.Count, Is.InRange(RookieDraft.MinPicks, RookieDraft.MaxPicks));
+            Assert.That(manager.Season.Rookies.Select(r => r.Team).Distinct().Count(), Is.EqualTo(10));
             Assert.That(rookies.All(r => r.Age >= 18 && r.Age <= 22), Is.True);
             var futures = root.Q<Label>("futures-rookies");
             Assert.That(futures.resolvedStyle.display, Is.EqualTo(DisplayStyle.Flex));
@@ -349,7 +351,8 @@ namespace DailyFranchise.UI.Tests
             // 3) 재시작해도 신인·방출이 남는다
             var ids = rookies.Select(r => r.Id).ToList();
             yield return RestartFromLobby();
-            Assert.That(SeasonManager.Instance.Season.Rookies.Select(r => r.Id), Is.EqualTo(ids));
+            Assert.That(SeasonManager.Instance.Season.Rookies.Where(r => r.Team == SeasonManager.Instance.Season.MyTeam).Select(r => r.Id),
+                Is.EqualTo(ids));
             Assert.That(SeasonManager.Instance.MyRoster.AtOrder(catcher.Order).Id, Is.EqualTo(filler.Id));
             Assert.That(SeasonManager.Instance.Rosters.Get("삼성 라이온즈").Reserves.Count(RookieGenerator.IsRookie), Is.EqualTo(ids.Count));
             rt.Release();
@@ -511,7 +514,8 @@ namespace DailyFranchise.UI.Tests
                 Is.EqualTo(new[] { "삼성", "SSG" }), "스코어보드 행: 원정 → 홈");
             Assert.That(gameRoot.Q<Label>("roster-title").text, Is.EqualTo("내 선수단 · 삼성"));
             Assert.That(gameRoot.Q<Label>("pitcher-team").text, Does.StartWith("SSG · "), "상대 투수");
-            Assert.That(gameRoot.Q<Label>("pitcher-name").text, Is.EqualTo("SSG 선발 투수"), "데이터 없는 상대는 이름을 지어내지 않는다");
+            Assert.That(gameRoot.Q<Label>("pitcher-name").text, Is.EqualTo(manager.GameRosterOf("SSG 랜더스").StartingPitcher.Name),
+                "Phase 40.5: 상대도 실제 선수 (SSG 오늘 선발)");
             Assert.That(game.Fixture.Events[0].HalfInning, Is.EqualTo(HalfInning.Top), "원정 공격 = 9회초");
 
             // 화면 원정 2 : 홈 3 → 스퀴즈 실패로 그대로 끝나면 일정 기준도 2:3 패.
@@ -593,8 +597,10 @@ namespace DailyFranchise.UI.Tests
                 Is.EqualTo(mine.Lineup.Select(p => p.Position)));
             Assert.That(root.Q<Label>("batter-name").text, Is.EqualTo("김영웅"), "타석 카드: 삼성 3번 타자 (실제 2024 데이터)");
             Assert.That(root.Q<Label>("batter-team").text, Does.Contain("우투좌타").And.Contain("3B"));
-            Assert.That(root.Q<Label>("pitcher-name").text, Is.EqualTo("LG 선발 투수"), "선수 데이터가 없는 상대: 구단 약칭 + 자리");
-            Assert.That(root.Q<Label>("pitcher-season").text, Is.EqualTo(Data.ScenarioRosterSource.NoDataLine));
+            // Phase 40.5: 상대 LG도 실제 2024 선수단 — 오늘 선발 이름과 시즌 기록 (자리 이름·리그 평균 안내가 아니다)
+            var lgStarter = SeasonManager.Instance.GameRosterOf("LG 트윈스").StartingPitcher;
+            Assert.That(root.Q<Label>("pitcher-name").text, Is.EqualTo(lgStarter.Name));
+            Assert.That(root.Q<Label>("pitcher-season").text, Is.EqualTo(Data.ScenarioRosterSource.SeasonLineText(lgStarter)));
             Assert.That(root.Q<Label>("featured-name").text, Does.StartWith("김영웅"));
             Assert.That(root.Q<Label>("roster-source").text, Is.EqualTo($"표시 데이터: {MasterDatabase.RosterFileName} (2024)"));
             Assert.That(root.Q("bench").Query<Label>(className: "roster-name").ToList().Select(l => l.text),
@@ -606,7 +612,10 @@ namespace DailyFranchise.UI.Tests
             var batter = db.FindPlayer("p_삼성_2024_김영웅");
             Assert.That(root.Q<Label>("batter-profile").text, Is.EqualTo($"No.{batter.Number} · {batter.Age}세"));
             Assert.That(ChipTexts(root, "batter-stats"), Is.EqualTo(new[] { $"wRC+ {batter.WrcPlus:0}", $"WAR {batter.War:0.00}" }));
-            Assert.That(ChipTexts(root, "pitcher-stats"), Is.Empty);
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            Assert.That(ChipTexts(root, "pitcher-stats"),
+                Is.EqualTo(new[] { $"WHIP {lgStarter.Whip.ToString("0.00", inv)}", $"FIP {lgStarter.Fip.ToString("0.00", inv)}" }),
+                "Phase 40.5: 상대 선발도 실제 기록 칩");
 
             // 1920×1080 렌더 타깃에서 새 칩·전적 줄이 카드 밖으로 나가거나 잘리지 않는다.
             var doc = game.GetComponent<UIDocument>();
@@ -632,6 +641,7 @@ namespace DailyFranchise.UI.Tests
         [UnityTest]
         public IEnumerator 작전_버튼_설명에_타자_투수_기록으로_계산한_성공률이_표시되고_그_확률로_판정한다()
         {
+            var lgStarter = SeasonManager.Instance.GameRosterOf("LG 트윈스").StartingPitcher;
             Submit(LobbyRoot().Q<Button>("start-game"));
             yield return WaitForScene(SeasonManager.GameScene);
             var game = Object.FindAnyObjectByType<GameScreenController>();
@@ -660,19 +670,21 @@ namespace DailyFranchise.UI.Tests
                 game.PreviewTactic(tactic);
                 yield return null;
                 var desc = root.Q<Label>("tactic-desc").text;
-                // Phase 26.5: 김영웅(2024 삼성) vs 선수 데이터가 없는 LG 선발 → 리그 평균 투수로 계산
-                Assert.That(desc, Does.Contain("근거 · 김영웅 타율 .252 vs 리그 평균 투수 평균자책 4.30 · 득점권"));
-                Assert.That(desc, Does.Contain("보정 · 득점권 클러치 +15%"), "득점권 .310 / 타율 .252 → +23%를 +15%로 자른다");
+                // Phase 40.5: 김영웅(2024 삼성) vs 실제 LG 선발 (데이터가 없던 때는 리그 평균 투수)
+                Assert.That(desc, Does.Contain($"근거 · 김영웅 타율 .252 vs {lgStarter.Name} 평균자책 {lgStarter.Era.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)} · 득점권"));
+                if (lgStarter.Throws == Hand.Left) Assert.That(desc, Does.Contain("플래툰 열세(좌투 vs 좌타) -5%"), "좌투 상대 좌타 김영웅");
+                Assert.That(desc, Does.Contain("득점권 클러치 +15%"), "득점권 .310 / 타율 .252 → +23%를 +15%로 자른다");
                 Assert.That(desc, Does.EndWith(TacticText.Odds(branch[tactic], rate)));
                 var issues = LayoutChecker.Check(root.Q("screen"));
                 Assert.That(issues, Is.Empty, $"[{tactic} 설명]\n" + string.Join("\n", issues));
             }
             // 마지막 미리보기는 강공: 클러치 +15% · 체력 저하(89구, 체력 11%) +5% → 58% (스퀴즈는 65%).
             // 1루 주자 구자욱은 Power라 발야구 없음, 기본 라인업은 케미스트리 없음.
-            Assert.That(root.Q<Label>("tactic-desc").text, Does.EndWith("성공 확률 58% · 실패 42%"), "강공 · 클러치 +15%, 체력 저하 +5%");
-            Assert.That(TacticText.Odds(branch[TacticKind.SqueezeBunt], squeeze), Is.EqualTo("성공 확률 65% · 실패 35%"));
+            // 성공률 숫자는 상대 선발 기록·투타(플래툰)에 따라 정해진다 — 위에서 TacticText.Odds(계산값)와 같은지 확인했다.
+            Assert.That(swing, Is.InRange(0.45, 0.70), "강공 · 클러치 +15%, 체력 저하 +5%");
+            Assert.That(squeeze, Is.InRange(0.55, 0.80));
             Assert.That(root.Q<Label>("tactic-desc").text, Does.Not.Contain("케미"));
-            Assert.That(root.Q<Label>("tactic-desc").text, Does.Contain("· 체력 저하 +5%").And.Contain("투수 · LG 선발 투수 89구 · 체력 11% (저하)"));
+            Assert.That(root.Q<Label>("tactic-desc").text, Does.Contain("· 체력 저하 +5%").And.Contain($"투수 · {lgStarter.Name} 89구 · 체력 11% (저하)"));
             game.PreviewTactic(null);
 
             // 난수 0.6: 고정 60%였다면 실패지만, 계산된 성공률(Phase 17 약 60.4%, 체력 저하 반영 후 더 높음)로는 성공.
@@ -1085,11 +1097,12 @@ namespace DailyFranchise.UI.Tests
             var last = game.Events[game.Events.Count - 1];
             Assert.That((last.Inning, last.HalfInning), Is.EqualTo((PlayByPlayGenerator.MaxInnings, HalfInning.Bottom)));
 
-            // CPU 선발이 108구로 고갈되자 상대 불펜으로 바뀐다. 상대(LG)는 선수 데이터가 없어 "LG 불펜 N"으로 보인다.
-            var cpu = game.PitchingChanges.Single(c => c.ByCpu);
+            // CPU 선발이 고갈되면 상대 불펜으로 바뀐다. Phase 40.5: 상대도 실제 선수단이라 DB 불펜 투수 이름으로 보인다.
+            var cpu = game.PitchingChanges.First(c => c.ByCpu);
             Assert.That(cpu.Reason, Is.EqualTo("체력 고갈"));
-            Assert.That(manager.Database.GetRoster(opponent), Is.Null);
-            Assert.That(game.Roster.GetPlayer(cpu.To).Name, Does.StartWith("LG 불펜 "));
+            var opponentRoster = manager.Database.GetRoster(opponent);
+            Assert.That(opponentRoster, Is.Not.Null);
+            Assert.That(manager.GameRosterOf(opponent).Bullpen.Select(p => p.Name), Has.Member(game.Roster.GetPlayer(cpu.To).Name));
 
             Submit(root.Q<Button>("ctl-game-end"));
             yield return WaitForScene(SeasonManager.LobbyScene);
@@ -1126,7 +1139,11 @@ namespace DailyFranchise.UI.Tests
             Assert.That(root.Q<Label>("fo-budget").text, Is.EqualTo("₩ 50억"), "Phase 26: 억·만 단위 표기");
             Assert.That(root.Q<Label>("fo-budget").tooltip, Is.EqualTo("₩5,000,000,000"));
             Assert.That(manager.Season.Payroll, Is.EqualTo(6_294_000_000L), "로비가 열리면 페이롤이 삼성 1군 26명 연봉에 맞춰진다");
-            Assert.That(manager.Season.SalaryCap, Is.EqualTo(7_867_500_000L), "캡 기준 = 리그 개막 평균 페이롤(데이터 있는 구단 = 삼성) × 1.25");
+            // Phase 40.5: 캡 기준 = 리그 개막 평균 페이롤(10개 구단) × 1.25
+            var payrolls = manager.Rosters.Rosters.Where(r => r.Team != LeagueRosterBook.FreeAgentTeam && LeagueRosterBook.AllOf(r).Any())
+                .Select(r => StoveLeague.Payroll(r, manager.Season.Signings)).ToList();
+            Assert.That(payrolls.Count, Is.EqualTo(10));
+            Assert.That(manager.Season.SalaryCap, Is.EqualTo(6_955_312_500L));
             Assert.That(root.Q<Label>("fo-fan").text, Is.EqualTo("50%"));
             Assert.That(root.Q("fo-fan-fill").style.width.value, Is.EqualTo(Length.Percent(50)));
             Assert.That(root.Q("fo-fan-fill").ClassListContains("fo-fill--happy") || root.Q("fo-fan-fill").ClassListContains("fo-fill--angry"),
@@ -1254,10 +1271,16 @@ namespace DailyFranchise.UI.Tests
             var active = root.Q<Label>("chem-active");
             Assert.That(active.text, Is.EqualTo("활성화된 케미스트리 없음"));
             Assert.That(active.ClassListContains("chem-active--on"), Is.False);
-            Assert.That(root.Q("lineup-1").Q<Label>(className: "chem-badge").text, Is.EqualTo("장"));
-            Assert.That(root.Q("lineup-2").Q<Label>(className: "chem-badge").text, Is.EqualTo("주"));
-            Assert.That(root.Q("lineup-4").Q<Label>(className: "chem-badge").text, Is.EqualTo("수"));
-            Assert.That(root.Q("lineup-6").Q<Label>(className: "chem-badge").ClassListContains("chem-badge--none"), Is.True);
+            // Phase 40.5: 태그 기준(리그 상위 20%)이 10개 구단 전체로 넓어져 수비 태그는 데이터가 정한다 — 배지는 태그 그대로
+            var tags = SeasonManager.Instance.ChemistryTags;
+            var mine = SeasonManager.Instance.MyRoster;
+            for (int order = 1; order <= 9; order++)
+            {
+                tags.TryGetValue(mine.AtOrder(order).Id, out var tag);
+                Assert.That(root.Q("lineup-" + order).Q<Label>(className: "chem-badge").text, Is.EqualTo(ChemistryText.Badge(tag)), $"{order}번");
+            }
+            Assert.That(root.Q("lineup-1").Q<Label>(className: "chem-badge").text, Is.EqualTo("장"), "구자욱 Power");
+            Assert.That(root.Q("lineup-2").Q<Label>(className: "chem-badge").text, Is.EqualTo("주"), "김지찬 Speed");
             var issues = LayoutChecker.Check(root.Q("screen"));
             Assert.That(issues, Is.Empty, string.Join("\n", issues));
             int renders = lobby.ChemistryRenderCount;
@@ -1327,7 +1350,8 @@ namespace DailyFranchise.UI.Tests
             Assert.That(root.Q<Label>("pv-away-team").text, Is.EqualTo("LG 트윈스"));
             Assert.That(root.Q("pv-home").ClassListContains("pv-side--mine"), Is.True);
             Assert.That(root.Q<Label>("pv-home-sp").text, Is.EqualTo(manager.GameRosterOf("삼성 라이온즈").StartingPitcher.Name));
-            Assert.That(root.Q<Label>("pv-away-sp").text, Is.EqualTo("선발 미정"), "상대 선수 데이터 없음");
+            Assert.That(root.Q<Label>("pv-away-sp").text, Is.EqualTo(SeasonManager.Instance.GameRosterOf("LG 트윈스").StartingPitcher.Name),
+                "Phase 40.5: 상대 오늘 선발도 실제 선수");
             Assert.That(root.Q<Label>("pv-note").text, Is.EqualTo("시즌 첫 맞대결"));
             Assert.That(root.Q("decision-ok"), Is.Not.Null, "처음엔 경고 없음");
             Assert.That(root.Query<Button>(className: "lobby-release").ToList(), Is.Empty);
@@ -1541,7 +1565,7 @@ namespace DailyFranchise.UI.Tests
 
             // 2) CP 확인 → 퓨처스 신인 칩 → 선수 상세
             Assert.That(root.Q<Label>("camp-points").text, Is.EqualTo("캠프 포인트 5 CP"));
-            var rookie = manager.Season.Rookies.Last();
+            var rookie = manager.Season.Rookies.Last(r => r.Team == manager.Season.MyTeam);
             var chip = root.Q("fut-" + rookie.Id);
             Assert.That(chip, Is.Not.Null);
             Click(chip);

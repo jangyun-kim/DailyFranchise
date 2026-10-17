@@ -32,8 +32,12 @@ namespace DailyFranchise.UI.Tests
             Assert.That((home.Hits, home.Errors, home.Walks), Is.EqualTo((game.HomeHits, game.HomeErrors, game.HomeWalks)));
             Assert.That(away.RunsByInning.Sum(), Is.EqualTo(game.Fixture.AwayScoreBefore));
             Assert.That(home.RunsByInning.Sum(), Is.EqualTo(game.Fixture.HomeScoreBefore));
+            // Phase 40.5: 상대(LG)도 실제 불펜이 있어 선발은 퀵 시뮬 구간에서 강판한다 (Phase 38 투수 운용)
+            var starter = game.OpponentStaff.Appearances[0];
             Assert.That(data.GetPlayer(Fixture8thBottom.Pitcher).TodayLine,
-                Is.EqualTo($"오늘 7이닝 · {game.Fixture.HomeScoreBefore}실점"), "상대 선발 실점 = 내 구단 득점");
+                Is.EqualTo($"오늘 {starter.Innings}이닝 · {starter.RunsAllowed}실점"), "상대 선발의 퀵 시뮬 구간 기록");
+            Assert.That(game.OpponentStaff.Appearances.Sum(a => a.RunsAllowed), Is.EqualTo(game.Fixture.HomeScoreBefore),
+                "상대 투수진 실점 합 = 내 구단 득점");
         }
 
         [Test]

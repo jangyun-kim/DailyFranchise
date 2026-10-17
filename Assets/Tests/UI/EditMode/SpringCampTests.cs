@@ -111,7 +111,7 @@ namespace DailyFranchise.UI.Tests
             var s = SeasonState.CreateDummy();
             FinishSeason(s);
             s.TransitionToNextSeason(Book(s), new SeededRandom(2027));
-            var rookie = s.Rookies.First();
+            var rookie = s.Rookies.First(r => r.Team == Samsung); // Phase 40.5: 타 구단도 지명하므로 내 구단 신인
             Assert.That(Book(s).Get(Samsung).Reserves.Any(p => p.Id == rookie.Id), Is.True);
             var o = SpringCamp.Train(s, Book(s), rookie.Id);
             Assert.That(o.Trained, Is.True);

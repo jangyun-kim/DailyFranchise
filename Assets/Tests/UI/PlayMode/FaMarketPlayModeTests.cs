@@ -124,7 +124,7 @@ namespace DailyFranchise.UI.Tests
         }
 
         [UnityTest]
-        public IEnumerator FA_버튼으로_시장을_열면_재정과_정원이_보이고_다른_구단_데이터가_없으면_시장은_비어_있다()
+        public IEnumerator FA_버튼으로_시장을_열면_재정과_정원이_보이고_처음엔_자유계약_선수가_없고_타_구단_명단은_9개_구단이다()
         {
             var r = RenderAt1080();
             yield return null;
@@ -138,16 +138,41 @@ namespace DailyFranchise.UI.Tests
             var fa = Lobby.FaMarket;
             Assert.That(fa.IsOpen, Is.True);
             Assert.That(Root.Q("fa-modal").resolvedStyle.display, Is.EqualTo(DisplayStyle.Flex));
-            Assert.That(Root.Q("fa-list").childCount, Is.Zero, "실제 데이터는 삼성 1개 구단 → 처음엔 데려올 선수가 없다");
+            Assert.That(Root.Q("fa-list").childCount, Is.Zero, "10개 구단 모두 소속 선수 → 처음엔 자유계약 선수가 없다 (방출하면 생긴다)");
             Assert.That(Text("fa-market-note"), Is.EqualTo("시장에 남은 선수가 없습니다."));
             Assert.That(fa.SelectedId, Is.Null);
             Assert.That(Text("fa-player-name"), Is.EqualTo("—"));
             Assert.That(Root.Q<Button>("fa-negotiate").enabledSelf, Is.False);
             Assert.That(Root.Q<Button>("fa-ceiling").enabledSelf, Is.False);
             Assert.That(Text("fa-budget"), Is.EqualTo("예산 ₩ 50억"));
-            Assert.That(Text("fa-cap"), Is.EqualTo("캡 여유 ₩15억 7,350만"), "캡 78.675억 − 페이롤 62.94억");
+            // Phase 40.5: 캡 = 10개 구단 평균 페이롤 × 1.25 = 69.553억 − 삼성 페이롤 62.94억
+            Assert.That(Text("fa-cap"), Is.EqualTo("캡 여유 ₩6억 6,131만"));
             Assert.That(Text("fa-roster"), Is.EqualTo("1군 26 / 26 · 벤치 5/5 · 불펜 7/7"));
             AssertLayout("빈 시장");
+
+            // 타 구단 명단: 9개 구단, 한 쪽에 한 구단(많으면 13명씩 나눔) · ◀ ▶ 쪽 넘김
+            fa.ShowTab(FaTab.Trade);
+            yield return null;
+            var targets = SeasonManager.Instance.TradeTargets;
+            Assert.That(targets.Select(t => t.Team).Distinct().Count(), Is.EqualTo(9), "내 구단 빼고 9개 구단");
+            Assert.That(targets.Count, Is.GreaterThan(400));
+            Assert.That(fa.TradePageCount, Is.GreaterThanOrEqualTo(9 * 2), "구단마다 50명 이상 → 여러 쪽");
+            Assert.That(Root.Q("fa-trade-list").Query(className: "fa-row--item").ToList().Count, Is.InRange(1, FaMarketView.TradePageSize));
+            Assert.That(Text("fa-trade-page"), Is.EqualTo($"1 / {fa.TradePageCount}쪽"));
+            string firstPage = Root.Q("fa-trade-list")[0].Q<Label>().text;
+            AssertLayout("타 구단 명단 1쪽");
+            Submit(Root.Q<Button>("fa-trade-next"));
+            yield return null;
+            Assert.That(fa.TradePage, Is.EqualTo(1));
+            Assert.That(Text("fa-trade-page"), Is.EqualTo($"2 / {fa.TradePageCount}쪽"));
+            for (int i = 0; i < fa.TradePageCount + 3; i++) fa.StepTradePage(1);
+            yield return null;
+            Assert.That(fa.TradePage, Is.EqualTo(fa.TradePageCount - 1), "끝에서 멈춘다");
+            Assert.That(Root.Q<Button>("fa-trade-next").enabledSelf, Is.False);
+            Assert.That(Root.Q("fa-trade-list")[0].Q<Label>().text, Is.Not.EqualTo(firstPage), "다른 구단 쪽");
+            AssertLayout("타 구단 명단 마지막 쪽");
+            fa.ShowTab(FaTab.Market);
+            yield return null;
 
             Submit(Root.Q<Button>("fa-close"));
             yield return null;
