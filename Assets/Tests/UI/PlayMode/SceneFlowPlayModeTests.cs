@@ -1497,7 +1497,9 @@ namespace DailyFranchise.UI.Tests
             var report = manager.LastReport;
             Assert.That(report.Champion, Is.EqualTo(manager.Season.MyTeam));
             Assert.That(report.ChampionAward.Value.BudgetDelta, Is.EqualTo(SeasonState.ChampionPrize));
-            Assert.That(manager.Season.FanApproval, Is.EqualTo(100));
+            // Phase 42: 우승 팬 만족도 100% → 팬덤 레벨업 (게이지 60%, 특별 예산·[특전] 뉴스)
+            Assert.That(report.FandomLevelUp, Is.Not.Null);
+            Assert.That((manager.Season.FandomLevel, manager.Season.FanApproval), Is.EqualTo((report.FandomLevelUp.Level, FandomRules.LevelResetApproval)));
             Assert.That(manager.Season.Phase, Is.EqualTo(SeasonPhase.OffSeason));
             var lobby = Object.FindAnyObjectByType<LobbyController>();
             lobby.GetComponent<UIDocument>().panelSettings = panel; // 경기 화면을 다녀와 새로 뜬 로비에도 1080p 렌더 대상

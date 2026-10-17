@@ -48,8 +48,10 @@ namespace DailyFranchise.UI.Tests
             var r = Play(s, HomeWin);
             Assert.That(r.MyOutcome, Is.EqualTo(GameOutcome.Win));
             Assert.That((r.BudgetBefore, r.BudgetAfter, s.Budget), Is.EqualTo((5_000_000_000L, 5_050_000_000L, 5_050_000_000L)));
-            Assert.That((r.FanApprovalBefore, r.FanApprovalAfter, s.FanApproval), Is.EqualTo((50, 53, 53)));
-            Assert.That(r.Finance, Is.EqualTo(new FinanceChange(50_000_000, 3)));
+            // Phase 42: 개막전 상대 LG는 2위(라이벌) → 승리 +3에 라이벌 보너스 +1
+            Assert.That(r.RivalWin, Is.True);
+            Assert.That((r.FanApprovalBefore, r.FanApprovalAfter, s.FanApproval), Is.EqualTo((50, 54, 54)));
+            Assert.That(r.Finance, Is.EqualTo(new FinanceChange(50_000_000, 4)));
             Assert.That((r.Income, r.PayrollExpense, r.NetIncome), Is.EqualTo((50_000_000L, 0L, 50_000_000L)));
         }
 
@@ -76,7 +78,7 @@ namespace DailyFranchise.UI.Tests
             var win = Play(s, HomeWin);
             Assert.That(FranchiseFinance.PayrollPerGame(4_020_000_000), Is.EqualTo(27_916_666L), "÷144 내림");
             Assert.That((win.Income, win.PayrollExpense, win.NetIncome), Is.EqualTo((50_000_000L, 27_916_666L, 22_083_334L)));
-            Assert.That(win.Finance, Is.EqualTo(new FinanceChange(22_083_334, 3)));
+            Assert.That(win.Finance, Is.EqualTo(new FinanceChange(22_083_334, 4)), "라이벌 LG 승리 +3 +1");
             Assert.That(s.Budget, Is.EqualTo(5_022_083_334L));
             Assert.That(win.FinanceText, Is.EqualTo("관중 수입 +₩5,000만 · 유지비 −₩2,791만 · 순이익 +₩2,208만"));
 
@@ -108,8 +110,9 @@ namespace DailyFranchise.UI.Tests
             var s = SeasonState.CreateDummy();
             s.SetFinance(1_000_000, 99);
             var r = Play(s, HomeWin);
-            Assert.That(s.FanApproval, Is.EqualTo(100), "99 + 3 → 100");
-            Assert.That(r.Finance.FanDelta, Is.EqualTo(1), "잘린 뒤 실제로 오른 양");
+            Assert.That(r.Finance.FanDelta, Is.EqualTo(1), "99 + 4 → 100으로 잘린 뒤 실제로 오른 양");
+            // Phase 42: 100%에 닿으면 팬덤 레벨업 → 게이지 60%
+            Assert.That((r.FandomLevelUp?.Level, s.FanApproval), Is.EqualTo(((int?)1, FandomRules.LevelResetApproval)));
 
             s.SetFinance(1_000_000, 1);
             Assert.That(s.ApplyFinance(FranchiseFinance.For(GameOutcome.Loss)), Is.EqualTo(new FinanceChange(20_000_000, -1)));
@@ -152,7 +155,7 @@ namespace DailyFranchise.UI.Tests
             var loaded = SaveManager.FromJson(SaveManager.ToJson(s));
             Assert.That((loaded.Budget, loaded.FanApproval), Is.EqualTo((s.Budget, s.FanApproval)));
             // Phase 23: 더미 시즌은 23승에서 시작해 첫 승 뒤 유니폼 슬롯(10승)이 열려, 두 번째 승리에 굿즈 수입 +₩500만.
-            Assert.That((loaded.Budget, loaded.FanApproval), Is.EqualTo((5_105_000_000L, 56)));
+            Assert.That((loaded.Budget, loaded.FanApproval), Is.EqualTo((5_105_000_000L, 57)), "Phase 42: 개막전 라이벌(LG) 승리 +1");
 
             s.SetFinance(9_000_000_000_000, 50); // int를 한참 넘는 값
             Assert.That(SaveManager.FromJson(SaveManager.ToJson(s)).Budget, Is.EqualTo(9_000_000_000_000L));

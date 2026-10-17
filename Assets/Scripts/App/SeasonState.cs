@@ -291,6 +291,44 @@ namespace DailyFranchise.App
             return UnlockedSlots & ~before;
         }
 
+        /// <summary>팬덤 레벨 (Phase 42, <see cref="FandomRules"/>). 팬 만족도 100% 도달마다 +1. 시즌을 넘겨도 유지·저장된다.</summary>
+        public int FandomLevel { get; private set; }
+
+        /// <summary>불러오기·테스트용 (음수는 0).</summary>
+        public void SetFandomLevel(int level) => FandomLevel = Math.Max(0, level);
+
+        /// <summary>
+        /// 팬 만족도가 100%에 닿았으면 팬덤 레벨을 올리고 보상(특별 예산·CP·TP·테마)을 주고 게이지를 60%로 돌린 뒤
+        /// [특전] 뉴스를 낸다 (Phase 42). 닿지 않았으면 null.
+        /// </summary>
+        public FandomLevelUp CheckFandomLevelUp()
+        {
+            if (FanApproval < FandomRules.LevelUpApproval) return null;
+            FandomLevel++;
+            var reward = FandomRules.RewardFor(FandomLevel);
+            SetFinance(FranchiseFinance.AddBudget(Budget, reward.Budget), FandomRules.LevelResetApproval);
+            if (reward.CampPoints > 0) CampPoints += reward.CampPoints;
+            if (reward.Trust > 0) reward.Trust = EarnTrust(reward.Trust);
+            AddNews(NewsWriter.FandomLevelUp(MyTeam, reward, Year, NewsDate));
+            return reward;
+        }
+
+        /// <summary>마지막 팬덤 레벨업 (로비 안내용, 저장하지 않는다).</summary>
+        public FandomLevelUp LastFandomLevelUp { get; private set; }
+
+        /// <summary>
+        /// [수뇌부 설득] (Phase 42): TP 10과 수수료를 쓰고 요구액 그대로 영입한다 (샐러리캡 검사는 호출한 쪽이 이번 한 건만 건너뛴다).
+        /// TP가 모자라거나 예산이 수수료보다 적으면 시도하지 않는다.
+        /// </summary>
+        public NegotiationResult PersuadeFrontOffice(long ask)
+        {
+            long fee = FrontOfficeTrust.FeeOf(ask);
+            if (!FrontOfficeTrust.CanPersuade(TrustPoints) || Budget < fee) return new NegotiationResult(false, false, false, 1, 0, 0);
+            ApplyFinance(new FinanceChange(-fee, 0));
+            TrustPoints -= FrontOfficeTrust.PersuadeCost;
+            return new NegotiationResult(true, true, false, 1, fee, -FrontOfficeTrust.PersuadeCost);
+        }
+
         /// <summary>프런트 신뢰도 TP (Phase 23, <see cref="FrontOfficeTrust"/>). 0~200. 시즌과 함께 저장된다.</summary>
         public int TrustPoints { get; private set; }
         /// <summary>이번 시즌에 적립한 TP (상한 <see cref="FrontOfficeTrust.MaxSeasonEarn"/>).</summary>
@@ -729,6 +767,7 @@ namespace DailyFranchise.App
             Postseason = PostseasonSeries.Create(_standings[0].Team, _standings[1].Team, Year, _schedule[_schedule.Count - 1].Date, KboStadiums);
             Phase = SeasonPhase.PostSeason;
             AddNews(NewsWriter.PostseasonBegins(Postseason, MyTeam, Year));
+            if (Postseason.Involves(MyTeam)) EarnTrust(FrontOfficeTrust.PostseasonTrust); // Phase 42
             return true;
         }
 
@@ -756,11 +795,16 @@ namespace DailyFranchise.App
         {
             Phase = SeasonPhase.OffSeason;
             string champion = Postseason.Champion;
+            if (champion == MyTeam)
+            {
+                ChampionAward = ApplyFinance(new FinanceChange(ChampionPrize, FranchiseFinance.MaxFanApproval - FanApproval));
+                EarnTrust(FrontOfficeTrust.ChampionTrust); // Phase 42
+                LastFandomLevelUp = CheckFandomLevelUp(); // 우승으로 팬 만족도 100% → 팬덤 레벨업 ([특전] 뉴스)
+            }
+            // [챔피언] 뉴스가 맨 위(최신)에 오도록 보상 처리 뒤에 낸다
             var news = NewsWriter.Champion(champion, Postseason, Year);
             AddNews(news);
             _lastPostseasonNews.Add(news);
-            if (champion == MyTeam)
-                ChampionAward = ApplyFinance(new FinanceChange(ChampionPrize, FranchiseFinance.MaxFanApproval - FanApproval));
         }
 
         /// <summary>진행 중인 한국시리즈 경기를 끝낸다 (정규시즌 순위표·타 구단 경기는 건드리지 않는다).</summary>
@@ -1056,6 +1100,7 @@ namespace DailyFranchise.App
                 HasFinance = true,
                 Budget = Budget,
                 FanApproval = FanApproval,
+                FandomLevel = FandomLevel,
                 HasFandom = true,
                 FandomSlots = (int)UnlockedSlots,
                 Signings = _signings.Select(s => new SigningData
@@ -1177,6 +1222,7 @@ namespace DailyFranchise.App
             // Phase 26 이전 저장 파일(화폐 단위 버전 0)은 금액이 1/1,000 단위라 ×1,000으로 바꿔 읽는다.
             long money = data.MoneyUnitVersion >= SeasonSaveData.CurrentMoneyUnitVersion ? 1 : FranchiseFinance.LegacyMoneyScale;
             if (data.HasFinance) season.SetFinance(Scaled(data.Budget, money), data.FanApproval);
+            season.SetFandomLevel(data.FandomLevel); // Phase 42 이전 파일은 0
             // 팬덤 슬롯이 없는 이전 저장 파일(Phase 22 이전)은 해금 없음에서 시작한다. 모르는 비트는 버린다.
             if (data.HasFandom) season.SetUnlockedSlots((FandomSlot)data.FandomSlots);
             // 신뢰도 필드가 없는 이전 저장 파일은 TP 0·대출 없음에서 시작한다. 범위 밖 값은 범위 안으로 맞춘다.

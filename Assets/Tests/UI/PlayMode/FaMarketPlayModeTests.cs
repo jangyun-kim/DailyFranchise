@@ -573,5 +573,72 @@ namespace DailyFranchise.UI.Tests
         }
 
         const string Data_FreeAgent = LeagueRosterBook.FreeAgentTeam;
+        [UnityTest]
+        public IEnumerator Phase42_헤더를_누르면_구단_운영_모달이_열리고_캡에_막힌_FA는_수뇌부_설득으로_영입하며_팬덤_레벨이_로비에_보인다()
+        {
+            var r = RenderAt1080();
+            yield return null;
+            var manager = SeasonManager.Instance;
+
+            // 1) 헤더 프런트 오피스 클릭 → 구단 운영 모달
+            Click(Root.Q("front-office"));
+            yield return null;
+            Assert.That(Lobby.FrontOffice.IsOpen, Is.True);
+            Assert.That(Root.Q("fo-modal").resolvedStyle.display, Is.EqualTo(DisplayStyle.Flex));
+            Assert.That(Text("fom-trust"), Is.EqualTo("0 TP"));
+            Assert.That(Text("fom-fan"), Is.EqualTo("50% · 팬덤 Lv.0"));
+            Assert.That(Text("fom-trust-use"), Does.Contain($"수뇌부 설득 TP {FrontOfficeTrust.PersuadeCost}"));
+            Assert.That(Root.Q("fom-perks").Query(className: "fom-perk").ToList().Count, Is.EqualTo(FandomRules.Slots.Length + 1), "슬롯 3개 + 레벨 안내");
+            Assert.That(Root.Q("fom-level-none"), Is.Not.Null);
+            AssertLayout("구단 운영 모달");
+            Submit(Root.Q<Button>("fo-close"));
+            yield return null;
+            Assert.That(Lobby.FrontOffice.IsOpen, Is.False);
+
+            // 2) 캡에 막힌 고액 FA (KIA 김도영) → [수뇌부 설득 (TP 10 소모)]
+            var book = manager.Rosters;
+            var star = book.Get("KIA 타이거즈").Lineup.OrderByDescending(p => p.War).First();
+            manager.Season.AddSigning(SigningRecord.CpuRelease(star.Id, "KIA 타이거즈"), isBatter: true);
+            Lobby.ReleasePlayer(book.Get(manager.Season.MyTeam).Bench.Last().Id); // 벤치 한 자리
+            manager.Season.SetTrust(25, 0, manager.Season.CapRepay, manager.Season.CapFlex);
+            yield return null;
+            Lobby.OpenFaMarket();
+            var fa = Lobby.FaMarket;
+            fa.Select(star.Id);
+            yield return null;
+            Assert.That(fa.PersuadeShown, Is.True, "캡에 막히면 [협상 시도] 대신 [수뇌부 설득]");
+            Assert.That(Root.Q<Button>("fa-negotiate").resolvedStyle.display, Is.EqualTo(DisplayStyle.None));
+            Assert.That(Root.Q<Button>("fa-persuade").enabledSelf, Is.True);
+            Assert.That(Text("fa-warning"), Does.StartWith("샐러리캡 초과 · 수뇌부 설득(TP 10)"));
+            AssertLayout("수뇌부 설득 버튼");
+            long cap = manager.Season.SalaryCap;
+            Submit(Root.Q<Button>("fa-persuade"));
+            yield return null;
+            Assert.That(manager.MyRoster.Bench.Any(p => p.Id == star.Id), Is.True, "영입 성공");
+            Assert.That(manager.Season.TrustPoints, Is.EqualTo(25 - FrontOfficeTrust.PersuadeCost));
+            Assert.That(manager.Season.SalaryCap, Is.EqualTo(cap), "캡은 그대로");
+            Assert.That(manager.Season.Payroll, Is.GreaterThan(cap), "이번 한 건만 캡 초과");
+            Assert.That(Text("fa-result"), Does.Contain("수뇌부 설득 TP 10 사용"));
+            fa.Close();
+
+            // 3) 팬 만족도 100% → 팬덤 Lv.1: 헤더 표기·클래식 테마·모달 특전 목록
+            manager.Season.SetFinance(manager.Season.Budget, 100);
+            var up = manager.Season.CheckFandomLevelUp();
+            Assert.That(up.Level, Is.EqualTo(1));
+            Lobby.enabled = false;
+            Lobby.enabled = true;
+            yield return null;
+            Assert.That(Text("fo-fan-title"), Is.EqualTo("팬 만족도 · 팬덤 Lv.1"));
+            Assert.That(Text("fo-fan"), Is.EqualTo(FandomRules.LevelResetApproval + "%"));
+            Assert.That(Root.Q("screen").ClassListContains("fandom-classic"), Is.True);
+            Assert.That(Text("app-title"), Is.EqualTo("DAILY FRANCHISE · CLASSIC"));
+            Lobby.OpenFrontOffice();
+            yield return null;
+            Assert.That(Root.Q("fom-level-1").Q<Label>(className: "fom-perk__detail").text, Does.Contain(FandomRules.ClassicTheme));
+            Assert.That(Text("fom-fan"), Is.EqualTo($"{FandomRules.LevelResetApproval}% · 팬덤 Lv.1"));
+            AssertLayout("구단 운영 모달 Lv.1");
+            Lobby.FrontOffice.Close();
+            Dispose(r);
+        }
     }
 }

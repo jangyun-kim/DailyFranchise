@@ -110,8 +110,11 @@ namespace DailyFranchise.UI.Tests
             Assert.That(ps.Games.Count, Is.EqualTo(5), "6·7차전은 지운다");
             Assert.That(s.Phase, Is.EqualTo(SeasonPhase.OffSeason));
             Assert.That(s.NextGame, Is.Null);
-            Assert.That(s.Budget, Is.EqualTo(budget + SeasonState.ChampionPrize), "우승 상금 ₩20억");
-            Assert.That(s.FanApproval, Is.EqualTo(100));
+            // Phase 42: 우승으로 팬 만족도 100% → 팬덤 레벨업 (굿즈 완판 특별 예산, 게이지 60%)
+            Assert.That(s.Budget, Is.EqualTo(budget + SeasonState.ChampionPrize + FandomRules.LevelBudgetBonus), "우승 상금 ₩20억 + 팬덤 특별 예산");
+            Assert.That(s.ChampionAward.Value.FanDelta, Is.GreaterThan(0), "우승이 팬 만족도를 100%까지 끌어올린 양");
+            Assert.That(s.LastFandomLevelUp.Level, Is.EqualTo(1));
+            Assert.That((s.FandomLevel, s.FanApproval), Is.EqualTo((1, FandomRules.LevelResetApproval)));
             Assert.That(s.ChampionAward.Value.BudgetDelta, Is.EqualTo(2_000_000_000L));
             Assert.That(s.LatestNews(1)[0].Text, Is.EqualTo("[챔피언] 삼성 라이온즈, 2026 시즌 대망의 한국시리즈 우승!"));
             Assert.That(s.LatestNews(1)[0].Kind, Is.EqualTo(NewsKind.Championship));
@@ -204,9 +207,11 @@ namespace DailyFranchise.UI.Tests
             Assert.That(last.Champion, Is.EqualTo(Samsung));
             Assert.That(last.ChampionAward.Value.BudgetDelta, Is.EqualTo(SeasonState.ChampionPrize));
             Assert.That(last.News.Select(n => n.Kind).Take(2), Is.EqualTo(new[] { NewsKind.Postseason, NewsKind.Championship }), "경기 결과 뒤 우승");
-            Assert.That(s.Budget, Is.EqualTo(before + SeasonState.ChampionPrize + last.Finance.BudgetDelta), "경기 정산 + 상금");
+            Assert.That(s.Budget, Is.EqualTo(before + SeasonState.ChampionPrize + FandomRules.LevelBudgetBonus + last.Finance.BudgetDelta),
+                "경기 정산 + 상금 + 팬덤 특별 예산 (Phase 42)");
             Assert.That(last.MoodBefore, Is.EqualTo(FranchiseFinance.MoodOf(last.FanApprovalBefore)), "경기 정산은 상금 전 팬 구간");
-            Assert.That(s.FanApproval, Is.EqualTo(100));
+            Assert.That(last.Finance.FanDelta, Is.Zero, "우승 경기는 우승 보상이 팬 만족도를 정한다");
+            Assert.That((last.FandomLevelUp?.Level, s.FanApproval), Is.EqualTo(((int?)1, FandomRules.LevelResetApproval)), "100% → 팬덤 Lv.1, 게이지 60%");
             Assert.That(s.Standings.Select(r => (r.Team, r.Wins, r.Losses, r.Draws)), Is.EqualTo(standings));
             Assert.That(LobbyController.LastResultText(s), Is.EqualTo("한국시리즈 4차전 · 승 2:0 · 삼성 4승 - 0승 LG · 우승!"));
         }

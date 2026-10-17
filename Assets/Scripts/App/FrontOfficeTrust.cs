@@ -65,6 +65,21 @@ namespace DailyFranchise.App
         public const double MaxFlexRate = 0.10;
         public const double RepayRate = 0.5;
 
+        /// <summary>
+        /// [수뇌부 설득] (Phase 42): 샐러리캡만 막을 때 TP를 쓰고 그 영입 한 건만 캡 검사를 건너뛰어 요구액에 영입한다.
+        /// 캡 기준·대출(Flex)·페이롤 계산은 그대로다 — 영입 뒤 페이롤이 캡을 넘으면 다음 영입은 다시 캡에 막힌다.
+        /// </summary>
+        public const int PersuadeCost = 10;
+
+        /// <summary>TP 적립 (Phase 42): 정규시즌 3연승마다(3·6·9…연승) +1.</summary>
+        public const int WinStreakStep = 3;
+        public const int WinStreakTrust = 1;
+        /// <summary>한국시리즈 진출 +10, 우승 +20.</summary>
+        public const int PostseasonTrust = 10;
+        public const int ChampionTrust = 20;
+
+        public static bool CanPersuade(int trust) => trust >= PersuadeCost;
+
         /// <summary>선수 DB가 없을 때의 시즌 캡 기준.</summary>
         public const long DefaultSalaryCap = 6_000_000_000;
         public const long MinSalary = 30_000_000;

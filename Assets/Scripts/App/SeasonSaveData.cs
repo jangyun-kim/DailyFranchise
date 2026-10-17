@@ -52,6 +52,8 @@ namespace DailyFranchise.App
         /// <summary>Phase 26부터 long. 이전 파일의 int 값도 그대로 읽힌다 (단위 변환은 <see cref="MoneyUnitVersion"/>).</summary>
         public long Budget;
         public int FanApproval;
+        /// <summary>팬덤 레벨 (Phase 42). 없는 이전 파일은 0.</summary>
+        public int FandomLevel;
 
         /// <summary>
         /// 팬덤 슬롯(<see cref="FandomSlots"/>, <see cref="FandomSlot"/> 비트)이 저장돼 있는지 (Phase 23).

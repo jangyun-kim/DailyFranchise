@@ -7,7 +7,7 @@
             <ui:VisualElement class="header__brand">
                 <ui:Label name="team-mark" class="team-mark" text="—" />
                 <ui:VisualElement class="header__brand-text">
-                    <ui:Label class="app-title" text="DAILY FRANCHISE" />
+                    <ui:Label name="app-title" class="app-title" text="DAILY FRANCHISE" />
                     <ui:Label name="my-team" class="my-team" text="—" />
                     <!-- Phase 39: 시즌 성적 축 (게임 내 시즌의 내 구단 성적) -->
                     <ui:VisualElement class="axis-row">
@@ -23,7 +23,7 @@
                     <ui:Label name="fo-budget-delta" class="fo-delta" text="" />
                 </ui:VisualElement>
                 <ui:VisualElement class="fo-cell">
-                    <ui:Label class="fo-label" text="팬 만족도" />
+                    <ui:Label name="fo-fan-title" class="fo-label" text="팬 만족도" />
                     <ui:VisualElement class="fo-gauge">
                         <ui:VisualElement class="fo-track">
                             <ui:VisualElement name="fo-fan-fill" class="fo-fill" />
@@ -278,6 +278,8 @@
                         <ui:Label name="fa-warning" class="fa-modal__warning" text="" />
                         <ui:VisualElement class="fa-modal__actions">
                             <ui:Button name="fa-negotiate" class="btn fa-modal__action fa-modal__action--primary" text="협상 시도" />
+                            <!-- Phase 42: 샐러리캡만 막을 때 [협상 시도] 자리에 보인다 -->
+                            <ui:Button name="fa-persuade" class="btn fa-modal__action fa-modal__action--persuade" text="수뇌부 설득 (TP 10 소모)" />
                             <ui:Button name="fa-ceiling" class="btn fa-modal__action fa-modal__action--last" text="확정 영입 (TP 100 소모)" />
                         </ui:VisualElement>
                         <ui:Label name="fa-result" class="fa-modal__result" text="" />
@@ -384,6 +386,42 @@
                     <ui:Label name="pd-release-note" class="pd-release-note" text="" />
                     <ui:Button name="pd-release" class="btn pd-release" text="방출" />
                 </ui:VisualElement>
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- Phase 42: 구단 운영 모달 (헤더 프런트 오피스 영역을 누르면) -->
+        <ui:VisualElement name="fo-modal" class="fo-modal">
+            <ui:VisualElement name="fo-window" class="fo-window">
+                <ui:VisualElement class="fo-modal__head">
+                    <ui:Label class="fo-modal__title" text="구단 운영 · Front Office" />
+                    <ui:Button name="fo-close" class="btn fo-modal__close" text="닫기" />
+                </ui:VisualElement>
+                <ui:VisualElement class="fo-modal__columns">
+                    <ui:VisualElement class="fo-modal__section">
+                        <ui:Label class="fo-modal__section-title" text="수뇌부 신뢰도 (TP)" />
+                        <ui:Label name="fom-trust" class="fo-modal__big" text="—" />
+                        <ui:VisualElement class="fo-track fo-modal__track">
+                            <ui:VisualElement name="fom-trust-fill" class="fo-fill fo-fill--trust" />
+                        </ui:VisualElement>
+                        <ui:Label name="fom-trust-season" class="fo-modal__line" text="" />
+                        <ui:Label name="fom-trust-earn" class="fo-modal__line" text="" />
+                        <ui:Label name="fom-trust-use" class="fo-modal__line" text="" />
+                        <ui:Label name="fom-cap" class="fo-modal__line fo-modal__line--strong" text="" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="fo-modal__section">
+                        <ui:Label class="fo-modal__section-title" text="팬 만족도 · 팬덤 레벨" />
+                        <ui:Label name="fom-fan" class="fo-modal__big" text="—" />
+                        <ui:VisualElement class="fo-track fo-modal__track">
+                            <ui:VisualElement name="fom-fan-fill" class="fo-fill" />
+                        </ui:VisualElement>
+                        <ui:Label name="fom-fan-rule" class="fo-modal__line" text="" />
+                        <ui:Label name="fom-next" class="fo-modal__line fo-modal__line--strong" text="" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="fo-modal__section fo-modal__section--last">
+                        <ui:Label class="fo-modal__section-title" text="팬덤 특전" />
+                        <ui:VisualElement name="fom-perks" />
+                    </ui:VisualElement>
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>

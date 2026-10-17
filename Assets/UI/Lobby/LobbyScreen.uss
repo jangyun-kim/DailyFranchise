@@ -863,6 +863,147 @@ Label {
 }
 
 /* ───────── 프런트 오피스 (Phase 21) ───────── */
+/* Phase 42: 프런트 오피스 영역을 누르면 구단 운영 모달 */
+.front-office:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+.fo-modal {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.7);
+}
+
+.fo-modal--open {
+    display: flex;
+}
+
+.fo-window {
+    width: 1500px;
+    padding: 22px 26px;
+    border-top-width: 4px;
+    border-radius: 10px;
+    border-color: #A371F7;
+    background-color: var(--panel);
+}
+
+.fo-modal__head {
+    height: 52px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.fo-modal__title {
+    font-size: 28px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.unity-button.fo-modal__close {
+    width: 110px;
+    height: 40px;
+    padding: 0;
+    font-size: 16px;
+}
+
+.fo-modal__columns {
+    margin-top: 12px;
+    flex-direction: row;
+}
+
+.fo-modal__section {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 420px;
+    margin-right: 16px;
+    padding: 14px 16px;
+    border-radius: 8px;
+    background-color: var(--panel-2);
+}
+
+.fo-modal__section--last {
+    margin-right: 0;
+}
+
+.fo-modal__section-title {
+    height: 26px;
+    font-size: 15px;
+    color: var(--muted);
+    -unity-font-style: bold;
+}
+
+.fo-modal__big {
+    height: 50px;
+    font-size: 34px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.fo-modal__track {
+    flex-grow: 0;
+    margin: 6px 0 12px 0;
+}
+
+.fo-modal__line {
+    margin-top: 8px;
+    font-size: 14px;
+    color: var(--muted);
+    white-space: normal;
+}
+
+.fo-modal__line--strong {
+    color: var(--text);
+}
+
+.fom-perk {
+    margin-top: 8px;
+    padding: 6px 10px;
+    border-left-width: 3px;
+    border-radius: 4px;
+    border-color: var(--line);
+}
+
+.fom-perk--on {
+    border-color: var(--good);
+}
+
+.fom-perk__title {
+    height: 22px;
+    font-size: 15px;
+    -unity-font-style: bold;
+    color: var(--muted);
+}
+
+.fom-perk--on .fom-perk__title {
+    color: var(--good);
+}
+
+.fom-perk__detail {
+    font-size: 13px;
+    color: var(--muted);
+    white-space: normal;
+}
+
+/* Phase 42: 팬덤 Lv.1 '클래식 올드 유니폼' 테마 — 헤더를 크림색 핀스트라이프 느낌으로 */
+.fandom-classic .header {
+    border-color: #E9DDC2;
+}
+
+.fandom-classic .app-title {
+    color: #E9DDC2;
+}
+
+.fandom-classic .team-mark {
+    border-color: #E9DDC2;
+}
+
 .front-office {
     width: 1060px;
     height: 96px;
@@ -1358,6 +1499,13 @@ Label {
 
 .unity-button.fa-modal__action.fa-modal__action--last {
     margin-right: 0;
+}
+
+.unity-button.fa-modal__action--persuade {
+    display: none;
+    border-color: #F2C14E;
+    background-color: #5A4614;
+    color: #FFE7A3;
 }
 
 .unity-button.fa-modal__action--primary {

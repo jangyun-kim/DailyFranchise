@@ -39,6 +39,7 @@ namespace DailyFranchise.App
         readonly VisualElement _modal;
         readonly Button _negotiate;
         readonly Button _ceiling;
+        readonly Button _persuade;
         readonly Button _close;
         readonly (Button button, Action handler)[] _steps;
         readonly Button _tabMarket;
@@ -60,6 +61,7 @@ namespace DailyFranchise.App
             _modal = root.Q("fa-modal");
             _negotiate = root.Q<Button>("fa-negotiate");
             _ceiling = root.Q<Button>("fa-ceiling");
+            _persuade = root.Q<Button>("fa-persuade");
             _close = root.Q<Button>("fa-close");
             _tabMarket = root.Q<Button>("fa-tab-market");
             _tabTrade = root.Q<Button>("fa-tab-trade");
@@ -73,6 +75,7 @@ namespace DailyFranchise.App
             };
             _negotiate.clicked += OnNegotiate;
             _ceiling.clicked += OnCeiling;
+            _persuade.clicked += OnPersuade;
             _close.clicked += Close;
             foreach (var (button, handler) in _steps) button.clicked += handler;
             _tabMarket.clicked += ShowMarketTab;
@@ -179,6 +182,7 @@ namespace DailyFranchise.App
         {
             _negotiate.clicked -= OnNegotiate;
             _ceiling.clicked -= OnCeiling;
+            _persuade.clicked -= OnPersuade;
             _close.clicked -= Close;
             foreach (var (button, handler) in _steps) button.clicked -= handler;
             _tabMarket.clicked -= ShowMarketTab;
@@ -348,6 +352,18 @@ namespace DailyFranchise.App
 
         void OnNegotiate() => Negotiate();
         void OnCeiling() => SignWithCeiling();
+        void OnPersuade() => SignWithPersuasion();
+
+        /// <summary>
+        /// [수뇌부 설득 (TP 10 소모)] (Phase 42): 샐러리캡만 막을 때 이번 한 건만 캡을 넘겨 요구액 그대로 영입한다.
+        /// 버튼이 숨겨져 있어도 직접 부르면 규칙대로 막힌 결과를 돌려준다.
+        /// </summary>
+        public SigningOutcome SignWithPersuasion()
+        {
+            var agent = Selected;
+            if (agent == null) return null;
+            return Report(_manager.SignWithPersuasion(agent));
+        }
 
         SigningOutcome Report(SigningOutcome o)
         {
@@ -361,7 +377,8 @@ namespace DailyFranchise.App
             {
                 string where = o.Agent.Player.IsPitcher ? "불펜" : "벤치";
                 _resultText = $"영입 성공 · {name} → {where} 합류 (연봉 {Won(o.Salary)} · 수수료 {Won(o.Negotiation.Fee)}" +
-                              (o.Negotiation.CeilingUsed ? " · TP 100 사용)" : ")");
+                              (o.Negotiation.CeilingUsed ? " · TP 100 사용)"
+                                  : o.Persuaded ? $" · 수뇌부 설득 TP {FrontOfficeTrust.PersuadeCost} 사용, 캡 초과 1회 허용)" : ")");
                 _resultSuccess = true;
                 LastSignedId = o.Agent.Id;
                 SelectedId = null; // 영입한 선수는 시장에서 빠진다 → 다음 선수
@@ -582,6 +599,7 @@ namespace DailyFranchise.App
                 Q<Label>("fa-odds").text = "—";
                 _negotiate.SetEnabled(false);
                 _ceiling.SetEnabled(false);
+                ShowPersuade(false, SigningBlock.None);
                 return;
             }
 
@@ -605,12 +623,32 @@ namespace DailyFranchise.App
             var block = StoveLeague.Check(season, _manager.Rosters, agent, offer);
             Q<Label>("fa-warning").text = StoveLeague.BlockText(block);
             _negotiate.SetEnabled(block == SigningBlock.None);
+            // Phase 42: 요구액 영입이 캡에만 막히면 [협상 시도] 대신 [수뇌부 설득]
+            var persuade = StoveLeague.CheckPersuasion(season, _manager.Rosters, agent);
+            bool capBound = persuade == SigningBlock.None || persuade == SigningBlock.Trust;
+            ShowPersuade(capBound, persuade);
+            if (capBound)
+                Q<Label>("fa-warning").text = persuade == SigningBlock.None
+                    ? $"샐러리캡 초과 · 수뇌부 설득(TP {FrontOfficeTrust.PersuadeCost})으로 이번 한 건만 허용"
+                    : $"샐러리캡 초과 · 수뇌부 설득에 TP {FrontOfficeTrust.PersuadeCost} 필요 (보유 {season.TrustPoints})";
             var ceilingBlock = StoveLeague.Check(season, _manager.Rosters, agent, agent.Ask, ceiling: true);
             _ceiling.SetEnabled(ceilingBlock == SigningBlock.None);
             _ceiling.tooltip = ceilingBlock == SigningBlock.None
                 ? $"TP 100을 쓰고 요구액 {Won(agent.Ask)}에 100% 영입"
                 : StoveLeague.BlockText(ceilingBlock);
         }
+
+        /// <summary>[협상 시도]와 [수뇌부 설득]을 맞바꿔 보인다 (캡에 막힐 때만 설득).</summary>
+        void ShowPersuade(bool show, SigningBlock block)
+        {
+            _negotiate.style.display = show ? DisplayStyle.None : DisplayStyle.Flex;
+            _persuade.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
+            _persuade.SetEnabled(show && block == SigningBlock.None);
+            _persuade.tooltip = show ? $"TP {FrontOfficeTrust.PersuadeCost}을 쓰고 이번 영입 한 건만 샐러리캡 검사를 건너뜁니다 (캡 기준·페이롤은 그대로)" : "";
+        }
+
+        /// <summary>[수뇌부 설득] 버튼이 보이고 눌리는지 (테스트용).</summary>
+        public bool PersuadeShown => _persuade.resolvedStyle.display == DisplayStyle.Flex || _persuade.style.display == DisplayStyle.Flex;
 
         /// <summary>"₩3억 7,620만" / 음수 "−₩2,000만" (<see cref="FranchiseFinance.Won"/>).</summary>
         static string Won(long won) => (won < 0 ? "−₩" : "₩") + FranchiseFinance.Won(won);

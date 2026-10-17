@@ -175,6 +175,14 @@ namespace DailyFranchise.App
             return Finish(StoveLeague.SignWithCeiling(Season, Rosters, agent), chemistry);
         }
 
+        /// <summary>[수뇌부 설득] (TP 10 소모, Phase 42): 캡만 막을 때 이번 한 건만 캡을 넘겨 영입한다. 시도했으면 바로 저장하고 알린다.</summary>
+        public SigningOutcome SignWithPersuasion(FreeAgent agent)
+        {
+            if (_loading || Rosters == null) return Blocked(agent);
+            var chemistry = ChemistryKinds();
+            return Finish(StoveLeague.SignWithPersuasion(Season, Rosters, agent), chemistry);
+        }
+
         static SigningOutcome Blocked(FreeAgent agent) => new SigningOutcome { Agent = agent, Block = SigningBlock.InGame };
 
         /// <summary>

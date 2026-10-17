@@ -68,22 +68,27 @@ namespace DailyFranchise.UI.Tests
         {
             var s = SeasonState.CreateDummy();
             int fan = 50;
+            long budget = s.Budget;
+            var expected = FandomSlot.None;
             for (int game = 1; game <= 10; game++)
             {
                 var r = Play(s, MyWin);
                 Assert.That(r.MyOutcome, Is.EqualTo(GameOutcome.Win));
                 Assert.That(r.FanApprovalBefore, Is.EqualTo(fan));
-                var expected = game == 1 ? FandomSlot.None
-                    : game <= 7 ? FandomSlot.Uniform : FandomSlot.Uniform | FandomSlot.Ceremony;
-                Assert.That(r.SlotsApplied, Is.EqualTo(expected), $"{game}경기 적용 슬롯");
+                Assert.That(r.SlotsApplied, Is.EqualTo(expected), $"{game}경기 적용 슬롯 (직전 경기까지 해금한 것)");
+                // 승 +3 (+ 세리머니 +1, Phase 42: 1·2위 라이벌 승리 +1)
+                int gain = FranchiseFinance.WinFan + ((expected & FandomSlot.Ceremony) != 0 ? 1 : 0) + (r.RivalWin ? FandomRules.RivalWinFan : 0);
+                Assert.That(r.FanApprovalAfter - fan, Is.EqualTo(gain), $"{game}경기 팬 변화");
                 fan = r.FanApprovalAfter;
+                budget += r.Finance.BudgetDelta;
+                // 더미 시즌은 23승에서 시작 → 1경기 뒤 유니폼(10승 이상), 팬 70·80에 세리머니·치어리더
+                expected |= FandomSlot.Uniform;
+                if (fan >= FandomRules.CeremonyFan) expected |= FandomSlot.Ceremony;
+                if (fan >= FandomRules.CheerleaderFan) expected |= FandomSlot.Cheerleader;
             }
-            // 더미 시즌은 23승에서 시작 → 1경기 뒤 유니폼(10승 이상) 해금.
-            // 팬 50 → (+3 × 7) 71: 7경기 뒤 세리머니 해금 → 8~10경기 +4 → 83: 치어리더.
-            Assert.That(s.FanApproval, Is.EqualTo(83));
+            Assert.That(s.FanApproval, Is.EqualTo(fan).And.GreaterThanOrEqualTo(FandomRules.CheerleaderFan).And.LessThan(FandomRules.LevelUpApproval));
             Assert.That(s.UnlockedSlots, Is.EqualTo(FandomSlot.All));
-            // 예산: 경기 전 팬은 끝까지 79 이하(Normal) → 기본 5만, 2경기부터 유니폼 굿즈 +5천.
-            Assert.That(s.Budget, Is.EqualTo(5_000_000_000L + 50_000_000 + 55_000_000L * 9));
+            Assert.That(s.Budget, Is.EqualTo(budget), "경기마다 관중 수입(+유니폼 굿즈)"); 
         }
 
         [Test]
@@ -121,7 +126,7 @@ namespace DailyFranchise.UI.Tests
             string json = SaveManager.ToJson(s);
             Assert.That(SaveManager.FromJson(json).UnlockedSlots, Is.EqualTo(FandomSlot.Uniform | FandomSlot.Cheerleader));
 
-            string legacy = Regex.Replace(json, @",\s*""(HasFandom|FandomSlots)"":\s*[^,\r\n}]+", "");
+            string legacy = Regex.Replace(json, @",\s*""(HasFandom|FandomSlots|FandomLevel)"":\s*[^,\r\n}]+", "");
             Assert.That(legacy, Does.Not.Contain("Fandom"));
             var loaded = SaveManager.FromJson(legacy);
             Assert.That(loaded.UnlockedSlots, Is.EqualTo(FandomSlot.None));

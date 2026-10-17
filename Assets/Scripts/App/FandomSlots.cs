@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace DailyFranchise.App
 {
@@ -20,9 +22,61 @@ namespace DailyFranchise.App
         All = Uniform | Ceremony | Cheerleader,
     }
 
+    /// <summary>팬덤 레벨업 한 번의 보상 (Phase 42, <see cref="SeasonState.CheckFandomLevelUp"/>).</summary>
+    public sealed class FandomLevelUp
+    {
+        public int Level;
+        public long Budget;
+        public int CampPoints;
+        public int Trust;
+        /// <summary>이번 레벨에 해금된 로비 테마 (없으면 null).</summary>
+        public string Theme;
+        /// <summary>보상 문구 ("특별 예산 ₩ 3억 · 클래식 올드 유니폼 테마").</summary>
+        public string Text => string.Join(" · ", new[]
+        {
+            Budget > 0 ? "특별 예산 " + FranchiseFinance.BudgetText(Budget) : null,
+            CampPoints > 0 ? $"캠프 포인트 +{CampPoints} CP" : null,
+            Trust > 0 ? $"신뢰도 +{Trust} TP" : null,
+            Theme != null ? $"'{Theme}' 테마" : null,
+        }.Where(t => t != null));
+    }
+
     /// <summary>팬덤 슬롯 해금 조건 (순수 C#).</summary>
     public static class FandomRules
     {
+        // ---------- Phase 42: 팬덤 레벨 ----------
+
+        /// <summary>팬 만족도가 이 값에 닿으면 팬덤 레벨이 오르고 게이지가 <see cref="LevelResetApproval"/>로 돌아간다.</summary>
+        public const int LevelUpApproval = 100;
+        public const int LevelResetApproval = 60;
+        /// <summary>레벨업마다: 굿즈 완판 특별 예산.</summary>
+        public const long LevelBudgetBonus = 300_000_000;
+        /// <summary>Lv.1 클래식 올드 유니폼 테마 · Lv.2 캠프 포인트 · Lv.3 신뢰도 (그 뒤는 예산만).</summary>
+        public const string ClassicTheme = "클래식 올드 유니폼";
+        public const int ClassicThemeLevel = 1;
+        public const int Level2CampPoints = 2;
+        public const int Level3Trust = 5;
+        /// <summary>1·2위 구단(라이벌)을 이기면 팬 만족도 추가 +1%p.</summary>
+        public const int RivalWinFan = 1;
+        public const int RivalMaxRank = 2;
+
+        /// <summary>그 레벨에 오를 때 받는 보상.</summary>
+        public static FandomLevelUp RewardFor(int level) => new FandomLevelUp
+        {
+            Level = level,
+            Budget = LevelBudgetBonus,
+            CampPoints = level == 2 ? Level2CampPoints : 0,
+            Trust = level == 3 ? Level3Trust : 0,
+            Theme = level == ClassicThemeLevel ? ClassicTheme : null,
+        };
+
+        /// <summary>그 레벨까지 해금한 특전 목록 (Front Office 모달). 레벨 0이면 빈 목록.</summary>
+        public static IReadOnlyList<FandomLevelUp> RewardsUpTo(int level) =>
+            Enumerable.Range(1, Math.Max(0, level)).Select(RewardFor).ToList();
+
+        /// <summary>클래식 테마를 해금했는지.</summary>
+        public static bool HasClassicTheme(int level) => level >= ClassicThemeLevel;
+
         public const int UniformWins = 10;
         public const int CeremonyFan = 70;
         public const int CheerleaderFan = 80;

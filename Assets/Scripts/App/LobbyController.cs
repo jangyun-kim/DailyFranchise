@@ -83,6 +83,8 @@ namespace DailyFranchise.App
             _manager = SeasonManager.EnsureExists();
             _fa = new FaMarketView(_root, _manager, OpenPlayer);
             _detail = new PlayerDetailView(_root, _manager, ReleasePlayer, BeginSwapFrom, TradePlayer, MovePlayer);
+            _frontOffice = new FrontOfficeView(_root, _manager);
+            _root.Q("front-office").RegisterCallback<ClickEvent>(OnFrontOfficeClicked);
             _manager.ModeChanged += Render;
             _manager.DatabaseReady += OnDatabaseReady;
             _manager.LineupChanged += OnLineupChanged;
@@ -117,6 +119,9 @@ namespace DailyFranchise.App
             _fa = null;
             _detail?.Detach();
             _detail = null;
+            _frontOffice?.Detach();
+            _frontOffice = null;
+            _root?.Q("front-office")?.UnregisterCallback<ClickEvent>(OnFrontOfficeClicked);
             _start = null;
             _mode = null;
             _scout = null;
@@ -320,6 +325,22 @@ namespace DailyFranchise.App
 
         /// <summary>선수 상세 모달을 연다 (내 구단 1군·퓨처스 선수, 또는 FA 모달 타 구단 명단의 선수). 열었으면 true.</summary>
         public bool OpenPlayer(string playerId) => OpenPlayer(playerId, PlayerDetailTab.Record);
+
+        FrontOfficeView _frontOffice;
+
+        /// <summary>구단 운영 모달 (Phase 42, 테스트용).</summary>
+        public FrontOfficeView FrontOffice => _frontOffice;
+
+        void OnFrontOfficeClicked(ClickEvent e) => OpenFrontOffice();
+
+        /// <summary>구단 운영(Front Office) 모달을 연다 (헤더 예산·팬·신뢰도 영역 클릭, Phase 42).</summary>
+        public void OpenFrontOffice()
+        {
+            if (_manager == null || _frontOffice == null) return;
+            _detail?.Close();
+            _fa?.Close();
+            _frontOffice.Open();
+        }
 
         /// <summary>선수 상세를 그 탭으로 연다 (Phase 39 — 퓨처스 후보는 [계약·거취]의 1군 등록으로 바로).</summary>
         public bool OpenPlayer(string playerId, PlayerDetailTab tab)
@@ -1205,6 +1226,13 @@ namespace DailyFranchise.App
                 : $"직전 경기({OutcomeText(report.MyOutcome)}) {FranchiseFinance.FanDeltaText(report.Finance.FanDelta)}";
 
             RenderTrustAndSlots(season);
+            // Phase 42: 팬덤 레벨과 Lv.1 클래식 테마
+            Q<Label>("fo-fan-title").text = season.FandomLevel > 0 ? $"팬 만족도 · 팬덤 Lv.{season.FandomLevel}" : "팬 만족도";
+            bool classic = FandomRules.HasClassicTheme(season.FandomLevel);
+            Q("screen").EnableInClassList("fandom-classic", classic);
+            Q<Label>("app-title").text = classic ? "DAILY FRANCHISE · CLASSIC" : "DAILY FRANCHISE";
+            Q("front-office").tooltip = "누르면 구단 운영 (신뢰도 TP · 팬덤 특전)";
+            _frontOffice?.Refresh();
 
             int played = season.GamesPlayed, total = season.Schedule.Count;
             Q<VisualElement>("fo-season-fill").style.width = Length.Percent(total == 0 ? 0 : 100f * played / total);

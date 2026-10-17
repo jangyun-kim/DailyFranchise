@@ -60,6 +60,12 @@ namespace DailyFranchise.App
         public string Champion;
         /// <summary>내 구단이 우승해 받은 보상 (상금·팬 만족도 실제 변화). 없으면 null.</summary>
         public FinanceChange? ChampionAward;
+        /// <summary>1·2위 라이벌을 이겨 팬 만족도 보너스를 받았는지 (Phase 42).</summary>
+        public bool RivalWin;
+        /// <summary>이 경기로 적립한 TP (3연승마다, Phase 42).</summary>
+        public int TrustEarned;
+        /// <summary>이 경기(또는 한국시리즈 우승)로 팬덤 레벨이 올랐으면 그 보상 (Phase 42).</summary>
+        public FandomLevelUp FandomLevelUp;
         /// <summary>바로 저장에 성공했는지. 디스크 오류면 false (진행 상황은 메모리에 남아 다음 저장 때 다시 쓴다).</summary>
         public bool Saved;
     }
@@ -109,15 +115,26 @@ namespace DailyFranchise.App
             int fanBefore = season.FanApproval;
             var mood = FranchiseFinance.MoodOf(fanBefore);
             var slots = season.UnlockedSlots;
+            // Phase 42: 경기 전 상대 순위 (1·2위 라이벌을 이기면 팬 만족도 보너스)
+            string opponent = game.AwayTeam == season.MyTeam ? game.HomeTeam : game.AwayTeam;
+            int opponentRank = season.StandingOf(opponent)?.Rank ?? 0;
 
             season.FinishCurrentGame(finalScore, leagueRandom, finalInning, walkOff);
             var mine = season.LastDayResults[0];
             var outcome = mine.OutcomeFor(season.MyTeam);
             string champion = postseason && season.Phase == SeasonPhase.OffSeason ? season.Postseason?.Champion : null;
             var income = FranchiseFinance.For(outcome, mood, slots);
+            bool rivalWin = !postseason && outcome == GameOutcome.Win && opponentRank > 0 && opponentRank <= FandomRules.RivalMaxRank;
             long expense = FranchiseFinance.PayrollPerGame(season.Payroll);
-            var finance = season.ApplyFinance(new FinanceChange(income.BudgetDelta - expense, income.FanDelta));
+            // 한국시리즈 우승 경기는 우승 보상(팬 100% → 팬덤 레벨업, 게이지 60%)이 팬 만족도를 정하므로 경기 팬 변화는 더하지 않는다 (Phase 42)
+            bool wonTitle = champion != null && champion == season.MyTeam;
+            var finance = season.ApplyFinance(new FinanceChange(income.BudgetDelta - expense,
+                wonTitle ? 0 : income.FanDelta + (rivalWin ? FandomRules.RivalWinFan : 0)));
             var unlocked = season.UpdateFandomUnlocks();
+            // Phase 42: 정규시즌 3연승마다 TP, 팬 만족도 100%면 팬덤 레벨업 (우승 레벨업은 결과 처리 안에서 이미 했다)
+            int trustEarned = !postseason && outcome == GameOutcome.Win && season.MyStreak() % FrontOfficeTrust.WinStreakStep == 0
+                ? season.EarnTrust(FrontOfficeTrust.WinStreakTrust) : 0;
+            var levelUp = season.CheckFandomLevelUp() ?? (champion == season.MyTeam ? season.LastFandomLevelUp : null);
             var conditions = participation == null ? new List<ConditionChange>() : season.ApplyConditions(participation, conditionRandom);
             var recoveries = season.TickInjuries(book);
             var injuries = participation != null && injuryRandom != null && book != null
@@ -158,6 +175,9 @@ namespace DailyFranchise.App
                 Postseason = postseason,
                 Champion = champion,
                 ChampionAward = champion != null && champion == season.MyTeam ? season.ChampionAward : null,
+                RivalWin = rivalWin,
+                TrustEarned = trustEarned,
+                FandomLevelUp = levelUp,
                 Saved = saves != null && saves.Save(season),
             };
         }

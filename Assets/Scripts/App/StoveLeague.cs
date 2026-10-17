@@ -612,6 +612,8 @@ namespace DailyFranchise.App
         Trust,
         /// <summary>경기 중.</summary>
         InGame,
+        /// <summary>[수뇌부 설득]인데 캡에 막히지 않았다 (설득이 필요 없다, Phase 42).</summary>
+        CapRoomAvailable,
     }
 
     /// <summary>협상 버튼 한 번의 결과.</summary>
@@ -623,6 +625,8 @@ namespace DailyFranchise.App
         /// <summary>계약 연봉 (성공했을 때만). 영입 때 내지 않고 경기마다 페이롤 유지비로 나간다.</summary>
         public long Salary;
         public FreeAgent Agent;
+        /// <summary>[수뇌부 설득]으로 캡을 넘겨 영입했는지 (Phase 42).</summary>
+        public bool Persuaded;
     }
 
     /// <summary>방출을 막는 이유 (Phase 26).</summary>
@@ -744,7 +748,9 @@ namespace DailyFranchise.App
         }
 
         /// <summary>이 제시액으로 협상(또는 확정 영입)할 수 있는지. 막히면 첫 이유.</summary>
-        public static SigningBlock Check(SeasonState season, LeagueRosterBook book, FreeAgent agent, long offer, bool ceiling = false)
+        /// <param name="bypassCap">[수뇌부 설득] (Phase 42): 이번 한 건만 샐러리캡 검사를 건너뛴다 (TP 10 필요).</param>
+        public static SigningBlock Check(SeasonState season, LeagueRosterBook book, FreeAgent agent, long offer, bool ceiling = false,
+            bool bypassCap = false)
         {
             if (season.InProgress != null) return SigningBlock.InGame;
             var (owner, _) = book.Find(agent.Id);
@@ -752,10 +758,40 @@ namespace DailyFranchise.App
             var roster = RosterBlock(book.Get(season.MyTeam), agent.Player);
             if (roster != SigningBlock.None) return roster;
             if (ceiling && !FrontOfficeTrust.CanUseCeiling(season.TrustPoints)) return SigningBlock.Trust;
+            if (bypassCap && !FrontOfficeTrust.CanPersuade(season.TrustPoints)) return SigningBlock.Trust;
             if (offer <= 0) return SigningBlock.InvalidOffer;
             if (FrontOfficeTrust.FeeOf(agent.Ask) > season.Budget) return SigningBlock.Budget;
-            if (offer > CapRoom(season, book)) return SigningBlock.SalaryCap;
+            if (!bypassCap && offer > CapRoom(season, book)) return SigningBlock.SalaryCap;
             return SigningBlock.None;
+        }
+
+        /// <summary>
+        /// [수뇌부 설득]을 쓸 수 있는지 (Phase 42): 요구액 그대로의 일반 영입이 샐러리캡에만 막혀야 한다 — 캡 여유가 있으면
+        /// <see cref="SigningBlock.CapRoomAvailable"/>, 다른 이유로 막히면 그 이유, TP가 모자라면 <see cref="SigningBlock.Trust"/>.
+        /// </summary>
+        public static SigningBlock CheckPersuasion(SeasonState season, LeagueRosterBook book, FreeAgent agent)
+        {
+            var normal = Check(season, book, agent, agent.Ask);
+            if (normal == SigningBlock.None) return SigningBlock.CapRoomAvailable;
+            if (normal != SigningBlock.SalaryCap) return normal;
+            return Check(season, book, agent, agent.Ask, bypassCap: true);
+        }
+
+        /// <summary>
+        /// [수뇌부 설득 (TP 10 소모)] (Phase 42): 캡만 막을 때 이번 한 건만 캡을 넘겨 요구액 그대로 영입한다.
+        /// 캡 기준·Flex·페이롤 계산은 바꾸지 않는다 (영입 기록의 연봉이 페이롤에 그대로 더해진다).
+        /// </summary>
+        public static SigningOutcome SignWithPersuasion(SeasonState season, LeagueRosterBook book, FreeAgent agent)
+        {
+            var outcome = new SigningOutcome { Agent = agent, Block = CheckPersuasion(season, book, agent) };
+            if (outcome.Block != SigningBlock.None) return outcome;
+            outcome.Negotiation = season.PersuadeFrontOffice(agent.Ask);
+            if (!outcome.Negotiation.Signed) return outcome;
+            outcome.Persuaded = true;
+            season.AddSigning(new SigningRecord(agent.Id, agent.Team, season.MyTeam, agent.Ask), isBatter: !agent.Player.IsPitcher);
+            outcome.Salary = agent.Ask;
+            season.AddNews(NewsWriter.Persuaded(season.MyTeam, agent.Player.Name, agent.Ask, season.Year, season.NewsDate));
+            return outcome;
         }
 
         /// <summary>
@@ -847,6 +883,7 @@ namespace DailyFranchise.App
                 case SigningBlock.SalaryCap: return "샐러리캡 여유가 제시액보다 적습니다.";
                 case SigningBlock.Trust: return $"확정 영입은 TP {FrontOfficeTrust.Ceiling} 이상일 때만 쓸 수 있습니다.";
                 case SigningBlock.InGame: return "경기 중에는 협상할 수 없습니다.";
+                case SigningBlock.CapRoomAvailable: return "샐러리캡 여유가 있어 수뇌부 설득이 필요 없습니다.";
                 default: throw new ArgumentOutOfRangeException(nameof(block), block, null);
             }
         }

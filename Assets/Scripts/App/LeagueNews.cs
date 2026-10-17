@@ -103,6 +103,7 @@ namespace DailyFranchise.App
         public const string ChampionTag = "[챔피언]";
         public const string InjuryTag = "[부상]";
         public const string RecoveryTag = "[복귀]";
+        public const string PerkTag = "[특전]";
 
         /// <summary>두 팀 득점 합이 이 이상이면 난타전.</summary>
         public const int SlugfestRuns = 15;
@@ -236,6 +237,15 @@ namespace DailyFranchise.App
 
         public static NewsItem NegotiationFailed(string team, string playerName, int year, string date) =>
             new NewsItem(NewsKind.NegotiationFailed, BreakingTag, team, $"{playerName}, {team}의 제안 거절… 협상 결렬", year, date);
+
+        /// <summary>팬덤 레벨업 (Phase 42): "[특전] 삼성 라이온즈 팬덤 폭발! 구단 굿즈 완판으로 특별 예산 확보!".</summary>
+        public static NewsItem FandomLevelUp(string team, FandomLevelUp reward, int year, string date) =>
+            new NewsItem(NewsKind.Fandom, PerkTag, team, $"{team} 팬덤 폭발! 구단 굿즈 완판으로 특별 예산 확보!", year, date);
+
+        /// <summary>[수뇌부 설득] 영입 (Phase 42).</summary>
+        public static NewsItem Persuaded(string team, string playerName, long salary, int year, string date) =>
+            new NewsItem(NewsKind.Signing, OfficialTag, team,
+                $"{team}, 수뇌부 설득 끝에 캡을 넘겨 {playerName} 영입! (연봉 {FranchiseFinance.BudgetText(salary)})", year, date);
 
         /// <summary>CPU 구단의 FA 영입 (Phase 41): "[오피셜] LG 트윈스, 자유계약 시장에서 진세훈과 전격 계약!".</summary>
         public static NewsItem CpuSigned(string team, string playerName, int year, string date) =>
