@@ -915,6 +915,52 @@ namespace DailyFranchise.UI.Tests
         }
 
         [UnityTest]
+        public IEnumerator 로비_라인업_벤치_기록_1위_행에_둥근_증명사진이_있고_경기_카드에는_선수_사진이_걸린다()
+        {
+            // Phase 38.5: 사진이 있는 선수는 그 사진, 없는 선수(과거 연도·더미)는 실루엣 — 어느 쪽이든 크래시 없이 칸이 그려진다
+            var manager = SeasonManager.Instance;
+            var root = LobbyRoot();
+            var rows = root.Q("roster").Children().Concat(root.Q("bench").Children()).ToList();
+            Assert.That(rows.Count, Is.EqualTo(manager.MyRoster.Lineup.Count + manager.MyRoster.Bench.Count));
+            foreach (var row in rows)
+            {
+                var face = row.Q(className: "col-face");
+                Assert.That(face, Is.Not.Null, row.name);
+                Assert.That(face.resolvedStyle.backgroundImage.sprite, Is.Not.Null, row.name + " 사진 또는 실루엣");
+                Assert.That(face.resolvedStyle.width, Is.EqualTo(face.resolvedStyle.height).Within(0.01f), "둥근 정사각 썸네일");
+                Assert.That(face.resolvedStyle.borderTopLeftRadius, Is.EqualTo(face.resolvedStyle.width / 2).Within(0.5f));
+            }
+            foreach (var p in manager.MyRoster.Lineup)
+                Assert.That(root.Q("face-" + p.Id).resolvedStyle.backgroundImage.sprite, Is.SameAs(ImageResourceManager.Face(p.Id)));
+            var leaderFaces = root.Q("team-leaders").Query(className: "col-face").ToList();
+            Assert.That(leaderFaces.Count, Is.EqualTo(6), "팀 내 기록 1위 6칸");
+            Assert.That(leaderFaces.Select(f => f.resolvedStyle.backgroundImage.sprite), Has.All.Not.Null);
+
+            manager.UseGeneratedScenario = true;
+            manager.ScenarioRandom = new SeededRandom(20261017);
+            Submit(root.Q<Button>("start-game"));
+            yield return WaitForScene(SeasonManager.GameScene);
+            var game = Object.FindAnyObjectByType<GameScreenController>();
+            game.Playback.Pause();
+            game.Playback.SkipToEnd();
+            yield return null;
+            var last = game.Events[game.Events.Count - 1];
+            foreach (var (photo, sceneId) in new[] { (game.PitcherPhoto, last.PitcherId), (game.BatterPhoto, last.BatterId) })
+            {
+                Assert.That(photo.resolvedStyle.position, Is.EqualTo(Position.Absolute), "카드 레이아웃 흐름 밖 (Flexbox 보존)");
+                // 내 타자는 DB 선수, 상대가 데이터 없는 구단이면 null → 실루엣
+                string id = game.PhotoIdOf(sceneId);
+                if (sceneId.StartsWith("home_")) Assert.That(id, Is.Not.Null, sceneId + " → DB 선수");
+                Assert.That(photo.resolvedStyle.backgroundImage.sprite, Is.Not.Null);
+                Assert.That(photo.resolvedStyle.backgroundImage.sprite, Is.SameAs(ImageResourceManager.Live(id)), sceneId);
+                Assert.That(photo.ClassListContains("player-photo--silhouette"), Is.EqualTo(ImageResourceManager.IsSilhouette(ImageResourceManager.Live(id))));
+                var card = photo.parent.worldBound;
+                Assert.That(card.Contains(photo.worldBound.min) && card.Contains(photo.worldBound.max - Vector2.one), Is.True, "사진은 카드 안");
+                Assert.That(photo.worldBound.yMax, Is.EqualTo(card.yMax).Within(0.5f), "카드 아래에 붙는다");
+            }
+        }
+
+        [UnityTest]
         public IEnumerator 인게임_투수_교체는_DB_불펜으로_하고_로비_복귀_뒤_원본_선수단은_그대로다()
         {
             var manager = SeasonManager.Instance;

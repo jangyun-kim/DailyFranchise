@@ -87,6 +87,7 @@
                 <ui:VisualElement class="stage-bottom">
                     <ui:VisualElement class="panel matchup">
                         <ui:VisualElement class="player-card">
+                            <ui:VisualElement name="pitcher-photo" class="player-card__photo" picking-mode="Ignore" />
                             <ui:Label class="player-card__role" text="투수" />
                             <ui:VisualElement class="player-card__name-row">
                                 <ui:Label name="pitcher-name" class="player-card__name" text="—" />
@@ -102,6 +103,7 @@
                         </ui:VisualElement>
                         <ui:Label class="vs" text="VS" />
                         <ui:VisualElement class="player-card">
+                            <ui:VisualElement name="batter-photo" class="player-card__photo" picking-mode="Ignore" />
                             <ui:Label class="player-card__role" text="타자" />
                             <ui:VisualElement class="player-card__name-row">
                                 <ui:Label name="batter-name" class="player-card__name" text="—" />

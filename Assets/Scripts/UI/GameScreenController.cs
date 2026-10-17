@@ -101,6 +101,7 @@ namespace DailyFranchise.UI
         Label _headlineMain, _headlineSub;
         Label _runner1, _runner2, _runner3, _playResult, _playType, _playRuns, _playOuts;
         Label _pitcherName, _pitcherTeam, _pitcherSeason, _pitcherLine1, _pitcherLine2, _pitcherFitness;
+        VisualElement _pitcherPhoto, _batterPhoto;
         Label _batterName, _batterTeam, _batterSeason, _batterLine1, _batterLine2, _batterFitness;
         Label _pitcherProfile, _pitcherRecord, _batterProfile;
         VisualElement _pitcherStats, _batterStats;
@@ -332,6 +333,15 @@ namespace DailyFranchise.UI
             var box = BoxScoreBuilder.Build(_generated, FinalPath(), source.Resolve, random);
             return box.Remap(id => source.Resolve(id)?.Id);
         }
+
+        /// <summary>
+        /// 카드 사진(Phase 38.5)을 찾을 선수 DB ID. 선수단이 실린 경기면 장면 자리의 선수, 더미 경기·빈 자리면 null (실루엣).
+        /// </summary>
+        public string PhotoIdOf(string sceneId) => (_roster as ScenarioRosterSource)?.Resolve(sceneId)?.Id;
+
+        /// <summary>투수·타자 카드 사진 요소 (테스트용).</summary>
+        public VisualElement PitcherPhoto => _pitcherPhoto;
+        public VisualElement BatterPhoto => _batterPhoto;
 
         /// <summary>장면 선수의 오늘 컨디션 문구 ("컨디션 좋음 (4/5)"). 선수 데이터나 컨디션을 모르면 null.</summary>
         string ConditionText(string sceneId)
@@ -866,6 +876,8 @@ namespace DailyFranchise.UI
             _playOuts = root.Q<Label>("play-outs");
 
             _pitcherName = root.Q<Label>("pitcher-name");
+            _pitcherPhoto = root.Q("pitcher-photo");
+            _batterPhoto = root.Q("batter-photo");
             _pitcherTeam = root.Q<Label>("pitcher-team");
             _pitcherSeason = root.Q<Label>("pitcher-season");
             _pitcherLine1 = root.Q<Label>("pitcher-line1");
@@ -1173,6 +1185,8 @@ namespace DailyFranchise.UI
             var pitcherState = PitcherStateAt(pitcherId, s.Index);
             var batter = _roster.GetPlayer(s.BatterId);
             _pitcherName.text = pitcher.Name;
+            ImageResourceManager.Apply(_pitcherPhoto, PhotoIdOf(pitcherId), PlayerImageKind.Live);
+            ImageResourceManager.Apply(_batterPhoto, PhotoIdOf(s.BatterId), PlayerImageKind.Live);
             _pitcherTeam.text = $"{_roster.GetTeam(pitcher.Side).ShortName} · {pitcher.Handedness} · {pitcher.Position}";
             _pitcherSeason.text = pitcher.SeasonLine;
             _pitcherProfile.text = pitcher.Profile ?? "";

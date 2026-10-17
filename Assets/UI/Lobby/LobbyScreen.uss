@@ -662,6 +662,22 @@ Label {
 .col-order { width: 28px; color: var(--muted); }
 .col-pos { width: 54px; color: var(--muted); }
 .col-name { flex-grow: 1; }
+/* 증명사진 썸네일 (Phase 38.5): 둥근 프로필. 사진이 상자를 넘지 않게 잘라 낸다. */
+.col-face {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    margin-right: 8px;
+    border-radius: 14px;
+    overflow: hidden;
+    background-color: var(--panel-2);
+    /* 증명사진은 상반신까지 찍혀 있어 얼굴 쪽을 키워 위에 붙인다 (넘치는 부분은 overflow로 잘림) */
+    background-size: 150% auto;
+    background-repeat: no-repeat;
+    background-position-x: center;
+    background-position-y: top;
+}
+.col-face.player-photo--silhouette { opacity: 0.6; }
 .col-hand { width: 80px; -unity-text-align: middle-right; color: var(--muted); }
 .lobby-row > Label.col-age { width: 44px; font-size: 14px; -unity-text-align: middle-right; color: var(--muted); }
 .lobby-row > Label.col-age--up { color: var(--good); }

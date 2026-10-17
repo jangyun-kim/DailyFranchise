@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using DailyFranchise.Sim.Data;
+using DailyFranchise.UI;
 using DailyFranchise.UI.Data;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -754,7 +755,7 @@ namespace DailyFranchise.App
         }
 
         /// <summary>
-        /// 라인업 행: 순번 · 위치 · 이름 · 배지 · 컨디션 · 나이. 벤치 행은 순번 없이 (투타는 이름 툴팁).
+        /// 라인업 행: 순번 · 위치 · 얼굴 사진 · 이름 · 배지 · 컨디션 · 나이. 벤치 행은 순번 없이 (투타는 이름 툴팁).
         /// 누르면 선수 상세 (교체 대상을 고르는 중이면 교체). Phase 31부터 방출 버튼은 행에 없다.
         /// </summary>
         VisualElement SpotRow(LineupSpot spot, string order, PlayerData p)
@@ -763,6 +764,7 @@ namespace DailyFranchise.App
             var row = spot.IsBench
                 ? Row("lobby-row",
                     Cell(p.Position, "col-pos"),
+                    FaceCell(p),
                     name,
                     BadgeCell(TagOf(p)),
                     ConditionCell(_manager.Season.ConditionOf(p.Id)),
@@ -770,6 +772,7 @@ namespace DailyFranchise.App
                 : Row("lobby-row",
                     Cell(order, "col-order"),
                     Cell(p.Position, "col-pos"),
+                    FaceCell(p),
                     name,
                     BadgeCell(TagOf(p)),
                     ConditionCell(_manager.Season.ConditionOf(p.Id)),
@@ -780,6 +783,18 @@ namespace DailyFranchise.App
             row.AddToClassList("lobby-row--selectable");
             row.RegisterCallback<ClickEvent>(_ => OnRowClicked(spot));
             return row;
+        }
+
+        /// <summary>
+        /// 둥근 증명사진 썸네일 칸 (Phase 38.5, <see cref="ImageResourceManager"/>): 사진이 없거나 선수가 없으면 실루엣.
+        /// 이름 face-{선수 ID}.
+        /// </summary>
+        public static VisualElement FaceCell(PlayerData p)
+        {
+            var cell = new VisualElement { name = "face-" + (p?.Id ?? "none"), pickingMode = PickingMode.Ignore };
+            cell.AddToClassList("col-face");
+            ImageResourceManager.Apply(cell, p?.Id, PlayerImageKind.Face);
+            return cell;
         }
 
         /// <summary>폼 표시 문턱 (±0.5%p 미만은 변동 없음으로 본다).</summary>
@@ -955,6 +970,7 @@ namespace DailyFranchise.App
                 var leader = leaders[category];
                 var row = Row("lobby-row",
                     Cell(leader.CategoryText, "col-leader-cat"),
+                    FaceCell(leader.Player),
                     Cell(leader.Player?.Name ?? "기록 없음", "col-leader-name"),
                     Cell(leader.ValueText, "col-leader-value"));
                 row.name = "leader-" + category;

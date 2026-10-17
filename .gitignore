@@ -107,3 +107,8 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# 선수 실사 이미지 (Phase 38.5): 실제 선수 사진은 라이선스 문제로 저장소에 넣지 않는다 (1인 플레이용 로컬 전용).
+# 사진이 없는 체크아웃에서는 ImageResourceManager가 Resources/UI/PlayerSilhouette 실루엣으로 대체한다.
+/[Aa]ssets/[Rr]esources/[Ii]mages/
+/[Aa]ssets/[Rr]esources/[Ii]mages.meta

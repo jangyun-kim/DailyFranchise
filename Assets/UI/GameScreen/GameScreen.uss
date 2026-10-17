@@ -475,6 +475,26 @@ Label {
     flex-basis: 0;
 }
 
+/* 선수 사진 (Phase 38.5): 카드 오른쪽 아래에 깔리는 배경 사진. 레이아웃 흐름에서 빠지고(absolute) 글자가 위에 그려진다.
+   원본 비율(약 4:5)에 맞춘 상자에 scale-and-crop으로 넣어 찌그러지지 않고, 인물은 상자 아래에 붙는다. */
+.player-card__photo {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 128px;
+    height: 160px;
+    overflow: hidden;
+    -unity-background-scale-mode: scale-and-crop;
+    background-position-x: center;
+    background-position-y: bottom;
+    border-bottom-width: 2px;
+    border-color: var(--line);
+}
+
+.player-card__photo.player-photo--silhouette {
+    opacity: 0.45;
+}
+
 .player-card__role {
     height: 20px;
     font-size: 13px;
