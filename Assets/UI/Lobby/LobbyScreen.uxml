@@ -9,7 +9,11 @@
                 <ui:VisualElement class="header__brand-text">
                     <ui:Label class="app-title" text="DAILY FRANCHISE" />
                     <ui:Label name="my-team" class="my-team" text="—" />
-                    <ui:Label name="my-record" class="my-record" text="—" />
+                    <!-- Phase 39: 시즌 성적 축 (게임 내 시즌의 내 구단 성적) -->
+                    <ui:VisualElement class="axis-row">
+                        <ui:Label name="record-tag" class="axis-tag axis-tag--record" text="시즌 성적" />
+                        <ui:Label name="my-record" class="my-record" text="—" />
+                    </ui:VisualElement>
                 </ui:VisualElement>
             </ui:VisualElement>
             <ui:VisualElement name="front-office" class="front-office">
@@ -54,9 +58,16 @@
                 </ui:VisualElement>
             </ui:VisualElement>
             <ui:VisualElement class="header__time">
+                <!-- Phase 39: 게임 내 날짜 축 / 선수 카드 기준 데이터 축 -->
                 <ui:Label name="season-title" class="season-title" text="—" />
-                <ui:Label name="game-day" class="game-day" text="—" />
-                <ui:Label name="camp-points" class="camp-points" text="" />
+                <ui:VisualElement class="axis-row axis-row--right">
+                    <ui:Label class="axis-tag axis-tag--time" text="게임 내 날짜" />
+                    <ui:Label name="game-day" class="game-day" text="—" />
+                </ui:VisualElement>
+                <ui:VisualElement class="axis-row axis-row--right">
+                    <ui:Label name="camp-points" class="camp-points" text="" />
+                    <ui:Label name="data-basis" class="axis-tag axis-tag--data" text="—" />
+                </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
 
@@ -146,7 +157,7 @@
                                 <ui:Label class="stat-tile__label" text="득실차" />
                                 <ui:Label name="stat-diff" class="stat-tile__value" text="—" />
                             </ui:VisualElement>
-                            <ui:VisualElement class="stat-tile stat-tile--wide">
+                            <ui:VisualElement class="stat-tile stat-tile--wide stat-tile--last">
                                 <ui:Label class="stat-tile__label" text="최근 10경기" />
                                 <ui:Label name="stat-l10" class="stat-tile__value" text="—" />
                             </ui:VisualElement>
@@ -220,6 +231,16 @@
                 </ui:VisualElement>
                 <ui:VisualElement class="fa-modal__body">
                     <ui:VisualElement class="fa-modal__market">
+                        <!-- Phase 39: 포지션 필터 (오늘의 결정 [시장에서 찾기]가 걸어 둔다) -->
+                        <ui:VisualElement name="fa-filter" class="fa-filter">
+                            <ui:Label class="fa-filter__label" text="포지션" />
+                            <ui:Button name="fa-filter-all" class="btn fa-filter__btn" text="전체" />
+                            <ui:Button name="fa-filter-C" class="btn fa-filter__btn" text="포수" />
+                            <ui:Button name="fa-filter-IF" class="btn fa-filter__btn" text="내야수" />
+                            <ui:Button name="fa-filter-OF" class="btn fa-filter__btn" text="외야수" />
+                            <ui:Button name="fa-filter-P" class="btn fa-filter__btn" text="투수" />
+                            <ui:Label name="fa-filter-note" class="fa-filter__note" text="" />
+                        </ui:VisualElement>
                         <ui:VisualElement class="lobby-row lobby-row--head fa-row">
                             <ui:Label class="fa-col-name" text="이름" />
                             <ui:Label name="fa-head-team" class="fa-col-team" text="소속" />
@@ -257,9 +278,11 @@
                         <ui:Label name="fa-warning" class="fa-modal__warning" text="" />
                         <ui:VisualElement class="fa-modal__actions">
                             <ui:Button name="fa-negotiate" class="btn fa-modal__action fa-modal__action--primary" text="협상 시도" />
-                            <ui:Button name="fa-ceiling" class="btn fa-modal__action" text="확정 영입 (TP 100 소모)" />
+                            <ui:Button name="fa-ceiling" class="btn fa-modal__action fa-modal__action--last" text="확정 영입 (TP 100 소모)" />
                         </ui:VisualElement>
                         <ui:Label name="fa-result" class="fa-modal__result" text="" />
+                        <!-- Phase 39: 영입 직후 기용 동선 -->
+                        <ui:Button name="fa-open-signed" class="btn fa-open-signed" text="영입 선수 상세 · 라인업 기용" />
                     </ui:VisualElement>
                     <ui:VisualElement name="fa-trade-panel" class="fa-modal__table fa-trade-panel">
                         <ui:Label class="fa-modal__label" text="트레이드 데스크 · 1:1 교환" />
@@ -289,11 +312,27 @@
                     <ui:Label name="pd-condition" class="pd-condition" text="—" />
                     <ui:Label name="pd-condition-note" class="pd-condition-note" text="" />
                 </ui:VisualElement>
+                <!-- Phase 39: 선수 상세 4탭 — 시즌 기록(기용) / 최근 출장(폼 변화) / 육성(CP) / 계약·거취(등록·트레이드·방출) -->
+                <ui:VisualElement name="pd-tabs" class="pd-tabs">
+                    <ui:Button name="pd-tab-record" class="btn pd-tab" text="시즌 기록" />
+                    <ui:Button name="pd-tab-recent" class="btn pd-tab" text="최근 출장" />
+                    <ui:Button name="pd-tab-growth" class="btn pd-tab" text="육성" />
+                    <ui:Button name="pd-tab-contract" class="btn pd-tab" text="계약 · 거취" />
+                </ui:VisualElement>
+                <ui:VisualElement name="pd-page-record" class="pd-page">
                 <ui:VisualElement name="pd-stats" class="pd-stats" />
                 <ui:Label name="pd-season" class="pd-season" text="" />
                 <ui:Label name="pd-swap-title" class="section-title pd-swap-title" text="" />
                 <ui:VisualElement name="pd-swap" class="pd-swap" />
                 <ui:Button name="pd-pick" class="btn pd-pick" text="라인업에서 직접 골라 맞바꾸기" />
+                </ui:VisualElement>
+                <ui:VisualElement name="pd-page-recent" class="pd-page">
+                    <ui:Label name="pd-form-trend" class="pd-form-trend" text="" />
+                    <ui:Label class="section-title" text="최근 출장 (최신 경기 먼저)" />
+                    <ui:VisualElement name="pd-recent" class="pd-recent" />
+                </ui:VisualElement>
+                <ui:VisualElement name="pd-page-growth" class="pd-page">
+                <ui:Label name="pd-growth-summary" class="pd-growth-summary" text="" />
                 <!-- Phase 33: 에이징 폼 게이지와 스프링캠프 특별 훈련 (24세 이하) -->
                 <ui:VisualElement name="pd-train-row" class="pd-train-row">
                     <ui:Label name="pd-form" class="pd-form" text="—" />
@@ -304,6 +343,9 @@
                     <ui:Button name="pd-train" class="btn pd-train" text="스프링캠프 특별 훈련 (CP 1 소모)" />
                 </ui:VisualElement>
                 <ui:Label name="pd-train-note" class="pd-train-note" text="" />
+                </ui:VisualElement>
+                <ui:VisualElement name="pd-page-contract" class="pd-page">
+                <ui:Label name="pd-contract" class="pd-contract" text="" />
                 <!-- Phase 35: 1군 등록/말소 (벤치·불펜 <-> 퓨처스 1:1 맞바꾸기) -->
                 <ui:VisualElement name="pd-move-zone" class="pd-trade pd-move">
                     <ui:VisualElement class="pd-trade__head">
@@ -337,9 +379,11 @@
                         <ui:Button name="pd-offer-next" class="btn pd-trade__page-btn" text="▶" />
                     </ui:VisualElement>
                 </ui:VisualElement>
+                <!-- 위험 구역: 계약·거취 탭 맨 아래, 두 번 눌러야 방출 -->
                 <ui:VisualElement name="pd-danger" class="pd-danger">
                     <ui:Label name="pd-release-note" class="pd-release-note" text="" />
                     <ui:Button name="pd-release" class="btn pd-release" text="방출" />
+                </ui:VisualElement>
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>

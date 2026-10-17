@@ -9,6 +9,19 @@ using UnityEngine.UIElements;
 
 namespace DailyFranchise.App
 {
+    /// <summary>선수 상세 탭 (Phase 39).</summary>
+    public enum PlayerDetailTab
+    {
+        /// <summary>이번 시즌 누적 기록 + 기용(라인업 맞바꾸기).</summary>
+        Record,
+        /// <summary>최근 출장 기록과 최근 폼 (최근 5경기 vs 시즌).</summary>
+        Recent,
+        /// <summary>육성: 에이징 폼과 스프링캠프 특별 훈련(CP).</summary>
+        Growth,
+        /// <summary>계약·거취: 연봉·영입 경로, 1군 등록/말소, 트레이드, 방출(위험 구역).</summary>
+        Contract,
+    }
+
     /// <summary>
     /// 로비 선수 상세 모달 (Phase 31). 순수 C# 뷰 — 로비(<see cref="LobbyController"/>)가 만들고, 라인업·벤치 행, 투수진,
     /// 오늘의 결정 항목을 누르면 연다. 선수단은 SeasonManager가 짠 것을 읽기만 한다.
@@ -18,6 +31,9 @@ namespace DailyFranchise.App
     /// - 교체: 선발 타자는 벤치 선수, 벤치 선수는 선발 타자와 바로 맞바꾸는 버튼 (같은 수비군·컨디션 좋은 순).
     ///   [직접 고르기]는 모달을 닫고 로비의 Click-to-Swap 선택 상태로 넘긴다.
     /// - 방출 (위험 구역): 첫 누름은 확인 상태(위약금 표시)로만 바뀌고, 한 번 더 눌러야 방출한다. 막히면 잠그고 이유를 보인다.
+    /// - Phase 39: 4탭으로 나눈다 — [시즌 기록](누적 타일·기용) / [최근 출장](경기별 기록·최근 폼) / [육성](폼·CP 훈련) /
+    ///   [계약·거취](연봉·영입 경로·1군 등록/말소·트레이드·방출). 열 때는 [시즌 기록]. 방출은 [계약·거취] 맨 아래로 숨긴다.
+    ///   각 동작(Press…)은 그 동작의 탭으로 옮겨 간 뒤 실행한다.
     /// - 타 구단 선수 (Phase 34, FA 모달의 타 구단 명단에서): 기록·컨디션만 보이고 교체·훈련·방출 대신 [트레이드 제안].
     ///   누르면 보낼 내 선수 목록(1군 타자 · 투수 · 퓨처스, 가치·차단 이유)이 열리고, 고르면 즉시 평가한다.
     ///   거절·차단이면 모달을 열어 둔 채 이유를 보이고, 성사되면 닫는다 (로비가 결과를 안내).
@@ -76,6 +92,9 @@ namespace DailyFranchise.App
             _offerNext = root.Q<Button>("pd-offer-next");
             _offerPrev.clicked += PrevOfferPage;
             _offerNext.clicked += NextOfferPage;
+            _tabs = new[] { "record", "recent", "growth", "contract" }.Select(n => root.Q<Button>("pd-tab-" + n)).ToArray();
+            for (int i = 0; i < _tabs.Length; i++) _tabs[i].userData = (PlayerDetailTab)i;
+            foreach (var b in _tabs) b.clicked += TabHandler(b);
             _modal = root.Q("player-modal");
             _close = root.Q<Button>("pd-close");
             _pickButton = root.Q<Button>("pd-pick");
@@ -91,6 +110,7 @@ namespace DailyFranchise.App
         public void Detach()
         {
             _close.clicked -= Close;
+            foreach (var kv in _tabHandlers) kv.Key.clicked -= kv.Value;
             _pickButton.clicked -= OnPick;
             _releaseButton.clicked -= OnRelease;
             _trainButton.clicked -= OnTrain;
@@ -148,6 +168,97 @@ namespace DailyFranchise.App
             group == 2 ? o.Futures : !o.Futures && o.Player.IsPitcher == (group == 1);
 
         public bool IsOpen => _modal.ClassListContains("pd-modal--open");
+
+        readonly Button[] _tabs;
+        readonly Dictionary<Button, Action> _tabHandlers = new Dictionary<Button, Action>();
+
+        Action TabHandler(Button b)
+        {
+            Action a = () => ShowTab((PlayerDetailTab)b.userData);
+            _tabHandlers[b] = a;
+            return a;
+        }
+
+        /// <summary>지금 탭 (열 때마다 [시즌 기록]).</summary>
+        public PlayerDetailTab Tab { get; private set; }
+
+        /// <summary>탭을 바꾼다. 타 구단 선수는 [육성]이 없어 [시즌 기록]으로.</summary>
+        public void ShowTab(PlayerDetailTab tab)
+        {
+            Tab = IsOtherTeam && tab == PlayerDetailTab.Growth ? PlayerDetailTab.Record : tab;
+            if (IsOpen) Render();
+        }
+
+        void RenderTabs()
+        {
+            foreach (var b in _tabs)
+            {
+                var t = (PlayerDetailTab)b.userData;
+                b.EnableInClassList("pd-tab--active", t == Tab);
+                b.style.display = IsOtherTeam && t == PlayerDetailTab.Growth ? DisplayStyle.None : DisplayStyle.Flex;
+            }
+            Q("pd-page-record").EnableInClassList("pd-page--active", Tab == PlayerDetailTab.Record);
+            Q("pd-page-recent").EnableInClassList("pd-page--active", Tab == PlayerDetailTab.Recent);
+            Q("pd-page-growth").EnableInClassList("pd-page--active", Tab == PlayerDetailTab.Growth);
+            Q("pd-page-contract").EnableInClassList("pd-page--active", Tab == PlayerDetailTab.Contract);
+        }
+
+        /// <summary>최근 출장 줄 수 (한 화면 규칙).</summary>
+        public const int RecentShown = 5;
+
+        /// <summary>[최근 출장]: 최근 폼 한 줄과 최신 경기 <see cref="RecentShown"/>개.</summary>
+        void RenderRecent(PlayerData p)
+        {
+            var stats = _manager.Season.Stats;
+            var trend = Q<Label>("pd-form-trend");
+            string form = stats.FormText(p.Id, p.IsPitcher);
+            trend.text = form ?? $"최근 폼 · 이번 시즌 출장 기록이 쌓이면 최근 {SeasonStatsTracker.FormGames}경기를 시즌과 비교합니다";
+            trend.EnableInClassList("pd-form--up", form != null && form.Contains("▲"));
+            trend.EnableInClassList("pd-form--down", form != null && form.Contains("▼"));
+            var list = Q("pd-recent");
+            list.Clear();
+            var games = stats.RecentOf(p.Id).Take(RecentShown).ToList();
+            if (games.Count == 0)
+            {
+                var empty = Cell(IsOtherTeam ? "이번 시즌 내 구단과의 경기 기록이 없습니다." : "이번 시즌 출장 기록이 없습니다. 라인업에 넣고 경기를 치르면 여기에 쌓입니다.",
+                    "pd-recent__row");
+                empty.name = "pd-recent-empty";
+                empty.AddToClassList("pd-recent__row--empty");
+                list.Add(empty);
+                return;
+            }
+            for (int i = 0; i < games.Count; i++)
+            {
+                var g = games[i];
+                var row = Cell($"{g.Date} · vs {LobbyBriefing.TeamMark(g.Opponent)} · {g.LineText}", "pd-recent__row");
+                row.name = "pd-recent-" + i;
+                list.Add(row);
+            }
+        }
+
+        /// <summary>[육성] 요약: 나이·폼이 어떻게 바뀌는지와 보유 CP.</summary>
+        void RenderGrowth(PlayerData p)
+        {
+            Q<Label>("pd-growth-summary").text =
+                $"{(p.Age > 0 ? p.Age + "세 · " : "")}에이징 폼 {AgingCurve.FormText(p.Form)} · 폼은 오프시즌 에이징과 스프링캠프 특별 훈련으로 바뀝니다 · 보유 {_manager.Season.CampPoints} CP";
+        }
+
+        /// <summary>[계약·거취] 머리: 연봉과 영입 경로 (내가 이 선수에게 한 투자).</summary>
+        void RenderContract(TeamRoster roster, PlayerData p)
+        {
+            var season = _manager.Season;
+            long salary = StoveLeague.SalaryOf(p, roster.Team, season.Signings);
+            string money = "₩" + FranchiseFinance.Won(salary);
+            if (IsOtherTeam)
+            {
+                Q<Label>("pd-contract").text = $"{Team} 소속 · 연봉 {money} · 데려오려면 [트레이드 제안]으로 내 선수 1명과 맞바꿉니다";
+                return;
+            }
+            var record = season.Signings.LastOrDefault(s => s.IsTransfer && s.PlayerId == p.Id && s.ToTeam == season.MyTeam);
+            string how = record == null ? (RookieGenerator.IsRookie(p) ? "신인 드래프트 입단" : "원소속 선수")
+                : record.IsTrade ? $"트레이드 영입 (← {record.FromTeam})" : $"FA 영입 (← {record.FromTeam})";
+            Q<Label>("pd-contract").text = $"연봉 {money} · {how} · 이번 시즌 {SeasonCaption(p, season)}";
+        }
 
         /// <summary>보고 있는 선수 ID (닫혀 있으면 null).</summary>
         public string PlayerId { get; private set; }
@@ -211,6 +322,7 @@ namespace DailyFranchise.App
             PlayerId = playerId;
             ReleaseArmed = false;
             Team = team;
+            Tab = PlayerDetailTab.Record;
             TradePicking = false;
             _tradeText = "";
             MovePicking = false;
@@ -257,6 +369,11 @@ namespace DailyFranchise.App
             for (int i = PlayerCondition.Min; i <= PlayerCondition.Max; i++) condition.EnableInClassList("pd-cond--" + i, injury == 0 && i == cond);
             condition.EnableInClassList("pd-cond--injured", injury > 0);
             Q<Label>("pd-condition-note").text = injury > 0 ? InjuryRules.LockedText(injury) : ConditionNote(p, cond);
+            if (MovePicking) Tab = PlayerDetailTab.Contract; // 맞바꿀 선수를 고르는 동안은 [계약·거취]
+            RenderTabs();
+            RenderRecent(p);
+            RenderContract(roster, p);
+            if (!IsOtherTeam) RenderGrowth(p);
 
             var stats = Q("pd-stats");
             stats.Clear();
@@ -265,6 +382,7 @@ namespace DailyFranchise.App
             {
                 var tile = new VisualElement { name = "pd-stat-" + i };
                 tile.AddToClassList("pd-stat");
+                tile.EnableInClassList("pd-stat--last", i == tiles.Count - 1);
                 tile.Add(Cell(tiles[i].label, "pd-stat__label"));
                 tile.Add(Cell(tiles[i].value, "pd-stat__value"));
                 stats.Add(tile);
@@ -324,6 +442,7 @@ namespace DailyFranchise.App
         /// <summary>[1군 등록·말소] / [취소]: 맞바꿀 선수 목록을 열고 닫는다. 내 선수가 아니거나 맞바꿀 수 없는 선수면 false.</summary>
         public bool PressMove()
         {
+            Tab = PlayerDetailTab.Contract;
             var roster = _manager.MyRoster;
             if (IsOtherTeam || PlayerId == null || roster == null || !RosterMoves.IsMovable(roster, PlayerId, _manager.Season)) return false;
             MovePicking = !MovePicking;
@@ -483,6 +602,7 @@ namespace DailyFranchise.App
         /// <summary>[트레이드 제안] / [제안 취소]: 보낼 내 선수 목록을 열고 닫는다. 타 구단 선수가 아니면 false.</summary>
         public bool PressTrade()
         {
+            Tab = PlayerDetailTab.Contract;
             if (!IsOtherTeam || PlayerId == null || _manager.Season.IsInjured(PlayerId)) return false;
             TradePicking = !TradePicking;
             _tradeText = "";
@@ -549,6 +669,7 @@ namespace DailyFranchise.App
         /// <summary>[스프링캠프 특별 훈련]: CP 1로 폼 +1%p (SeasonManager가 저장·알림). 모달은 열어 둔 채 다시 그린다.</summary>
         public TrainingOutcome PressTrain()
         {
+            Tab = PlayerDetailTab.Growth;
             if (PlayerId == null) return null;
             var outcome = _manager.Train(PlayerId);
             if (IsOpen) Render();
@@ -719,6 +840,7 @@ namespace DailyFranchise.App
         /// </summary>
         public ReleaseOutcome PressRelease()
         {
+            Tab = PlayerDetailTab.Contract;
             if (PlayerId == null) return null;
             if (StoveLeague.CheckRelease(_manager.Season, _manager.Rosters, PlayerId) != ReleaseBlock.None) return null;
             if (!ReleaseArmed)

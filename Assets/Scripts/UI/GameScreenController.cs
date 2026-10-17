@@ -102,6 +102,7 @@ namespace DailyFranchise.UI
         Label _runner1, _runner2, _runner3, _playResult, _playType, _playRuns, _playOuts;
         Label _pitcherName, _pitcherTeam, _pitcherSeason, _pitcherLine1, _pitcherLine2, _pitcherFitness;
         VisualElement _pitcherPhoto, _batterPhoto;
+        VisualElement _devPanel;
         Label _batterName, _batterTeam, _batterSeason, _batterLine1, _batterLine2, _batterFitness;
         Label _pitcherProfile, _pitcherRecord, _batterProfile;
         VisualElement _pitcherStats, _batterStats;
@@ -953,7 +954,13 @@ namespace DailyFranchise.UI
             _bullpenCurrent = root.Q<Label>("bullpen-current");
             root.Q<Button>("bullpen-cancel").clicked += CloseBullpen;
 
-            // 디버그 전용 시나리오 탭
+            // 디버그 전용 시나리오 탭 (Phase 39: 숨은 개발자 패널 안, F12로 연다)
+            _devPanel = root.Q("dev-panel");
+            SetDevPanel(false);
+            root.UnregisterCallback<KeyDownEvent>(OnDevKey, TrickleDown.TrickleDown);
+            root.RegisterCallback<KeyDownEvent>(OnDevKey, TrickleDown.TrickleDown);
+            root.panel?.visualTree.UnregisterCallback<KeyDownEvent>(OnDevKey, TrickleDown.TrickleDown);
+            root.panel?.visualTree.RegisterCallback<KeyDownEvent>(OnDevKey, TrickleDown.TrickleDown);
             _scenarioTabs.Clear();
             foreach (var entry in ScenarioCatalog.All)
             {
@@ -974,6 +981,20 @@ namespace DailyFranchise.UI
             };
             fullTab.AddToClassList("debug-strip__btn");
             _scenarioTabs.Add(fullTab);
+        }
+
+        /// <summary>개발자 패널(디버그 시나리오 전환)이 열려 있는지. 평소에는 닫혀 플레이 화면에 보이지 않는다.</summary>
+        public bool DevPanelOpen => _devPanel != null && _devPanel.ClassListContains("dev-panel--open");
+
+        public void ToggleDevPanel() => SetDevPanel(!DevPanelOpen);
+
+        void SetDevPanel(bool open) => _devPanel?.EnableInClassList("dev-panel--open", open);
+
+        void OnDevKey(KeyDownEvent e)
+        {
+            if (e.keyCode != KeyCode.F12) return;
+            ToggleDevPanel();
+            e.StopPropagation();
         }
 
         void BindTactic(string buttonName, TacticKind kind)

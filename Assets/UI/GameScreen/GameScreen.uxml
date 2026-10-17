@@ -162,17 +162,12 @@
             </ui:VisualElement>
         </ui:VisualElement>
 
-        <!-- 하단 110px: 주목 선수 / 디버그 / 진행 제어 -->
+        <!-- 하단 110px: 주목 선수 / 진행 제어 -->
         <ui:VisualElement name="footer" class="footer">
             <ui:VisualElement class="footer__featured">
                 <ui:Label class="section-title" text="오늘의 주목 선수" />
                 <ui:Label name="featured-name" class="featured__name" text="—" />
                 <ui:Label name="featured-line" class="info-line info-line--muted" text="—" />
-            </ui:VisualElement>
-            <!-- 디버그 전용: 시나리오 전환 -->
-            <ui:VisualElement name="debug-strip" class="debug-strip">
-                <ui:Label class="debug-strip__tag" text="DEBUG 시나리오" />
-                <ui:VisualElement name="scenario-tabs" class="debug-strip__tabs" />
             </ui:VisualElement>
             <ui:VisualElement class="footer__controls">
                 <ui:Label name="playback-position" class="playback-position" text="—" />
@@ -182,6 +177,14 @@
                 <ui:Button name="ctl-inning-end" class="btn btn--control" text="이닝 종료" />
                 <ui:Button name="ctl-game-end" class="btn btn--control" text="경기 종료" />
                 <ui:Button name="ctl-auto" class="btn btn--control btn--auto" text="자동" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- Phase 39: 개발자 패널 (F12로 열고 닫는다). 디버그 시나리오 전환은 플레이 화면에 보이지 않는다 -->
+        <ui:VisualElement name="dev-panel" class="dev-panel">
+            <ui:VisualElement name="debug-strip" class="debug-strip">
+                <ui:Label class="debug-strip__tag" text="DEV · 시나리오 (F12)" />
+                <ui:VisualElement name="scenario-tabs" class="debug-strip__tabs" />
             </ui:VisualElement>
         </ui:VisualElement>
 

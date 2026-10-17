@@ -79,7 +79,97 @@ namespace DailyFranchise.App
             _tabTrade.clicked += ShowTradeTab;
             _tradePrev.clicked += PrevTradePage;
             _tradeNext.clicked += NextTradePage;
+            _filters = FilterKeys.Select(k => (root.Q<Button>("fa-filter-" + (k ?? "all")), FilterHandler(k))).ToArray();
+            foreach (var (button, handler) in _filters) button.clicked += handler;
+            _openSigned = root.Q<Button>("fa-open-signed");
+            _openSigned.clicked += OnOpenSigned;
         }
+
+        // ---------- Phase 39: 포지션 필터 · 영입 뒤 기용 동선 ----------
+
+        /// <summary>필터 키: null = 전체, "C" 포수, "IF" 내야, "OF" 외야, "P" 투수.</summary>
+        public static readonly IReadOnlyList<string> FilterKeys = new[] { null, "C", "IF", "OF", "P" };
+
+        readonly (Button button, Action handler)[] _filters;
+        readonly Button _openSigned;
+
+        Action FilterHandler(string key) => () => SetPositionFilter(key);
+
+        /// <summary>지금 포지션 필터 키 (null = 전체). 닫았다 열어도 유지한다.</summary>
+        public string PositionFilter { get; private set; }
+
+        /// <summary>마지막으로 영입한 선수 ID (영입 결과 아래 [영입 선수 상세] 버튼). 없으면 null.</summary>
+        public string LastSignedId { get; private set; }
+
+        /// <summary>수비 위치("3B", "C") 또는 필터 키를 필터 키로: 내야·외야는 수비군, 포수 "C", 투수 "P", 지명타자·모름은 전체.</summary>
+        public static string FilterKeyOf(string position)
+        {
+            if (string.IsNullOrEmpty(position)) return null;
+            string p = position.Trim().ToUpperInvariant();
+            if (p == "P" || p == "IF" || p == "OF") return p;
+            string group = PositionMatcher.GroupOf(p);
+            return group == PositionMatcher.Catcher ? "C" : group == "IF" || group == "OF" ? group : null;
+        }
+
+        /// <summary>선수가 필터에 맞는지.</summary>
+        public static bool Matches(PlayerData p, string key)
+        {
+            if (key == null) return true;
+            if (key == "P") return p.IsPitcher;
+            if (p.IsPitcher) return false;
+            return key == "C" ? PositionMatcher.GroupOf(p.Position) == PositionMatcher.Catcher : PositionMatcher.GroupOf(p.Position) == key;
+        }
+
+        /// <summary>
+        /// 포지션 필터를 건다 (수비 위치 "3B"도 받는다 → 내야). FA 명단·타 구단 명단이 그 포지션 선수만 보이고,
+        /// 고른 FA가 필터 밖이면 필터 안 첫 선수를 고른다.
+        /// </summary>
+        public void SetPositionFilter(string positionOrKey)
+        {
+            PositionFilter = FilterKeyOf(positionOrKey);
+            TradePage = 0;
+            var sel = Selected;
+            if (sel != null && !Matches(sel.Player, PositionFilter)) SelectedId = null;
+            if (IsOpen) Refresh();
+        }
+
+        /// <summary>그 포지션으로 거른 시장을 연다 (오늘의 결정 [시장에서 찾기]). 거를 선수가 FA에 없고 타 구단에 있으면 타 구단 명단 탭.</summary>
+        public void OpenFor(string position)
+        {
+            SetPositionFilter(position);
+            if (Tab == FaTab.Market && FilteredMarket.Count == 0 && FilteredTargets.Count > 0) Tab = FaTab.Trade;
+            Open();
+        }
+
+        /// <summary>필터를 거친 FA 명단.</summary>
+        public IReadOnlyList<FreeAgent> FilteredMarket => _manager.Market.Where(a => Matches(a.Player, PositionFilter)).ToList();
+
+        /// <summary>필터를 거친 타 구단 명단.</summary>
+        public IReadOnlyList<TradeTarget> FilteredTargets => _manager.TradeTargets.Where(t => Matches(t.Player, PositionFilter)).ToList();
+
+        /// <summary>[영입 선수 상세 · 라인업 기용]: 시장을 닫고 방금 영입한 선수의 상세(맞바꾸기)를 연다.</summary>
+        public bool OpenSignedPlayer()
+        {
+            if (LastSignedId == null || _openPlayer == null) return false;
+            string id = LastSignedId;
+            Close();
+            return _openPlayer(id);
+        }
+
+        void OnOpenSigned() => OpenSignedPlayer();
+
+        void RenderFilter()
+        {
+            foreach (var (button, _) in _filters)
+                button.EnableInClassList("fa-filter__btn--active", button.name == "fa-filter-" + (PositionFilter ?? "all"));
+            int fa = FilteredMarket.Count, trade = FilteredTargets.Count;
+            Q<Label>("fa-filter-note").text = PositionFilter == null ? ""
+                : fa + trade == 0 ? $"{FilterLabel(PositionFilter)} 후보 없음 · 퓨처스 콜업을 검토하세요"
+                : $"{FilterLabel(PositionFilter)} · FA {fa}명 · 타 구단 {trade}명";
+        }
+
+        static string FilterLabel(string key) =>
+            key == "C" ? "포수" : key == "IF" ? "내야수" : key == "OF" ? "외야수" : key == "P" ? "투수" : "전체";
 
         Action StepHandler(int delta) => () => Step(delta);
 
@@ -94,6 +184,8 @@ namespace DailyFranchise.App
             _tabTrade.clicked -= ShowTradeTab;
             _tradePrev.clicked -= PrevTradePage;
             _tradeNext.clicked -= NextTradePage;
+            foreach (var (button, handler) in _filters) button.clicked -= handler;
+            _openSigned.clicked -= OnOpenSigned;
         }
 
         /// <summary>지금 탭 (처음은 FA 명단). 닫았다 열어도 유지한다.</summary>
@@ -125,7 +217,7 @@ namespace DailyFranchise.App
         List<(string Team, int Total, int Part, int Parts, List<TradeTarget> Rows)> TradePages()
         {
             var pages = new List<(string, int, int, int, List<TradeTarget>)>();
-            foreach (var group in _manager.TradeTargets.GroupBy(t => t.Team))
+            foreach (var group in FilteredTargets.GroupBy(t => t.Team))
             {
                 var all = group.ToList();
                 int parts = (all.Count + TradePageSize - 1) / TradePageSize;
@@ -198,7 +290,8 @@ namespace DailyFranchise.App
         {
             _modal.AddToClassList("fa-modal--open");
             _resultText = "";
-            if (Selected == null) Select(_manager.Market.FirstOrDefault()?.Id);
+            LastSignedId = null;
+            if (Selected == null) Select(FilteredMarket.FirstOrDefault()?.Id);
             Refresh();
         }
 
@@ -252,6 +345,7 @@ namespace DailyFranchise.App
                 _resultText = $"영입 성공 · {name} → {where} 합류 (연봉 {Won(o.Salary)} · 수수료 {Won(o.Negotiation.Fee)}" +
                               (o.Negotiation.CeilingUsed ? " · TP 100 사용)" : ")");
                 _resultSuccess = true;
+                LastSignedId = o.Agent.Id;
                 SelectedId = null; // 영입한 선수는 시장에서 빠진다 → 다음 선수
             }
             else
@@ -270,6 +364,7 @@ namespace DailyFranchise.App
         {
             if (!IsOpen) return;
             RenderTabs();
+            RenderFilter();
             if (Tab == FaTab.Trade)
             {
                 RenderSummary();
@@ -279,7 +374,7 @@ namespace DailyFranchise.App
             }
             if (Selected == null)
             {
-                SelectedId = _manager.Market.FirstOrDefault()?.Id;
+                SelectedId = FilteredMarket.FirstOrDefault()?.Id;
                 OfferPercent = 100;
             }
             RenderSummary();
@@ -312,7 +407,7 @@ namespace DailyFranchise.App
             TradeListRenderCount++;
             var list = Q("fa-trade-list");
             list.Clear();
-            var targets = _manager.TradeTargets;
+            var targets = FilteredTargets;
             var pages = TradePages();
             TradePage = Math.Max(0, Math.Min(Math.Max(1, pages.Count) - 1, TradePage));
             if (pages.Count > 0)
@@ -351,7 +446,9 @@ namespace DailyFranchise.App
             Q<Label>("fa-trade-page").text = pages.Count == 0 ? "—" : $"{TradePage + 1} / {pages.Count}쪽";
             _tradePrev.SetEnabled(TradePage > 0);
             _tradeNext.SetEnabled(TradePage < pages.Count - 1);
-            Q<Label>("fa-market-note").text = targets.Count == 0
+            Q<Label>("fa-market-note").text = targets.Count == 0 && PositionFilter != null && _manager.TradeTargets.Count > 0
+                ? $"타 구단에 {FilterLabel(PositionFilter)} 후보가 없습니다. [전체]로 필터를 풀어 보세요."
+                : targets.Count == 0
                 ? "지금 선수 DB에는 타 구단 선수단이 없습니다. 구단 데이터가 들어오면 이 명단에 소속 팀별로 나옵니다."
                 : $"타 구단 {targets.Select(t => t.Team).Distinct().Count()}개 · {targets.Count}명 · 선수를 누르면 상세와 [트레이드 제안]";
             RenderTradeSelection();
@@ -413,7 +510,7 @@ namespace DailyFranchise.App
             ListRenderCount++;
             var list = Q("fa-list");
             list.Clear();
-            var market = _manager.Market;
+            var market = FilteredMarket;
             foreach (var a in market)
             {
                 var p = a.Player;
@@ -432,7 +529,9 @@ namespace DailyFranchise.App
                 row.RegisterCallback<ClickEvent>(_ => Select(id));
                 list.Add(row);
             }
-            Q<Label>("fa-market-note").text = market.Count == 0
+            Q<Label>("fa-market-note").text = market.Count == 0 && PositionFilter != null && _manager.Market.Count > 0
+                ? $"FA 명단에 {FilterLabel(PositionFilter)} 후보가 없습니다. [타 구단 명단]이나 [전체]를 확인하세요."
+                : market.Count == 0
                 ? "시장에 남은 선수가 없습니다."
                 : $"요구액 = WAR 연봉 × (1 + 인기 보정 {StoveLeague.PremiumPercent(FranchiseFinance.MoodOf(_manager.Season.FanApproval))}%) · 팬 만족도가 높을수록 싸다";
             RenderSelection();
@@ -450,6 +549,7 @@ namespace DailyFranchise.App
             var agent = Selected;
             var result = Q<Label>("fa-result");
             result.text = _resultText;
+            _openSigned.EnableInClassList("fa-open-signed--shown", LastSignedId != null && _openPlayer != null);
             result.EnableInClassList("fa-modal__result--success", _resultText.Length > 0 && _resultSuccess);
             result.EnableInClassList("fa-modal__result--failure", _resultText.Length > 0 && !_resultSuccess);
             if (agent == null)

@@ -426,5 +426,91 @@ namespace DailyFranchise.UI.Tests
             Assert.That(Text("lineup-hint"), Is.EqualTo("예산이 위약금보다 적어 방출할 수 없습니다."));
             Assert.That(Root.Q<Button>("start-game").enabledSelf, Is.True, "방출이 막혀도 경기는 시작할 수 있다");
         }
+            [UnityTest]
+        public IEnumerator Phase39_MVP_백업_포수_공백을_발견해_시장에서_영입하고_기용한_뒤_경기_기록과_폼을_상세에서_본다()
+        {
+            var r = RenderAt1080();
+            yield return null;
+            var manager = SeasonManager.Instance;
+            manager.ScenarioRandom = new SeededRandom(20261017);
+            var mine = manager.MyRoster;
+            var backup = mine.Bench.First(p => p.Position == "C");
+            var starter = mine.Lineup.First(p => p.Position == "C");
+
+            // 0. 백업 포수를 내보내 공백을 만든다 (시장에 자유계약으로 나온다)
+            Lobby.ReleasePlayer(backup.Id);
+            yield return null;
+
+            // 1. 문제 발견: 오늘의 결정에 포수 뎁스 부족 + [시장에서 찾기]
+            var depth = Root.Q("decision-depth-C");
+            Assert.That(depth, Is.Not.Null, "포수 뎁스 부족 경고");
+            var market = Root.Q<Button>("decision-market-depth-C");
+            Assert.That(market, Is.Not.Null);
+            Assert.That(Root.Q<Button>("decision-futures-depth-C"), Is.Not.Null, "퓨처스 후보 동선도 함께");
+            AssertLayout("결정 패널 · 해결 버튼");
+
+            // 2. 비교·영입: 포수로 거른 FA 시장
+            Submit(market);
+            yield return null;
+            var fa = Lobby.FaMarket;
+            Assert.That(fa.IsOpen, Is.True);
+            Assert.That(fa.PositionFilter, Is.EqualTo("C"));
+            Assert.That(Root.Q<Button>("fa-filter-C").ClassListContains("fa-filter__btn--active"), Is.True);
+            Assert.That(fa.FilteredMarket.Select(a => a.Player.Position), Has.All.EqualTo("C"));
+            Assert.That(fa.SelectedId, Is.EqualTo(backup.Id), "포수 후보가 바로 협상 테이블에");
+            Assert.That(Root.Q("fa-list").childCount, Is.EqualTo(fa.FilteredMarket.Count));
+            AssertLayout("포수 필터 시장");
+            manager.NegotiationRandom = new FixedRandom(0.0);
+            Submit(Root.Q<Button>("fa-negotiate"));
+            yield return null;
+            Assert.That(fa.LastSignedId, Is.EqualTo(backup.Id));
+            Assert.That(Root.Q<Button>("fa-open-signed").ClassListContains("fa-open-signed--shown"), Is.True);
+            Assert.That(manager.MyRoster.Bench.Any(p => p.Id == backup.Id), Is.True, "벤치 합류");
+            Assert.That(Root.Q("decision-depth-C"), Is.Null, "공백이 메워지면 경고가 사라진다");
+
+            // 3. 기용: [영입 선수 상세] → 지친 주전과 맞바꾸기
+            Submit(Root.Q<Button>("fa-open-signed"));
+            yield return null;
+            Assert.That(fa.IsOpen, Is.False, "시장을 닫고");
+            var detail = Lobby.PlayerDetail;
+            Assert.That((detail.IsOpen, detail.PlayerId, detail.Tab), Is.EqualTo((true, backup.Id, PlayerDetailTab.Record)));
+            Assert.That(detail.SwapWith(starter.Id), Is.True);
+            yield return null;
+            Assert.That(manager.MyRoster.Lineup.Single(p => p.Position == "C").Id, Is.EqualTo(backup.Id), "백업 포수 선발 출장");
+
+            // 4. 결과: 경기를 치르고 상세의 [최근 출장]·[시즌 기록]
+            Dispose(r);
+            Submit(Root.Q<Button>("start-game"));
+            float timeout = Time.realtimeSinceStartup + 10f;
+            while (SceneManager.GetActiveScene().name != SeasonManager.GameScene && Time.realtimeSinceStartup < timeout) yield return null;
+            yield return null;
+            yield return null;
+            var game = Object.FindAnyObjectByType<DailyFranchise.UI.GameScreenController>();
+            Assert.That(game.DevPanelOpen, Is.False, "디버그 시나리오 패널은 숨겨져 있다");
+            game.Playback.Pause();
+            game.Playback.SkipToEnd();
+            yield return null;
+            Submit(game.GetComponent<UIDocument>().rootVisualElement.Q<Button>("ctl-game-end"));
+            yield return WaitForLobby();
+
+            var season = SeasonManager.Instance.Season;
+            Assert.That(season.Stats.BatterOf(backup.Id).Games, Is.EqualTo(1), "경기 기록 누적");
+            var log = season.Stats.RecentOf(backup.Id);
+            Assert.That(log.Count, Is.EqualTo(1));
+            Assert.That(log[0].Opponent, Is.Not.Empty);
+            Assert.That(Lobby.OpenPlayer(backup.Id, PlayerDetailTab.Recent), Is.True);
+            yield return null;
+            Assert.That(Root.Q("pd-page-recent").resolvedStyle.display, Is.EqualTo(DisplayStyle.Flex));
+            Assert.That(Root.Q("pd-page-record").resolvedStyle.display, Is.EqualTo(DisplayStyle.None));
+            Assert.That(Root.Q<Label>("pd-recent-0").text, Does.Contain(log[0].LineText));
+            Assert.That(Text("pd-form-trend"), Does.StartWith("최근 1경기 타율").Or.StartWith("최근 폼"), "폼 변화 줄");
+            Lobby.PlayerDetail.ShowTab(PlayerDetailTab.Contract);
+            yield return null;
+            Assert.That(Text("pd-contract"), Does.Contain("FA 영입"), "내가 한 투자: 영입 경로");
+            Lobby.PlayerDetail.ShowTab(PlayerDetailTab.Record);
+            yield return null;
+            Assert.That(Root.Q("pd-stats").Query<Label>(className: "pd-stat__value").ToList().Select(l => l.text).Last(),
+                Is.EqualTo(season.Stats.BatterOf(backup.Id).PlateAppearances.ToString()), "시즌 기록 타일 = 누적 타석");
+        }
     }
 }

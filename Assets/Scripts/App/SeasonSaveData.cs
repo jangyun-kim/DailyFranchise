@@ -83,6 +83,9 @@ namespace DailyFranchise.App
         public List<BattingStatData> BattingStats = new List<BattingStatData>();
         public List<PitchingStatData> PitchingStats = new List<PitchingStatData>();
 
+        /// <summary>최근 출장 기록 (Phase 39, 선수 ID 순 · 선수마다 최신 경기 먼저). 없는 이전 저장 파일은 빈 목록.</summary>
+        public List<GameLogData> GameLogs = new List<GameLogData>();
+
         /// <summary>부상 중인 선수와 남은 결장 경기 (Phase 36, 선수 ID 순). 없는 이전 저장 파일은 빈 목록 (전원 건강).</summary>
         public List<InjuryData> Injuries = new List<InjuryData>();
 
@@ -167,6 +170,18 @@ namespace DailyFranchise.App
     {
         public string Id;
         public DailyFranchise.Sim.Data.BattingLine Line;
+    }
+
+    [Serializable]
+    public sealed class GameLogData
+    {
+        public string Id;
+        public string Date;
+        public string Opponent;
+        public bool HasBatting;
+        public DailyFranchise.Sim.Data.BattingLine Batting;
+        public bool HasPitching;
+        public DailyFranchise.Sim.Data.PitchingLine Pitching;
     }
 
     [Serializable]

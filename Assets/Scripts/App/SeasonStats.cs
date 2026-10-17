@@ -65,6 +65,43 @@ namespace DailyFranchise.App
     }
 
     /// <summary>
+    /// 한 선수의 한 경기 기록 (Phase 39 — 선수 상세 [최근 출장]). 박스스코어에서 그 선수의 줄을 떼어 낸 것이다.
+    /// 타석이 없으면 <see cref="Batting"/>, 등판하지 않았으면 <see cref="Pitching"/>이 null.
+    /// </summary>
+    public sealed class PlayerGameLog
+    {
+        public string Date;
+        public string Opponent;
+        public BattingLine Batting;
+        public PitchingLine Pitching;
+
+        /// <summary>"3타수 1안타 · 1홈런 · 2타점" / "5 1/3이닝 2자책 · 6탈삼진 · 승".</summary>
+        public string LineText
+        {
+            get
+            {
+                var parts = new List<string>();
+                if (Batting != null)
+                {
+                    parts.Add($"{Batting.AtBats}타수 {Batting.Hits}안타");
+                    if (Batting.HomeRuns > 0) parts.Add($"{Batting.HomeRuns}홈런");
+                    if (Batting.RunsBattedIn > 0) parts.Add($"{Batting.RunsBattedIn}타점");
+                    if (Batting.Walks > 0) parts.Add($"{Batting.Walks}볼넷");
+                }
+                if (Pitching != null)
+                {
+                    parts.Add($"{SeasonStatsText.Innings(Pitching.Outs)}이닝 {Pitching.EarnedRuns}자책");
+                    if (Pitching.Strikeouts > 0) parts.Add($"{Pitching.Strikeouts}탈삼진");
+                    if (Pitching.Wins > 0) parts.Add("승");
+                    if (Pitching.Losses > 0) parts.Add("패");
+                    if (Pitching.Saves > 0) parts.Add("세이브");
+                }
+                return parts.Count == 0 ? "출장" : string.Join(" · ", parts);
+            }
+        }
+    }
+
+    /// <summary>
     /// 이번 시즌 개인 성적 (Phase 37, <see cref="SeasonState.Stats"/>). 선수 DB ID → 누적 기록. 경기 결산마다 박스스코어를 더하고
     /// (<see cref="Add"/>, 정규시즌 경기만), 시즌을 넘기면 비운다. 화면 표시용이다 — 경기 계산은 여전히 선수 DB 기록(+ 변동치)을 쓴다.
     /// </summary>
@@ -72,6 +109,20 @@ namespace DailyFranchise.App
     {
         readonly Dictionary<string, BatterSeasonStats> _batters = new Dictionary<string, BatterSeasonStats>();
         readonly Dictionary<string, PitcherSeasonStats> _pitchers = new Dictionary<string, PitcherSeasonStats>();
+        readonly Dictionary<string, List<PlayerGameLog>> _logs = new Dictionary<string, List<PlayerGameLog>>();
+
+        /// <summary>선수마다 남기는 최근 경기 수 (Phase 39).</summary>
+        public const int LogSize = 10;
+
+        /// <summary>최근 폼 비교에 쓰는 경기 수 (최근 N경기 vs 시즌).</summary>
+        public const int FormGames = 5;
+
+        /// <summary>최근 출장 기록 (최신 경기 먼저, 최대 <see cref="LogSize"/>). 없으면 빈 목록.</summary>
+        public IReadOnlyList<PlayerGameLog> RecentOf(string playerId) =>
+            playerId != null && _logs.TryGetValue(playerId, out var list) ? list : (IReadOnlyList<PlayerGameLog>)Array.Empty<PlayerGameLog>();
+
+        /// <summary>최근 출장 기록을 가진 선수 전체 (저장용).</summary>
+        public IReadOnlyDictionary<string, List<PlayerGameLog>> Logs => _logs;
 
         public IReadOnlyDictionary<string, BatterSeasonStats> Batters => _batters;
         public IReadOnlyDictionary<string, PitcherSeasonStats> Pitchers => _pitchers;
@@ -88,13 +139,68 @@ namespace DailyFranchise.App
         public PitcherSeasonStats PitcherOf(string playerId) =>
             playerId != null && _pitchers.TryGetValue(playerId, out var s) ? s : new PitcherSeasonStats(playerId);
 
-        /// <summary>한 경기 박스스코어(선수 DB ID 기준)를 더한다.</summary>
-        public void Add(BoxScore box)
+        /// <summary>
+        /// 한 경기 박스스코어(선수 DB ID 기준)를 더한다. 날짜·상대를 주면 선수마다 그 경기 줄을 최근 출장 기록(Phase 39)에도 남긴다.
+        /// </summary>
+        public void Add(BoxScore box, string date = null, string opponent = null)
         {
             if (box == null) return;
             foreach (var kv in box.Batting) Batter(kv.Key).Line.Add(kv.Value);
             foreach (var kv in box.Pitching) Pitcher(kv.Key).Line.Add(kv.Value);
+            var games = new Dictionary<string, PlayerGameLog>();
+            PlayerGameLog Entry(string id) =>
+                games.TryGetValue(id, out var g) ? g : games[id] = new PlayerGameLog { Date = date ?? "", Opponent = opponent ?? "" };
+            foreach (var kv in box.Batting) Entry(kv.Key).Batting = Copy(kv.Value);
+            foreach (var kv in box.Pitching) Entry(kv.Key).Pitching = Copy(kv.Value);
+            foreach (var kv in games) Log(kv.Key, kv.Value, newest: true);
             Version++;
+        }
+
+        /// <summary>저장 파일에서 최근 출장 한 줄을 되살린다 (저장 순서 = 최신 먼저).</summary>
+        public void RestoreLog(string playerId, PlayerGameLog entry)
+        {
+            if (string.IsNullOrEmpty(playerId) || entry == null) return;
+            if (entry.Batting != null) entry.Batting = NonNegative(entry.Batting);
+            if (entry.Pitching != null) entry.Pitching = NonNegative(entry.Pitching);
+            Log(playerId, entry, newest: false);
+            Version++;
+        }
+
+        void Log(string id, PlayerGameLog entry, bool newest)
+        {
+            if (!_logs.TryGetValue(id, out var list)) _logs[id] = list = new List<PlayerGameLog>();
+            if (newest) list.Insert(0, entry);
+            else list.Add(entry);
+            if (list.Count > LogSize) list.RemoveRange(LogSize, list.Count - LogSize);
+        }
+
+        static BattingLine Copy(BattingLine b) => NonNegative(b);
+        static PitchingLine Copy(PitchingLine p) => NonNegative(p);
+
+        /// <summary>
+        /// 최근 폼 (Phase 39): 최근 <see cref="FormGames"/>경기를 시즌 기록과 견준다. 타자는 타율, 투수는 평균자책.
+        /// "최근 5경기 타율 .333 · 시즌 .280보다 ▲" — 기록이 없으면 null.
+        /// </summary>
+        public string FormText(string playerId, bool pitcher)
+        {
+            var recent = RecentOf(playerId).Take(FormGames).ToList();
+            if (pitcher)
+            {
+                var lines = recent.Where(g => g.Pitching != null).Select(g => g.Pitching).ToList();
+                int outs = lines.Sum(l => l.Outs), er = lines.Sum(l => l.EarnedRuns);
+                var season = PitcherOf(playerId);
+                if (lines.Count == 0 || outs == 0) return null;
+                double recentEra = er * 27.0 / outs;
+                string trend = season.Outs == 0 ? "" : recentEra < season.Era - 0.3 ? " ▲ 상승세" : recentEra > season.Era + 0.3 ? " ▼ 하락세" : " · 평소대로";
+                return $"최근 {lines.Count}경기 평균자책 {recentEra.ToString("0.00", CultureInfo.InvariantCulture)} · 시즌 {SeasonStatsText.Era(season)}{trend}";
+            }
+            var bats = recent.Where(g => g.Batting != null).Select(g => g.Batting).ToList();
+            int ab = bats.Sum(b => b.AtBats), h = bats.Sum(b => b.Hits);
+            var s = BatterOf(playerId);
+            if (bats.Count == 0 || ab == 0) return null;
+            double avg = (double)h / ab;
+            string arrow = s.AtBats == 0 ? "" : avg > s.Average + 0.03 ? " ▲ 상승세" : avg < s.Average - 0.03 ? " ▼ 하락세" : " · 평소대로";
+            return $"최근 {bats.Count}경기 타율 {SeasonStatsText.Rate(avg, true)} · 시즌 {SeasonStatsText.Rate(s.Average, s.AtBats > 0)}{arrow}";
         }
 
         /// <summary>저장 파일에서 한 선수 기록을 되살린다 (음수는 0으로).</summary>
@@ -110,6 +216,7 @@ namespace DailyFranchise.App
         {
             _batters.Clear();
             _pitchers.Clear();
+            _logs.Clear();
             Version++;
         }
 

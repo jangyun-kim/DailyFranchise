@@ -17,17 +17,29 @@ namespace DailyFranchise.App
         Danger,
     }
 
-    /// <summary>로비 "오늘의 결정" 한 줄. 선수 항목은 누르면 선수 상세가 열린다.</summary>
+    /// <summary>
+    /// 로비 "오늘의 결정" 한 줄. 선수 항목은 누르면 선수 상세가 열린다.
+    /// Phase 39: 해결 동선 — <see cref="MarketPosition"/>이 있으면 [시장에서 찾기](그 포지션으로 거른 FA·트레이드 시장),
+    /// <see cref="FuturesId"/>가 있으면 [퓨처스 후보](그 선수 상세 → 1군 등록) 버튼이 붙는다.
+    /// </summary>
     public sealed class BriefingItem
     {
-        public BriefingItem(string key, BriefingSeverity severity, string title, string detail, string playerId = null)
+        public BriefingItem(string key, BriefingSeverity severity, string title, string detail, string playerId = null,
+            string marketPosition = null, string futuresId = null)
         {
             Key = key;
             Severity = severity;
             Title = title;
             Detail = detail ?? "";
             PlayerId = playerId;
+            MarketPosition = marketPosition;
+            FuturesId = futuresId;
         }
+
+        /// <summary>시장에서 찾을 포지션 (예: "C"). 없으면 null.</summary>
+        public string MarketPosition { get; }
+        /// <summary>그 자리를 메울 퓨처스 후보 선수 ID. 없으면 null.</summary>
+        public string FuturesId { get; }
 
         /// <summary>요소 이름용 열쇠 ("cond-p_삼성_2024_김영웅", "roster", "offseason").</summary>
         public string Key { get; }
@@ -41,7 +53,9 @@ namespace DailyFranchise.App
     /// <summary>
     /// 로비 홈 대시보드 뷰모델 (Phase 31, UI 계층 — 시즌·선수단을 읽기만 한다). 순수 C#이라 EditMode에서 검증한다.
     /// - 오늘의 결정: 경기를 막는 선수단 문제, 선발 타순의 지친 선수(컨디션 <see cref="WarnCondition"/> 이하, 위험 먼저),
+    ///   부상자 명단의 1군 선수(Phase 39), 벤치에 대신 설 선수가 없는 수비 위치(뎁스 부족, Phase 39 — 사실상 포수),
     ///   오늘 선발이 지친 상태, 정규시즌 종료 → 결산. 지친 타자에게는 컨디션이 보통 이상인 벤치 교체 후보를 붙인다.
+    ///   선수·포지션 문제에는 해결 동선(시장 포지션·퓨처스 후보)을 붙인다.
     /// - 맞대결 프리뷰 문구: 순위·전적, 선발 투수 한 줄, 시즌 상대 전적.
     /// </summary>
     public static class LobbyBriefing
@@ -74,16 +88,43 @@ namespace DailyFranchise.App
 
             var fresh = lineup.Bench.Where(p => season.ConditionOf(p.Id) > WarnCondition)
                 .OrderByDescending(p => season.ConditionOf(p.Id)).ThenBy(p => p.Order).ToList();
+            var futures = lineup.Reserves.Where(p => !p.IsPitcher && !season.IsInjured(p.Id))
+                .OrderByDescending(p => p.War).ThenBy(p => p.Id, StringComparer.Ordinal).ToList();
             foreach (var p in lineup.Lineup.Where(p => season.ConditionOf(p.Id) <= WarnCondition)
                          .OrderBy(p => season.ConditionOf(p.Id)).ThenBy(p => p.Order))
             {
                 int c = season.ConditionOf(p.Id);
-                var sub = fresh.FirstOrDefault(b => PositionMatcher.FitOf(p.Position, b.Position) != PositionFit.None) ?? fresh.FirstOrDefault();
+                var sub = fresh.FirstOrDefault(b => PositionMatcher.FitOf(p.Position, b.Position) != PositionFit.None);
                 string detail = sub != null
                     ? $"추천 교체: 벤치 {sub.Name} ({sub.Position} · {PlayerCondition.Label(season.ConditionOf(sub.Id))})"
-                    : "교체할 벤치 선수 없음 · 쉬면 경기마다 회복";
+                    : $"{PositionMatcher.Label(p.Position)} 자리를 대신할 벤치 선수 없음 · 시장이나 퓨처스에서 찾아보세요";
                 items.Add(new BriefingItem("cond-" + p.Id, c <= PlayerCondition.Exhausted ? BriefingSeverity.Danger : BriefingSeverity.Caution,
-                    $"{p.Order}번 {p.Name} ({p.Position}) · 컨디션 {PlayerCondition.Label(c)}", detail, p.Id));
+                    $"{p.Order}번 {p.Name} ({p.Position}) · 컨디션 {PlayerCondition.Label(c)}", detail, p.Id,
+                    MarketPositionOf(p), sub == null ? FuturesFor(p.Position, futures)?.Id : null));
+            }
+            // 부상자 명단 (Phase 36 — 1군에서 다친 선수만 퓨처스 부상자 명단으로 간다)
+            foreach (var p in lineup.Reserves.Where(p => season.IsInjured(p.Id))
+                         .OrderByDescending(p => season.InjuryGamesOf(p.Id)).ThenBy(p => p.Id, StringComparer.Ordinal))
+            {
+                int games = season.InjuryGamesOf(p.Id);
+                var cover = p.IsPitcher ? null : FuturesFor(p.Position, futures);
+                items.Add(new BriefingItem("injury-" + p.Id, BriefingSeverity.Caution,
+                    $"부상 · {p.Name} ({PositionMatcher.Label(p.Position)}) · {games}경기 결장",
+                    p.IsPitcher ? "불펜·로테이션 공백 · 시장에서 투수를 찾아보세요"
+                        : $"그동안 {PositionMatcher.Label(p.Position)} 자리를 누가 맡을지 정하세요" + (cover != null ? $" · 퓨처스 후보 {cover.Name}" : ""),
+                    p.Id, MarketPositionOf(p), cover?.Id));
+            }
+            // 뎁스 부족: 선발 타자의 수비 위치를 벤치(건강한 야수)에서 아무도 대신할 수 없다
+            foreach (var p in lineup.Lineup.Where(p => PositionMatcher.FieldPositions.Contains(p.Position)).GroupBy(p => p.Position).Select(g => g.First()))
+            {
+                bool covered = lineup.Bench.Any(b => !b.IsPitcher && !season.IsInjured(b.Id) && PositionMatcher.FitOf(p.Position, b.Position) != PositionFit.None);
+                if (covered) continue;
+                var cover = FuturesFor(p.Position, futures);
+                string label = PositionMatcher.Label(p.Position);
+                items.Add(new BriefingItem("depth-" + p.Position, BriefingSeverity.Caution,
+                    $"{label} 뎁스 부족 · 백업 {label} 없음",
+                    $"주전 {p.Name}이(가) 지치거나 다치면 대신 설 벤치 선수가 없습니다" + (cover != null ? $" · 퓨처스 후보 {cover.Name}" : ""),
+                    null, p.Position, cover?.Id));
             }
             if (todayStarter != null && season.ConditionOf(todayStarter.Id) < RotationPicker.MinStartCondition)
                 items.Add(new BriefingItem("starter-" + todayStarter.Id, BriefingSeverity.Caution,
@@ -91,6 +132,12 @@ namespace DailyFranchise.App
                     "로테이션 전원이 지쳐 가장 나은 투수가 나갑니다", todayStarter.Id));
             return items;
         }
+
+        /// <summary>시장에서 찾을 포지션: 야수는 수비 위치, 투수는 "P".</summary>
+        static string MarketPositionOf(PlayerData p) => p.IsPitcher ? "P" : p.Position;
+
+        /// <summary>그 자리를 메울 퓨처스 야수 (같은 위치 → 같은 수비군, WAR 높은 순). 없으면 null.</summary>
+        static PlayerData FuturesFor(string position, IReadOnlyList<PlayerData> futures) => PositionMatcher.Pick(position, futures);
 
         /// <summary>"2위 · 5승 3패" (무승부가 있으면 "· 1무"). 순위표에 없으면 "순위 없음".</summary>
         public static string StandingText(StandingRow row)

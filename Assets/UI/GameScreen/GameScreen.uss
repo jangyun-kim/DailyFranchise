@@ -882,11 +882,23 @@ Label {
 }
 
 /* 디버그 전용: 정식 UI와 구분되도록 마젠타 계열로 표시 */
+.dev-panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 124px;
+    align-items: center;
+    display: none;
+}
+
+.dev-panel.dev-panel--open {
+    display: flex;
+}
+
 .debug-strip {
     flex-direction: row;
     align-items: center;
     padding: 4px 8px;
-    margin-right: 16px;
     border-width: 2px;
     border-color: var(--debug);
     background-color: #2A0F27;

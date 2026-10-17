@@ -257,7 +257,16 @@ namespace DailyFranchise.App
         {
             if (_manager == null || !_manager.IsDatabaseReady || _manager.Season.InProgress != null) return;
             _detail.Close();
+            _fa.SetPositionFilter(null);
             _fa.Open();
+        }
+
+        /// <summary>그 포지션으로 거른 FA·트레이드 시장을 연다 (Phase 39 — 오늘의 결정 [시장에서 찾기]).</summary>
+        public void OpenFaMarket(string position)
+        {
+            if (_manager == null || !_manager.IsDatabaseReady || _manager.Season.InProgress != null) return;
+            _detail.Close();
+            _fa.OpenFor(position);
         }
 
         void OnScoutClicked() => OpenFaMarket();
@@ -310,11 +319,16 @@ namespace DailyFranchise.App
         }
 
         /// <summary>선수 상세 모달을 연다 (내 구단 1군·퓨처스 선수, 또는 FA 모달 타 구단 명단의 선수). 열었으면 true.</summary>
-        public bool OpenPlayer(string playerId)
+        public bool OpenPlayer(string playerId) => OpenPlayer(playerId, PlayerDetailTab.Record);
+
+        /// <summary>선수 상세를 그 탭으로 연다 (Phase 39 — 퓨처스 후보는 [계약·거취]의 1군 등록으로 바로).</summary>
+        public bool OpenPlayer(string playerId, PlayerDetailTab tab)
         {
             if (_detail == null || playerId == null) return false;
             _notice = null;
-            return _detail.Open(playerId);
+            if (!_detail.Open(playerId)) return false;
+            _detail.ShowTab(tab);
+            return true;
         }
 
         /// <summary>상세 모달의 [직접 고르기]: 이 자리를 선택한 상태로 두고 두 번째 행을 기다린다.</summary>
@@ -357,6 +371,7 @@ namespace DailyFranchise.App
             Q<Label>("my-team").text = season.MyTeam;
             Q<Label>("team-mark").text = LobbyBriefing.TeamMark(season.MyTeam);
             Q<Label>("my-record").text = RecordText(season);
+            Q<Label>("data-basis").text = DataBasisText(_manager.Database?.Season);
 
             RenderFrontOffice(season);
             RenderCampPoints(season);
@@ -399,6 +414,13 @@ namespace DailyFranchise.App
             _mode.EnableInClassList("btn--active", _manager.FullInningMode);
             RenderCampReport();
         }
+
+        /// <summary>
+        /// 선수 카드 기준 데이터 꼬리표 (Phase 39): "카드 기준 · 2024 KBO 기록". 게임 내 시즌(2026)과 다른 축임을 밝힌다.
+        /// 선수 DB가 없으면 "카드 기준 · 불러오는 중".
+        /// </summary>
+        public static string DataBasisText(int? dataSeason) =>
+            dataSeason.HasValue && dataSeason.Value > 0 ? $"카드 기준 · {dataSeason.Value} KBO 기록" : "카드 기준 · 불러오는 중";
 
         /// <summary>화면 루트에 구단 테마 클래스 하나만 남긴다.</summary>
         void ApplyTeamTheme(string team)
@@ -565,8 +587,11 @@ namespace DailyFranchise.App
             row.EnableInClassList("decision--danger", item.Severity == BriefingSeverity.Danger);
             row.EnableInClassList("decision--caution", item.Severity == BriefingSeverity.Caution);
             row.EnableInClassList("decision--ok", ok);
-            row.Add(Cell(item.Title, "decision__title"));
-            row.Add(Cell(item.Detail, "decision__detail"));
+            var text = new VisualElement();
+            text.AddToClassList("decision__text");
+            text.Add(Cell(item.Title, "decision__title"));
+            text.Add(Cell(item.Detail, "decision__detail"));
+            row.Add(text);
             if (item.PlayerId != null)
             {
                 row.AddToClassList("decision--player");
@@ -574,7 +599,34 @@ namespace DailyFranchise.App
                 string id = item.PlayerId;
                 row.RegisterCallback<ClickEvent>(_ => OpenPlayer(id));
             }
+            // Phase 39: 해결 동선 — 시장(포지션 필터) / 퓨처스 후보(1군 등록)
+            if (item.MarketPosition != null || item.FuturesId != null)
+            {
+                var actions = new VisualElement();
+                actions.AddToClassList("decision__actions");
+                if (item.MarketPosition != null)
+                {
+                    string pos = item.MarketPosition;
+                    actions.Add(DecisionAction("decision-market-" + item.Key, "시장에서 찾기", () => OpenFaMarket(pos)));
+                }
+                if (item.FuturesId != null)
+                {
+                    string fid = item.FuturesId;
+                    actions.Add(DecisionAction("decision-futures-" + item.Key, "퓨처스 후보", () => OpenPlayer(fid, PlayerDetailTab.Contract)));
+                }
+                row.Add(actions);
+            }
             return row;
+        }
+
+        /// <summary>결정 행 안의 작은 버튼. 행 클릭(선수 상세)으로 번지지 않는다.</summary>
+        static Button DecisionAction(string name, string text, Action onClick)
+        {
+            var b = new Button(onClick) { name = name, text = text };
+            b.AddToClassList("btn");
+            b.AddToClassList("decision__action");
+            b.RegisterCallback<ClickEvent>(e => e.StopPropagation());
+            return b;
         }
 
         // ---------- 라인업 ----------

@@ -1060,6 +1060,11 @@ namespace DailyFranchise.App
                     .Select(b => new BattingStatData { Id = b.PlayerId, Line = b.Line }).ToList(),
                 PitchingStats = Stats.Pitchers.Values.OrderBy(p => p.PlayerId, StringComparer.Ordinal)
                     .Select(p => new PitchingStatData { Id = p.PlayerId, Line = p.Line }).ToList(),
+                GameLogs = Stats.Logs.OrderBy(kv => kv.Key, StringComparer.Ordinal).SelectMany(kv => kv.Value.Select(g => new GameLogData
+                {
+                    Id = kv.Key, Date = g.Date, Opponent = g.Opponent,
+                    HasBatting = g.Batting != null, Batting = g.Batting, HasPitching = g.Pitching != null, Pitching = g.Pitching,
+                })).ToList(),
                 Injuries = _injuries.Values.OrderBy(d => d.Id, StringComparer.Ordinal)
                     .Select(d => new InjuryData { Id = d.Id, Team = d.Team, Games = d.Games }).ToList(),
                 HasTrust = true,
@@ -1185,6 +1190,15 @@ namespace DailyFranchise.App
             if (data.PitchingStats != null)
                 foreach (var p in data.PitchingStats)
                     if (p != null) season.Stats.Restore(p.Id, null, p.Line);
+            // 최근 출장 기록이 없는 이전 저장 파일(Phase 39 이전)은 빈 기록.
+            if (data.GameLogs != null)
+                foreach (var g in data.GameLogs)
+                    if (g != null)
+                        season.Stats.RestoreLog(g.Id, new PlayerGameLog
+                        {
+                            Date = g.Date ?? "", Opponent = g.Opponent ?? "",
+                            Batting = g.HasBatting ? g.Batting : null, Pitching = g.HasPitching ? g.Pitching : null,
+                        });
             // 부상 목록이 없는 이전 저장 파일(Phase 36 이전)은 전원 건강. ID·구단이 빈 항목과 남은 경기 0 이하는 건너뛴다
             // (부상 기록 없이 남은 경기만 있으면 자리는 그대로 두고 1군 등록만 막는다).
             if (data.Injuries != null)

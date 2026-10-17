@@ -128,7 +128,7 @@ namespace DailyFranchise.App
                 : PublishNews(season, game, mine, rankBefore, unlocked, finalInning, walkOff);
             news.AddRange(PublishInjuryNews(season, game, injuries, recoveries));
             var box = postseason ? null : boxScore;
-            season.Stats.Add(box);
+            season.Stats.Add(box, game?.Date, game == null ? null : game.AwayTeam == season.MyTeam ? game.HomeTeam : game.AwayTeam);
 
             return new PostGameReport
             {

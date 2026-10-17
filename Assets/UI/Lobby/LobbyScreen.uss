@@ -117,7 +117,7 @@ Label {
 }
 
 .header__brand {
-    width: 520px;
+    width: 500px;
     flex-direction: row;
     align-items: center;
 }
@@ -165,8 +165,47 @@ Label {
 }
 
 .header__time {
-    width: 260px;
+    width: 300px;
     align-items: flex-end;
+}
+
+/* Phase 39: 시간·기록 축 꼬리표 — 시즌 성적(팀 컬러) / 게임 내 날짜(흰색) / 선수 카드 기준 데이터(회색 점선 느낌) */
+.axis-row {
+    flex-direction: row;
+    align-items: center;
+}
+
+.axis-row--right {
+    justify-content: flex-end;
+}
+
+.axis-tag {
+    height: 20px;
+    margin-right: 8px;
+    padding: 0 6px;
+    font-size: 11px;
+    border-width: 1px;
+    border-radius: 4px;
+    -unity-text-align: middle-center;
+    flex-shrink: 0;
+}
+
+.axis-tag--record {
+    color: var(--team-light);
+    border-color: var(--team-light);
+}
+
+.axis-tag--time {
+    color: var(--text);
+    border-color: var(--text);
+}
+
+.axis-tag--data {
+    margin-right: 0;
+    margin-left: 8px;
+    color: var(--muted);
+    border-color: var(--line);
+    background-color: var(--panel-2);
 }
 
 .season-title {
@@ -355,6 +394,39 @@ Label {
 .decision--ok { border-color: var(--good); }
 .decision--player:hover { background-color: var(--line); }
 
+/* Phase 39: 결정 행 = 글 (왼쪽) + 해결 버튼 (오른쪽 세로) */
+.decision {
+    flex-direction: row;
+    align-items: center;
+}
+
+.decision__text {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.decision__actions {
+    width: 104px;
+    margin-left: 8px;
+    flex-shrink: 0;
+}
+
+.unity-button.decision__action {
+    height: 26px;
+    margin: 2px 0;
+    padding: 0 4px;
+    font-size: 12px;
+    border-radius: 13px;
+    border-color: var(--team-light);
+    color: var(--team-light);
+}
+
+.unity-button.decision__action:hover {
+    background-color: var(--team);
+    color: #FFFFFF;
+}
+
 .decision__title {
     height: 24px;
     font-size: 15px;
@@ -490,7 +562,7 @@ Label {
     background-color: var(--panel);
 }
 
-.stat-tile:last-child {
+.stat-tile.stat-tile--last {
     margin-right: 0;
 }
 
@@ -1111,6 +1183,59 @@ Label {
     margin-right: 20px;
 }
 
+/* Phase 39: 포지션 필터 줄 */
+.fa-filter {
+    height: 36px;
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 6px;
+    flex-shrink: 0;
+}
+
+.fa-filter__label {
+    width: 56px;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.unity-button.fa-filter__btn {
+    width: 76px;
+    height: 30px;
+    margin: 0 6px 0 0;
+    padding: 0;
+    font-size: 14px;
+    border-radius: 15px;
+    color: var(--muted);
+}
+
+.unity-button.fa-filter__btn.fa-filter__btn--active {
+    color: #FFFFFF;
+    border-color: var(--team-light);
+    background-color: var(--team);
+    -unity-font-style: bold;
+}
+
+.fa-filter__note {
+    flex-grow: 1;
+    font-size: 13px;
+    color: var(--caution);
+    -unity-text-align: middle-right;
+}
+
+.unity-button.fa-open-signed {
+    height: 40px;
+    margin: 6px 0 0 0;
+    font-size: 15px;
+    -unity-font-style: bold;
+    border-color: var(--good);
+    color: var(--good);
+    display: none;
+}
+
+.unity-button.fa-open-signed.fa-open-signed--shown {
+    display: flex;
+}
+
 /* 시장 열 (900px) */
 .fa-row > Label { font-size: 15px; }
 .fa-col-name { flex-grow: 1; padding-left: 8px; }
@@ -1231,7 +1356,7 @@ Label {
     -unity-font-style: bold;
 }
 
-.unity-button.fa-modal__action:last-child {
+.unity-button.fa-modal__action.fa-modal__action--last {
     margin-right: 0;
 }
 
@@ -1359,6 +1484,80 @@ Label {
     -unity-text-align: middle-left;
 }
 
+/* Phase 39: 선수 상세 탭 */
+.pd-tabs {
+    height: 40px;
+    margin-top: 12px;
+    flex-direction: row;
+    border-bottom-width: 1px;
+    border-color: var(--line);
+}
+
+.unity-button.pd-tab {
+    width: 150px;
+    height: 36px;
+    margin: 0 6px 0 0;
+    padding: 0;
+    font-size: 15px;
+    border-width: 0;
+    border-bottom-width: 3px;
+    border-radius: 0;
+    border-color: rgba(0, 0, 0, 0);
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--muted);
+}
+
+.unity-button.pd-tab.pd-tab--active {
+    color: #FFFFFF;
+    border-color: var(--team-light);
+    -unity-font-style: bold;
+}
+
+.pd-page {
+    display: none;
+    min-height: 220px;
+}
+
+.pd-page.pd-page--active {
+    display: flex;
+}
+
+.pd-form-trend {
+    height: 30px;
+    margin-top: 12px;
+    font-size: 16px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.pd-recent {
+    margin-top: 4px;
+}
+
+.pd-recent__row {
+    height: 30px;
+    padding-left: 8px;
+    font-size: 15px;
+    border-bottom-width: 1px;
+    border-color: var(--panel-2);
+    -unity-text-align: middle-left;
+}
+
+.pd-recent__row--empty {
+    color: var(--muted);
+    white-space: normal;
+    height: 48px;
+}
+
+.pd-growth-summary,
+.pd-contract {
+    min-height: 30px;
+    margin-top: 12px;
+    font-size: 15px;
+    white-space: normal;
+    -unity-text-align: middle-left;
+}
+
 .pd-stats {
     height: 76px;
     margin-top: 12px;
@@ -1374,7 +1573,7 @@ Label {
     background-color: var(--bg);
 }
 
-.pd-stat:last-child {
+.pd-stat.pd-stat--last {
     margin-right: 0;
 }
 
