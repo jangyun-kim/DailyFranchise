@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using DailyFranchise.Sim;
+using DailyFranchise.Sim.Data;
 using DailyFranchise.Sim.Fixtures;
 
 namespace DailyFranchise.UI.Data
@@ -49,13 +51,31 @@ namespace DailyFranchise.UI.Data
 
         /// <summary>
         /// 퀵 시뮬레이션으로 만든 경기(<see cref="GeneratedGame"/>)의 스코어보드. 선수 정보는 더미 그대로이고,
-        /// 상대 선발의 오늘 기록은 생성된 실점으로 바꾼다. 생성 경기도 내 구단 = 홈 기준이다.
+        /// 퀵 시뮬레이션 구간에 던진 투수(Phase 38, <see cref="GeneratedGame.OpponentStaff"/>·<see cref="GeneratedGame.MyStaff"/>)의
+        /// 오늘 기록·장면 전 투구 수는 그 운용 결과로 바꾼다 (장면에 없는 불펜 자리도 더한다). 생성 경기도 내 구단 = 홈 기준이다.
         /// </summary>
         public DummyScenarioData(GeneratedGame game, Matchup matchup = null)
             : this(SeedsFor(game), matchup)
         {
-            _players[Fixture8thBottom.Pitcher].TodayLine =
-                $"오늘 {FixtureGenerator.SimulatedInnings}이닝 · {game.Fixture.HomeScoreBefore}실점";
+            ApplyStaff(game.OpponentStaff, TeamSide.Away);
+            ApplyStaff(game.MyStaff, TeamSide.Home);
+        }
+
+        /// <summary>퀵 시뮬레이션 투수 운용 → 오늘 기록 "오늘 6이닝 · 2실점"과 장면 전 투구 수.</summary>
+        void ApplyStaff(QuickSimStaff staff, TeamSide nativeSide)
+        {
+            if (staff == null) return;
+            foreach (var a in staff.Appearances)
+            {
+                if (!_players.TryGetValue(a.PitcherId, out var info))
+                {
+                    info = new PlayerInfo { Id = a.PitcherId, Name = a.PitcherId, Side = Native(nativeSide), Position = "구원", Handedness = "—",
+                        SeasonLine = "시즌 기록 없음", Fitness = 100 };
+                    _players[a.PitcherId] = info;
+                }
+                info.TodayLine = a.Outs > 0 ? $"오늘 {a.Innings}이닝 · {a.RunsAllowed}실점" : a.PitcherId == staff.StarterId ? "오늘 선발" : "오늘 구원 등판";
+                info.PitchesBeforeScene = a.Pitches;
+            }
         }
 
         DummyScenarioData((TeamBoxSeed away, TeamBoxSeed home) seeds, Matchup matchup)
@@ -99,6 +119,19 @@ namespace DailyFranchise.UI.Data
             AddBatter("away_b7", "길현채", "C", "우투우타", "타율 .241 · 5홈런", 3, 1, null, 70, TeamSide.Away);
             AddBatter("away_b8", "편주완", "2B", "우투좌타", "타율 .269 · 2홈런", 3, 0, null, 82, TeamSide.Away);
             AddBatter("away_b9", "모건희", "DH", "우투우타", "타율 .255 · 13홈런", 3, 1, null, 75, TeamSide.Away);
+        }
+
+        /// <summary>
+        /// 선수단이 없을 때 퀵 시뮬레이션 구간에 올릴 더미 구원 순서 (Phase 38): 그 쪽(<paramref name="prefix"/> = "home_"/"away_")
+        /// 불펜 자리를 순서대로, 마무리는 뺀다 (<see cref="QuickSimStaff.ReliefOrder"/>와 같은 규칙).
+        /// </summary>
+        public static IReadOnlyList<string> QuickSimRelievers(string prefix)
+        {
+            var data = new DummyScenarioData();
+            var ids = new List<string>();
+            for (int i = 1; data.HasPlayer(prefix + "rp" + i); i++)
+                if (data._players[prefix + "rp" + i].Position != CpuRosterManager.CloserPosition) ids.Add(prefix + "rp" + i);
+            return ids;
         }
 
         /// <summary>상대(away_ 자리) 불펜 투수 자리 ID (대기 순서). CPU 투수 교체 후보.</summary>

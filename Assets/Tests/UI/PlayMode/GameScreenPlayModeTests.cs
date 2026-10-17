@@ -976,12 +976,19 @@ namespace DailyFranchise.UI.Tests
             yield return ReachDefense();
             var roster = _controller.Roster;
             var decision = _controller.Events[_controller.CurrentBranch.AfterIndex];
+            // Phase 38: 퀵 시뮬 구간(1~8회초)에서 선발이 내려가고 더미 구원(마무리 제외)이 이어 던졌다 → 그 마지막 투수가 9회초 마운드
+            var staff = _controller.Generated.MyStaff;
+            string mound = staff.CurrentPitcherId;
+            Assert.That(mound, Is.Not.EqualTo(GameScreenController.MyStarterId), "선발은 퀵 시뮬 구간에서 강판");
+            Assert.That(_controller.MyPitching.CurrentPitcherId, Is.EqualTo(mound));
+            Assert.That(_controller.MyPitching.UsedPitchers, Is.EqualTo(staff.Appearances.Take(staff.Appearances.Count - 1).Select(a => a.PitcherId)));
             Assert.That((decision.Inning, decision.HalfInning), Is.EqualTo((9, HalfInning.Top)));
-            Assert.That(decision.PitcherId, Is.EqualTo(GameScreenController.MyStarterId));
+            Assert.That(decision.PitcherId, Is.EqualTo(mound));
             Assert.That(decision.BatterId, Is.EqualTo(BattingOrder.IdFor("away_b1", _controller.Generated.AwayNinthLeadoffOrder)));
             Assert.That(Text(root, "headline-main"), Does.Contain("9회초 · 수비").And.Contain("작전 선택 대기"));
-            Assert.That(Text(root, "pitcher-name"), Is.EqualTo(roster.GetPlayer("home_sp").Name));
-            Assert.That(Text(root, "pitcher-fitness"), Does.StartWith("체력 ").And.Contain("(저하)"), "더미 선발 78구 + 장면 2구");
+            Assert.That(Text(root, "pitcher-name"), Is.EqualTo(roster.GetPlayer(mound).Name));
+            Assert.That(roster.GetPlayer(mound).PitchesBeforeScene, Is.EqualTo(staff.Find(mound).Pitches), "퀵 시뮬 가상 투구 수가 장면 전 투구 수");
+            Assert.That(Text(root, "pitcher-fitness"), Is.EqualTo(TacticText.StaminaText(_controller.StateOf(mound))));
             Assert.That(root.Q<Button>("tactic-default").enabledSelf, Is.True);
             Assert.That(root.Q<Button>("tactic-swing").enabledSelf, Is.False, "수비에는 강공 없음");
             Assert.That(root.Q<Button>("tactic-squeeze").enabledSelf, Is.False);
@@ -991,10 +998,10 @@ namespace DailyFranchise.UI.Tests
             // 툴팁: 지금 투수의 투구 수·체력과 출루 허용 확률
             _controller.PreviewTactic(TacticKind.Default);
             yield return null;
-            var state = _controller.StateOf("home_sp");
-            Assert.That(state.PitchCount, Is.EqualTo(roster.GetPlayer("home_sp").PitchesBeforeScene + 2));
+            var state = _controller.StateOf(mound);
+            Assert.That(state.PitchCount, Is.EqualTo(roster.GetPlayer(mound).PitchesBeforeScene + 2));
             Assert.That(Text(root, "tactic-desc"), Does.StartWith(TacticText.DefenseDetail)
-                .And.Contain($"투수 · {roster.GetPlayer("home_sp").Name} {state.PitchCount}구 · {TacticText.StaminaText(state)}")
+                .And.Contain($"투수 · {roster.GetPlayer(mound).Name} {state.PitchCount}구 · {TacticText.StaminaText(state)}")
                 .And.Contain("출루 허용 확률"));
             _controller.PreviewTactic(null);
 
@@ -1003,11 +1010,12 @@ namespace DailyFranchise.UI.Tests
             yield return null;
             Assert.That(_controller.BullpenOpen, Is.True);
             Assert.That(root.Q("bullpen-modal").resolvedStyle.display, Is.EqualTo(DisplayStyle.Flex));
-            var bullpen = roster.GetBullpen(roster.MyTeam).Select(e => roster.GetPlayer(e.PlayerId).Name).ToArray();
+            var bullpenIds = roster.GetBullpen(roster.MyTeam).Select(e => e.PlayerId).ToArray();
+            string[] Names(IEnumerable<string> ids) => ids.Select(id => roster.GetPlayer(id).Name).ToArray();
             var bench = roster.GetBench(roster.MyTeam).Select(e => roster.GetPlayer(e.PlayerId).Name).ToArray();
-            Assert.That(BullpenNames(root), Is.EqualTo(bullpen));
+            Assert.That(BullpenNames(root), Is.EqualTo(Names(bullpenIds.Where(id => id != mound))), "지금 투수 빼고 불펜 전원 (퀵 시뮬에서 던진 투수 포함)");
             Assert.That(BullpenNames(root).Intersect(bench), Is.Empty, "야수는 목록에 없다");
-            Assert.That(Text(root, "bullpen-current"), Does.Contain(roster.GetPlayer("home_sp").Name));
+            Assert.That(Text(root, "bullpen-current"), Does.Contain(roster.GetPlayer(mound).Name));
             var issues = LayoutChecker.Check(Screen);
             Assert.That(issues, Is.Empty, "[불펜 모달]\n" + string.Join("\n", issues));
 
@@ -1015,21 +1023,22 @@ namespace DailyFranchise.UI.Tests
             Submit(root.Q<Button>("bullpen-cancel"));
             yield return null;
             Assert.That(_controller.BullpenOpen, Is.False);
-            Assert.That(_controller.MyPitching.CurrentPitcherId, Is.EqualTo("home_sp"));
+            Assert.That(_controller.MyPitching.CurrentPitcherId, Is.EqualTo(mound));
+            Assert.That(_controller.ChangePitcher(staff.Appearances[0].PitcherId), Is.False, "퀵 시뮬에서 강판된 선발은 재등판 불가");
 
-            // 다시 열어 마무리(home_rp1)를 고른다 → 투수 카드 즉시 교체, 선발 강판
+            // 다시 열어 아껴 둔 마무리(home_rp1)를 고른다 → 투수 카드 즉시 교체, 지금 투수 강판
             Submit(root.Q<Button>("tactic-pitching"));
             yield return null;
             Submit(root.Q<Button>("bullpen-pick-home_rp1"));
             yield return null;
             Assert.That(_controller.BullpenOpen, Is.False);
             Assert.That(_controller.MyPitching.CurrentPitcherId, Is.EqualTo("home_rp1"));
-            Assert.That(_controller.MyPitching.UsedPitchers, Is.EqualTo(new[] { "home_sp" }));
+            Assert.That(_controller.MyPitching.UsedPitchers, Is.EqualTo(staff.Appearances.Select(a => a.PitcherId)));
             Assert.That(Text(root, "pitcher-name"), Is.EqualTo(roster.GetPlayer("home_rp1").Name), "투수 카드 즉시 리렌더링");
             Assert.That(Text(root, "pitcher-fitness"), Is.EqualTo("체력 100%"));
             Assert.That(_controller.Playback.AwaitingDecision, Is.True, "교체 후에도 작전 대기");
             Assert.That(root.Q("log").Children().OfType<Label>().Select(l => l.text),
-                Has.Member($"투수 교체 · {roster.GetPlayer("home_sp").Name} → {roster.GetPlayer("home_rp1").Name}"));
+                Has.Member($"투수 교체 · {roster.GetPlayer(mound).Name} → {roster.GetPlayer("home_rp1").Name}"));
             var bullpenRow = root.Q("bullpen").Children().First(r => (string)r.userData == "home_rp1");
             Assert.That(bullpenRow.Q<Label>(className: "roster-state").text, Is.EqualTo("등판 중"));
 
@@ -1037,11 +1046,13 @@ namespace DailyFranchise.UI.Tests
             Assert.That(_controller.ChangePitcher("home_sp"), Is.False, "강판된 투수 재등판 불가");
             Assert.That(_controller.ChangePitcher("home_ph1"), Is.False, "야수");
             Assert.That(_controller.ChangePitcher("home_rp1"), Is.False, "지금 투수");
+            // 더미 불펜 3명(퀵 시뮬에서 구원 2명 + 마무리)을 모두 썼다 → 더 바꿀 투수가 없어 [투수 교체]가 닫힌다
+            Assert.That(_controller.MyPitching.ReliefCandidates, Is.Empty);
+            Assert.That(_controller.CanChangePitcher, Is.False);
+            Assert.That(root.Q<Button>("tactic-pitching").enabledSelf, Is.False);
             Submit(root.Q<Button>("tactic-pitching"));
             yield return null;
-            Assert.That(BullpenNames(root), Is.EqualTo(bullpen.Skip(1)), "지금 투수는 목록에서 빠진다");
-            Submit(root.Q<Button>("bullpen-cancel"));
-            yield return null;
+            Assert.That(_controller.BullpenOpen, Is.False);
 
             // 기본 진행: 남은 투구는 새 투수가 던진다
             int at = _controller.CurrentBranch.AfterIndex;
@@ -1059,13 +1070,15 @@ namespace DailyFranchise.UI.Tests
         public IEnumerator 처음으로_돌아가면_투수_교체도_초기화된다()
         {
             yield return ReachDefense();
-            Assert.That(_controller.ChangePitcher("home_rp2"), Is.True);
+            var staff = _controller.Generated.MyStaff;
+            var quickSimUsed = staff.Appearances.Take(staff.Appearances.Count - 1).Select(a => a.PitcherId).ToArray();
+            Assert.That(_controller.ChangePitcher("home_rp1"), Is.True);
             Assert.That(_controller.PitchingChanges, Has.Count.EqualTo(1));
             Submit(_doc.rootVisualElement.Q<Button>("ctl-restart"));
             yield return null;
             Assert.That(_controller.PitchingChanges, Is.Empty);
-            Assert.That(_controller.MyPitching.CurrentPitcherId, Is.EqualTo("home_sp"));
-            Assert.That(_controller.MyPitching.UsedPitchers, Is.Empty);
+            Assert.That(_controller.MyPitching.CurrentPitcherId, Is.EqualTo(staff.CurrentPitcherId), "퀵 시뮬 구간 교체 상태로 돌아간다");
+            Assert.That(_controller.MyPitching.UsedPitchers, Is.EqualTo(quickSimUsed));
             Assert.That(_controller.DefenseStarted, Is.False);
         }
 

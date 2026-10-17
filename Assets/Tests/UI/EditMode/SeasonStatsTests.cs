@@ -149,9 +149,13 @@ namespace DailyFranchise.UI.Tests
                     Assert.That(b.AtBats + b.Walks, Is.EqualTo(b.PlateAppearances), "희생 없음: 타석 = 타수 + 볼넷");
                     Assert.That(b.Doubles + b.Triples + b.HomeRuns, Is.LessThanOrEqualTo(b.Hits));
                 }
-                Assert.That(box.Pitching["home_sp"].Outs, Is.EqualTo(3 * (FixtureGenerator.SimulatedInnings + 1)), "1~8회초는 내 선발");
-                Assert.That(box.Pitching["away_sp"].Outs, Is.EqualTo(3 * FixtureGenerator.SimulatedInnings));
-                Assert.That(box.Pitching["home_sp"].EarnedRuns, Is.EqualTo(game.Fixture.AwayScoreBefore));
+                // Phase 38: 1~8회초는 내 투수진(선발 → 구원), 1~7회말은 상대 투수진이 나눠 던진다
+                var myPitching = box.Pitching.Where(kv => kv.Key.StartsWith("home_")).Select(kv => kv.Value).ToList();
+                var theirPitching = box.Pitching.Where(kv => kv.Key.StartsWith("away_")).Select(kv => kv.Value).ToList();
+                Assert.That(myPitching.Sum(p => p.Outs), Is.EqualTo(3 * (FixtureGenerator.SimulatedInnings + 1)), "1~8회초는 내 투수진");
+                Assert.That(theirPitching.Sum(p => p.Outs), Is.EqualTo(3 * FixtureGenerator.SimulatedInnings));
+                Assert.That(box.Pitching["home_sp"].Outs, Is.LessThanOrEqualTo(QuickSimStaff.StarterMaxOuts), "선발은 6이닝까지");
+                Assert.That(myPitching.Sum(p => p.EarnedRuns), Is.EqualTo(game.Fixture.AwayScoreBefore));
                 Assert.That(home.Sum(b => b.PlateAppearances), Is.EqualTo(21 + game.HomeHits + game.HomeWalks + game.AwayErrors),
                     "아웃 21 + 출루 (안타·볼넷·상대 실책)");
                 // 타순은 이어진다: 1번 타자 타석 ≥ 9번 타자 타석

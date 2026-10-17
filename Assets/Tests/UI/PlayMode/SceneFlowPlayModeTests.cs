@@ -943,15 +943,26 @@ namespace DailyFranchise.UI.Tests
             yield return null;
             var root = game.GetComponent<UIDocument>().rootVisualElement;
 
-            Assert.That(root.Q<Label>("pitcher-name").text, Is.EqualTo(before.StartingPitcher.Name), "내 선발이 마운드에");
-            Assert.That(game.MyPitching.ReliefCandidates.Select(p => p.Name), Is.EqualTo(before.Bullpen.Select(p => p.Name)),
-                "불펜 후보 = DB 불펜 (벤치 야수 없음)");
+            // Phase 38: 선발은 퀵 시뮬 구간(1~8회초)에서 내려가고, DB 불펜이 대기 순서대로(마무리는 아껴 두고) 이어 던졌다
+            var staff = game.Generated.MyStaff;
+            var closer = QuickSimStaff.CloserOf(before);
+            string SlotOf(PlayerData p) => "home_rp" + (before.Bullpen.ToList().IndexOf(p) + 1);
+            Assert.That(staff.Appearances[0].Innings, Is.InRange(3, QuickSimStaff.StarterMaxOuts / 3), "선발은 6이닝까지");
+            Assert.That(game.MyPitching.UsedPitchers, Does.Contain(GameScreenController.MyStarterId));
+            Assert.That(game.MyPitching.CurrentPitcherId, Is.EqualTo(staff.CurrentPitcherId));
+            string moundName = before.Bullpen[int.Parse(staff.CurrentPitcherId.Substring("home_rp".Length)) - 1].Name;
+            Assert.That(root.Q<Label>("pitcher-name").text, Is.EqualTo(moundName), "퀵 시뮬 마지막 구원이 9회초 마운드");
+            if (closer != null) Assert.That(staff.Appearances.Select(a => a.PitcherId), Has.No.Member(SlotOf(closer)), "마무리는 아껴 둔다");
+            var used = staff.Appearances.Select(a => a.PitcherId).ToList();
+            Assert.That(game.MyPitching.ReliefCandidates.Select(p => p.Name),
+                Is.EqualTo(before.Bullpen.Where(p => !used.Contains(SlotOf(p))).Select(p => p.Name)),
+                "불펜 후보 = 퀵 시뮬에서 던지지 않은 DB 불펜 (벤치 야수 없음)");
             Assert.That(game.MyPitching.Pool.Where(p => !p.IsPitcher).Select(p => p.Name), Is.EqualTo(before.Bench.Select(p => p.Name)),
                 "벤치 야수는 대기 명단에 있지만 후보가 아니다");
 
-            Assert.That(game.ChangePitcher("home_rp1"), Is.True);
+            var reliever = closer ?? before.Bullpen.First(p => !used.Contains(SlotOf(p)));
+            Assert.That(game.ChangePitcher(SlotOf(reliever)), Is.True);
             yield return null;
-            var reliever = before.Bullpen[0];
             Assert.That(root.Q<Label>("pitcher-name").text, Is.EqualTo(reliever.Name));
             Assert.That(root.Q<Label>("pitcher-team").text, Does.Contain(reliever.Position));
             game.PreviewTactic(TacticKind.Default);

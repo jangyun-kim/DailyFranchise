@@ -37,6 +37,23 @@ namespace DailyFranchise.Sim.Fixtures
         public ClutchSituation Situation;
         /// <summary>8회말 작전 승부처 장면 (홈 공격, 내 구단 = 홈 기준).</summary>
         public ScenarioFixture Fixture;
+        /// <summary>
+        /// 상대(원정 자리) 투수 운용 (Phase 38): 1~7회말을 던진 투수들. <see cref="QuickSimStaff.CurrentPitcherId"/>가 8회말 장면 투수.
+        /// </summary>
+        public QuickSimStaff OpponentStaff;
+        /// <summary>내 구단(홈 자리) 투수 운용: 1~8회초를 던진 투수들. <see cref="QuickSimStaff.CurrentPitcherId"/>가 9회초 마운드.</summary>
+        public QuickSimStaff MyStaff;
+
+        /// <summary>8회말 승부처 장면에서 던지는 상대 투수.</summary>
+        public string DecisionPitcher => OpponentStaff?.CurrentPitcherId ?? FixtureGenerator.Pitcher;
+
+        /// <summary>퀵 시뮬레이션 구간 반 이닝의 투수. 원정 공격(회초, 8회초 = 인덱스 7)은 내 투수, 홈 공격(회말)은 상대 투수.</summary>
+        public string PitcherFor(bool awayBatting, int inningIndex)
+        {
+            var staff = awayBatting ? MyStaff : OpponentStaff;
+            if (staff != null && inningIndex >= 0 && inningIndex < staff.PitcherByHalf.Count) return staff.PitcherByHalf[inningIndex];
+            return awayBatting ? FixtureGenerator.MyStarter : FixtureGenerator.Pitcher;
+        }
 
         /// <summary>원정 1~8회 득점 (8회초 포함).</summary>
         public int[] AwayRunsByInning => Early.AwayRuns.Concat(new[] { EighthTop.Runs }).ToArray();
@@ -66,6 +83,7 @@ namespace DailyFranchise.Sim.Fixtures
     /// 아웃 수·주자·시작 점수만 바뀐다. 모든 경로는 <see cref="PitchEventValidator"/> 규칙을 지킨다.
     ///
     /// 난수 사용 순서: 1~7회 퀵 시뮬레이션 → 8회초 → 아웃 수 Next(3) → 주자 Next(8). 같은 Seed면 같은 경기.
+    /// 투수 운용(Phase 38, <see cref="QuickSimStaff"/>)은 난수 없이 반 이닝 기록으로 정하고, 장면 투수는 8회말 상대 마운드다.
     ///
     /// 작전 후속 구간 (R = 승부처 주자, O = 아웃):
     /// - 기본 진행 / 강공 성공: 경계 스트라이크 → 파울 → 우전 안타 (2·3루 주자 득점, 1루 주자 2루) → 다음 타자 삼진.
@@ -82,6 +100,8 @@ namespace DailyFranchise.Sim.Fixtures
         public const int DecisionAfterIndex = Fixture8thBottomTactics.DecisionAfterIndex;
 
         public const string Pitcher = Fixture8thBottom.Pitcher;
+        /// <summary>내 구단 선발 자리.</summary>
+        public const string MyStarter = "home_sp";
         public const string Batter1 = Fixture8thBottom.Batter1;
         public const string Batter2 = Fixture8thBottom.Batter2;
 
@@ -92,19 +112,27 @@ namespace DailyFranchise.Sim.Fixtures
         /// 경기를 만든다. 원정·홈은 장면 기준이다: 홈 = 8회말 승부처에서 공격하는 내 구단, 원정 = 상대.
         /// 선수단이 null이면 그 팀은 리그 평균으로 계산한다.
         /// </summary>
-        public static GeneratedGame Generate(TeamRoster away, TeamRoster home, IRandomSource random, QuickSimEngine engine = null)
+        /// <param name="awayRelievers">상대 퀵 시뮬레이션 구원 순서 (away_rpN). null이면 선수단에서 (<see cref="QuickSimStaff.ReliefOrder"/>).</param>
+        /// <param name="homeRelievers">내 구단 구원 순서 (home_rpN). null이면 선수단에서.</param>
+        public static GeneratedGame Generate(TeamRoster away, TeamRoster home, IRandomSource random, QuickSimEngine engine = null,
+            IEnumerable<string> awayRelievers = null, IEnumerable<string> homeRelievers = null)
         {
             if (random == null) throw new ArgumentNullException(nameof(random));
             engine = engine ?? new QuickSimEngine();
             var early = engine.Simulate(away, home, random, SimulatedInnings);
             var eighthTop = engine.SimulateHalf(away, home, random);
             var situation = RollSituation(random);
+            var opponentStaff = QuickSimStaff.Pitch(Pitcher, awayRelievers ?? QuickSimStaff.ReliefOrder(away, "away_"), early.HomeHalves);
+            var myStaff = QuickSimStaff.Pitch(MyStarter, homeRelievers ?? QuickSimStaff.ReliefOrder(home, "home_"),
+                early.AwayHalves.Concat(new[] { eighthTop }));
             return new GeneratedGame
             {
                 Early = early,
                 EighthTop = eighthTop,
                 Situation = situation,
-                Fixture = CreateTactics(situation, early.AwayTotal + eighthTop.Runs, early.HomeTotal),
+                OpponentStaff = opponentStaff,
+                MyStaff = myStaff,
+                Fixture = CreateTactics(situation, early.AwayTotal + eighthTop.Runs, early.HomeTotal, opponentStaff.CurrentPitcherId),
             };
         }
 
@@ -136,16 +164,17 @@ namespace DailyFranchise.Sim.Fixtures
                 yield return new ClutchSituation(outs, RunnersFor(mask));
         }
 
-        public static ScenarioFixture CreateTactics(ClutchSituation s, int awayScoreBefore, int homeScoreBefore)
+        /// <param name="pitcher">장면 투수 (상대 마운드). 기본은 상대 선발.</param>
+        public static ScenarioFixture CreateTactics(ClutchSituation s, int awayScoreBefore, int homeScoreBefore, string pitcher = Pitcher)
         {
             var options = new Dictionary<TacticKind, TacticBranch>
             {
-                [TacticKind.Default] = new TacticBranch { Success = () => HitContinuation(s) },
+                [TacticKind.Default] = new TacticBranch { Success = () => HitContinuation(s, pitcher) },
                 [TacticKind.SwingAway] = new TacticBranch
                 {
                     SuccessRate = Fixture8thBottomTactics.SwingAwaySuccessRate,
-                    Success = () => HitContinuation(s),
-                    Failure = () => SwingAwayFailedContinuation(s),
+                    Success = () => HitContinuation(s, pitcher),
+                    Failure = () => SwingAwayFailedContinuation(s, pitcher),
                 },
             };
             if (s.AllowsSqueeze)
@@ -153,8 +182,8 @@ namespace DailyFranchise.Sim.Fixtures
                 options[TacticKind.SqueezeBunt] = new TacticBranch
                 {
                     SuccessRate = Fixture8thBottomTactics.SqueezeSuccessRate,
-                    Success = () => SqueezeContinuation(s),
-                    Failure = () => SqueezeFailedContinuation(s),
+                    Success = () => SqueezeContinuation(s, pitcher),
+                    Failure = () => SqueezeFailedContinuation(s, pitcher),
                 };
             }
 
@@ -165,26 +194,26 @@ namespace DailyFranchise.Sim.Fixtures
                 AwayScoreBefore = awayScoreBefore,
                 HomeScoreBefore = homeScoreBefore,
                 ZoneRule = ZoneRuleConfig.ProvisionalKbo,
-                Events = BaseEvents(s),
+                Events = BaseEvents(s, pitcher),
                 Branch = new BranchPoint { AfterIndex = DecisionAfterIndex, Options = options },
             };
         }
 
         /// <summary>작전 전 기본 구간: 초구 스트라이크 → 바깥쪽 낮은 볼 (1-1).</summary>
-        public static IReadOnlyList<PitchEvent> BaseEvents(ClutchSituation s)
+        public static IReadOnlyList<PitchEvent> BaseEvents(ClutchSituation s, string pitcher = Pitcher)
         {
             var zone = Zone1;
             return new List<PitchEvent>
             {
-                Pitch(Batter1, zone, "포심", 146, 0, 77, PitchResult.CalledStrike, true,
+                Pitch(pitcher, Batter1, zone, "포심", 146, 0, 77, PitchResult.CalledStrike, true,
                     new Count(0, 0), new Count(0, 1), s.Runners, s.Outs),
-                Pitch(Batter1, zone, "슬라이더", 134, -30, 42, PitchResult.Ball, false,
+                Pitch(pitcher, Batter1, zone, "슬라이더", 134, -30, 42, PitchResult.Ball, false,
                     new Count(0, 1), new Count(1, 1), s.Runners, s.Outs),
             };
         }
 
         /// <summary>기본 진행·강공 성공: 경계 스트라이크 → 파울 → 우전 안타 → 다음 타자 삼진.</summary>
-        public static IReadOnlyList<PitchEvent> HitContinuation(ClutchSituation s)
+        public static IReadOnlyList<PitchEvent> HitContinuation(ClutchSituation s, string pitcher = Pitcher)
         {
             var r = s.Runners;
             int runs = (r.Second != null ? 1 : 0) + (r.Third != null ? 1 : 0);
@@ -197,15 +226,15 @@ namespace DailyFranchise.Sim.Fixtures
             int outs = s.Outs;
             return new List<PitchEvent>
             {
-                Pitch(Batter1, zone1, "체인지업", 128, 22.8, 60, PitchResult.CalledStrike, true,
+                Pitch(pitcher, Batter1, zone1, "체인지업", 128, 22.8, 60, PitchResult.CalledStrike, true,
                     new Count(1, 1), new Count(1, 2), r, outs),
-                Pitch(Batter1, zone1, "포심", 147, 8, 95, PitchResult.Foul, true,
+                Pitch(pitcher, Batter1, zone1, "포심", 147, 8, 95, PitchResult.Foul, true,
                     new Count(1, 2), new Count(1, 2), r, outs),
                 new PitchEvent
                 {
                     Inning = DecisionInning, HalfInning = HalfInning.Bottom, OutsBefore = outs,
                     CountBefore = new Count(1, 2),
-                    PitcherId = Pitcher, BatterId = Batter1,
+                    PitcherId = pitcher, BatterId = Batter1,
                     PitchType = "슬라이더", VelocityKmh = 135,
                     LocationX = -5, LocationY = 70, Zone = zone1,
                     Result = PitchResult.InPlay, IsStrikeByRule = true,
@@ -215,15 +244,15 @@ namespace DailyFranchise.Sim.Fixtures
                     RunnersBefore = r, RunnersAfter = afterHit,
                     RunsScored = runs, OutsAfter = outs,
                 },
-                Pitch(Batter2, zone2, "포심", 148, 15, 85, PitchResult.CalledStrike, true,
+                Pitch(pitcher, Batter2, zone2, "포심", 148, 15, 85, PitchResult.CalledStrike, true,
                     new Count(0, 0), new Count(0, 1), afterHit, outs),
-                Pitch(Batter2, zone2, "슬라이더", 133, -28, 55, PitchResult.SwingingStrike, false,
+                Pitch(pitcher, Batter2, zone2, "슬라이더", 133, -28, 55, PitchResult.SwingingStrike, false,
                     new Count(0, 1), new Count(0, 2), afterHit, outs),
                 new PitchEvent
                 {
                     Inning = DecisionInning, HalfInning = HalfInning.Bottom, OutsBefore = outs,
                     CountBefore = new Count(0, 2),
-                    PitcherId = Pitcher, BatterId = Batter2,
+                    PitcherId = pitcher, BatterId = Batter2,
                     PitchType = "포크", VelocityKmh = 131,
                     LocationX = 25.5, LocationY = 40, Zone = zone2,
                     Result = PitchResult.SwingingStrike, IsStrikeByRule = false,
@@ -235,7 +264,7 @@ namespace DailyFranchise.Sim.Fixtures
         }
 
         /// <summary>강공 실패: 1루 주자가 있고 2사 전이면 병살, 아니면 유격수 땅볼. 다른 주자는 묶인다.</summary>
-        public static IReadOnlyList<PitchEvent> SwingAwayFailedContinuation(ClutchSituation s)
+        public static IReadOnlyList<PitchEvent> SwingAwayFailedContinuation(ClutchSituation s, string pitcher = Pitcher)
         {
             var r = s.Runners;
             bool doublePlay = r.First != null && s.Outs < 2;
@@ -249,7 +278,7 @@ namespace DailyFranchise.Sim.Fixtures
                 {
                     Inning = DecisionInning, HalfInning = HalfInning.Bottom, OutsBefore = s.Outs,
                     CountBefore = new Count(1, 1),
-                    PitcherId = Pitcher, BatterId = Batter1,
+                    PitcherId = pitcher, BatterId = Batter1,
                     PitchType = "싱커", VelocityKmh = 143,
                     LocationX = 9, LocationY = 54, Zone = Zone1,
                     Result = PitchResult.InPlay, IsStrikeByRule = true,
@@ -263,7 +292,7 @@ namespace DailyFranchise.Sim.Fixtures
         }
 
         /// <summary>스퀴즈 성공: 3루 주자 득점, 1·2루 주자 한 루씩, 타자 아웃 → 다음 타자 볼·파울·유격수 직선타.</summary>
-        public static IReadOnlyList<PitchEvent> SqueezeContinuation(ClutchSituation s)
+        public static IReadOnlyList<PitchEvent> SqueezeContinuation(ClutchSituation s, string pitcher = Pitcher)
         {
             RequireSqueeze(s);
             var r = s.Runners;
@@ -279,7 +308,7 @@ namespace DailyFranchise.Sim.Fixtures
                 {
                     Inning = DecisionInning, HalfInning = HalfInning.Bottom, OutsBefore = s.Outs,
                     CountBefore = new Count(1, 1),
-                    PitcherId = Pitcher, BatterId = Batter1,
+                    PitcherId = pitcher, BatterId = Batter1,
                     PitchType = "포심", VelocityKmh = 145,
                     LocationX = 6, LocationY = 70, Zone = Zone1,
                     Result = PitchResult.InPlay, IsStrikeByRule = true,
@@ -289,15 +318,15 @@ namespace DailyFranchise.Sim.Fixtures
                     RunnersBefore = r, RunnersAfter = afterBunt,
                     RunsScored = 1, OutsAfter = outs1,
                 },
-                Pitch(Batter2, zone2, "슬라이더", 133, -27, 52, PitchResult.Ball, false,
+                Pitch(pitcher, Batter2, zone2, "슬라이더", 133, -27, 52, PitchResult.Ball, false,
                     new Count(0, 0), new Count(1, 0), afterBunt, outs1),
-                Pitch(Batter2, zone2, "포심", 147, 10, 90, PitchResult.Foul, true,
+                Pitch(pitcher, Batter2, zone2, "포심", 147, 10, 90, PitchResult.Foul, true,
                     new Count(1, 0), new Count(1, 1), afterBunt, outs1),
                 new PitchEvent
                 {
                     Inning = DecisionInning, HalfInning = HalfInning.Bottom, OutsBefore = outs1,
                     CountBefore = new Count(1, 1),
-                    PitcherId = Pitcher, BatterId = Batter2,
+                    PitcherId = pitcher, BatterId = Batter2,
                     PitchType = "체인지업", VelocityKmh = 129,
                     LocationX = -6, LocationY = 58, Zone = zone2,
                     Result = PitchResult.InPlay, IsStrikeByRule = true,
@@ -311,7 +340,7 @@ namespace DailyFranchise.Sim.Fixtures
         }
 
         /// <summary>스퀴즈 실패: 번트 포수 뜬공, 홈으로 뛰던 3루 주자 귀루 실패로 더블 아웃. 다른 주자는 그대로.</summary>
-        public static IReadOnlyList<PitchEvent> SqueezeFailedContinuation(ClutchSituation s)
+        public static IReadOnlyList<PitchEvent> SqueezeFailedContinuation(ClutchSituation s, string pitcher = Pitcher)
         {
             RequireSqueeze(s);
             var r = s.Runners;
@@ -324,7 +353,7 @@ namespace DailyFranchise.Sim.Fixtures
                 {
                     Inning = DecisionInning, HalfInning = HalfInning.Bottom, OutsBefore = s.Outs,
                     CountBefore = new Count(1, 1),
-                    PitcherId = Pitcher, BatterId = Batter1,
+                    PitcherId = pitcher, BatterId = Batter1,
                     PitchType = "포심", VelocityKmh = 148,
                     LocationX = 4, LocationY = 96, Zone = Zone1,
                     Result = PitchResult.InPlay, IsStrikeByRule = true,
@@ -363,9 +392,9 @@ namespace DailyFranchise.Sim.Fixtures
 
         static int Clamp(int v, int min, int max) => Math.Max(min, Math.Min(max, v));
 
-        static PitchEvent Pitch(string batter, StrikeZone zone, string type, double kmh,
+        static PitchEvent Pitch(string pitcher, string batter, StrikeZone zone, string type, double kmh,
             double x, double y, PitchResult result, bool isStrike, Count before, Count after, BaseState runners, int outs) =>
-            FixtureBuilder.Pitch(DecisionInning, HalfInning.Bottom, Pitcher, batter, zone, type, kmh, x, y,
+            FixtureBuilder.Pitch(DecisionInning, HalfInning.Bottom, pitcher, batter, zone, type, kmh, x, y,
                 result, isStrike, before, after, runners, outs);
     }
 }

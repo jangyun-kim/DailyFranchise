@@ -290,7 +290,7 @@ namespace DailyFranchise.UI
         /// 두 구단 선수의 출장 기록 (선수 DB ID, 컨디션 갱신용). 선수단이 실리지 않은 더미 경기면 null.
         /// - 대상: 두 구단 선수단 전원 (출장하지 않은 선수는 휴식).
         /// - 타자: 장면에서 타석을 마친 타자. 퀵 시뮬·고정 장면은 1~7회를 건너뛰므로 두 팀 선발 라인업 전원을 출장으로 본다.
-        /// - 투수: 장면 시작 전 투구 수 + 장면에서 던진 공 (선발은 퀵 시뮬 이닝 투구 포함).
+        /// - 투수: 장면 시작 전 투구 수 + 장면에서 던진 공 (퀵 시뮬 구간에 던진 선발·구원의 가상 투구 수 포함, Phase 38).
         /// </summary>
         public GameParticipation Participation()
         {
@@ -313,7 +313,9 @@ namespace DailyFranchise.UI
             foreach (var e in path)
                 if (e.Outcome != PlateAppearanceOutcome.None) game.AddBatter(source.Resolve(e.BatterId)?.Id);
 
-            foreach (var id in path.Select(e => e.PitcherId).Concat(new[] { MyStarterId, CpuStarterId }).Distinct())
+            var quickSim = _generated == null ? Enumerable.Empty<string>()
+                : _generated.OpponentStaff.Appearances.Concat(_generated.MyStaff.Appearances).Select(a => a.PitcherId);
+            foreach (var id in path.Select(e => e.PitcherId).Concat(new[] { MyStarterId, CpuStarterId }).Concat(quickSim).Distinct())
                 game.AddPitches(source.Resolve(id)?.Id, _roster.GetPlayer(id).PitchesBeforeScene + path.Count(e => e.PitcherId == id));
             return game;
         }
@@ -381,8 +383,11 @@ namespace DailyFranchise.UI
         {
             var m = matchup ?? Matchup.Default;
             var opponent = m.RosterOf(m.MySide == TeamSide.Home ? TeamSide.Away : TeamSide.Home);
-            // 생성 장면은 내 구단 = 홈(8회말 공격) 기준이다.
-            var game = FixtureGenerator.Generate(opponent, m.RosterOf(m.MySide), random ?? SimRandom);
+            var mine = m.RosterOf(m.MySide);
+            // 생성 장면은 내 구단 = 홈(8회말 공격) 기준이다. 선수단이 없는 쪽은 더미 불펜으로 퀵 시뮬 구간 투수를 바꾼다.
+            var game = FixtureGenerator.Generate(opponent, mine, random ?? SimRandom, null,
+                opponent == null ? DummyScenarioData.QuickSimRelievers("away_") : null,
+                mine == null ? DummyScenarioData.QuickSimRelievers("home_") : null);
             LoadGenerated(game, m);
         }
 
@@ -650,7 +655,19 @@ namespace DailyFranchise.UI
             IEnumerable<string> ids = source != null && source.Resolve(CpuStarterId) != null
                 ? Enumerable.Range(1, 9).Select(i => "away_rp" + i).Where(id => source.Resolve(id) != null).ToList()
                 : DummyScenarioData.OpponentBullpen;
-            return new InGameRoster(CpuStarterId, ids.Select(id => DataFor(id, RosterRole.Bullpen, _roster.GetPlayer(id).Position)));
+            var roster = new InGameRoster(CpuStarterId, ids.Select(id => DataFor(id, RosterRole.Bullpen, _roster.GetPlayer(id).Position)));
+            SyncQuickSimStaff(roster, _generated?.OpponentStaff);
+            return roster;
+        }
+
+        /// <summary>
+        /// 퀵 시뮬레이션 구간 투수 운용을 경기 중 투수 상태에 옮긴다 (Phase 38): 퀵 시뮬에서 던지고 내려간 투수는 강판,
+        /// 마지막 투수가 장면 첫 이닝 마운드. 대기 명단에 없는 투수(더미 자리 불일치)는 건너뛴다 — 그 앞 투수가 이어 던진다.
+        /// </summary>
+        static void SyncQuickSimStaff(InGameRoster roster, QuickSimStaff staff)
+        {
+            if (staff == null) return;
+            foreach (var a in staff.Appearances.Skip(1)) roster.BringIn(a.PitcherId);
         }
 
         /// <summary>
@@ -662,7 +679,9 @@ namespace DailyFranchise.UI
             var my = _roster.MyTeam;
             var pool = _roster.GetBench(my).Select(e => DataFor(e.PlayerId, RosterRole.Bench, e.Role))
                 .Concat(_roster.GetBullpen(my).Select(e => DataFor(e.PlayerId, RosterRole.Bullpen, e.Role)));
-            return new InGameRoster(MyStarterId, pool);
+            var roster = new InGameRoster(MyStarterId, pool);
+            SyncQuickSimStaff(roster, _generated?.MyStaff);
+            return roster;
         }
 
         /// <summary>장면 자리 ID의 선수 사본 (ID = 장면 자리). 선수단이 없으면 더미 표시 정보로 만든다.</summary>

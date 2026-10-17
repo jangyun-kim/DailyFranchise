@@ -73,8 +73,12 @@ namespace DailyFranchise.Sim
     /// 1) 득점 확률  p = 기본 득점률 × (팀 OPS / 리그 OPS)² × (평균자책 / 리그 평균자책),  [5%, 60%]
     /// 2) 득점하면 1점, 이후 추가 득점 확률 q = 0.40 × (팀 OPS / 리그 OPS) ([10%, 60%])로 한 점씩 더 낸다.
     ///    한 이닝 득점은 <see cref="MaxRunsPerInning"/>를 넘지 않는다 (럭비 스코어 방지).
-    /// 3) 안타 = 득점 + (안타율 판정 1개), 볼넷·실책은 반 이닝마다 한 번씩 판정한다 (스코어보드 H·B·E 칸용).
-    /// 선발 투수가 끝까지 던진다고 가정한다 (불펜 교체 없음). 선수단·기록이 없으면 리그 평균.
+    /// 3) 안타 = 득점 + 잔루 안타 (Phase 38, <see cref="StrandedHits"/>): 난수 한 번으로 득점한 이닝은 0~3개, 무득점 이닝도
+    ///    35%쯤 1~2개를 더 채운다 (리그 평균 대결 기대값 9이닝 팀당 안타 ≈ 9.8개, 타율 ≈ .264). 볼넷·실책은 반 이닝마다 한 번씩
+    ///    판정하고, 잔루가 3명을 넘지 않게 안타를 자른다 (안타 + 볼넷 + 실책 − 득점 ≤ 3).
+    /// 득점은 안타 수와 상관없이 1)·2)로만 정해지고, 반 이닝당 난수 사용 횟수도 Phase 37과 같다 — 같은 Seed면 득점이 그대로다.
+    /// 득점 확률은 선발 평균자책으로만 계산한다. 투수 교체(가상 투구 수)는 결과 기록으로 따로 정한다 (<see cref="QuickSimStaff"/>).
+    /// 선수단·기록이 없으면 리그 평균.
     /// 반 이닝마다 난수를 (득점 1 + 추가 득점 0~4 + 안타 1 + 볼넷 1 + 실책 1)번 쓴다. 순서: 1회초, 1회말, 2회초 …
     /// </summary>
     public sealed class QuickSimEngine
@@ -90,8 +94,15 @@ namespace DailyFranchise.Sim
         public const double BaseExtraRunRate = 0.40;
         public const double MinExtraRunRate = 0.10;
         public const double MaxExtraRunRate = 0.60;
-        /// <summary>득점 없는 이닝에도 안타 하나가 나올 기본 확률.</summary>
-        public const double BaseStrayHitRate = 0.45;
+        /// <summary>득점한 이닝에서 득점 수보다 안타가 3·2·1개 더 나올 기본 확률 (나머지 30%는 0개).</summary>
+        public const double ScoredExtraHit3Rate = 0.10;
+        public const double ScoredExtraHit2Rate = 0.25;
+        public const double ScoredExtraHit1Rate = 0.35;
+        /// <summary>무득점 이닝에서 안타가 2·1개 나올 기본 확률 (나머지 65%는 무안타).</summary>
+        public const double ScorelessHit2Rate = 0.09;
+        public const double ScorelessHit1Rate = 0.26;
+        /// <summary>반 이닝 잔루 상한 (타자 아웃만 3개라 루상 주자는 3명까지).</summary>
+        public const int MaxLeftOnBase = 3;
         public const double BaseWalkRate = 0.30;
         public const double ErrorRate = 0.04;
         /// <summary>계산에 쓰는 평균자책 범위 (비정상 기록이 확률을 무너뜨리지 않게).</summary>
@@ -149,10 +160,29 @@ namespace DailyFranchise.Sim
                 while (runs < MaxRunsPerInning && random.NextDouble() < more) runs++;
             }
 
-            int hits = runs + (random.NextDouble() < Clamp(BaseStrayHitRate * ratio, 0, 0.9) ? 1 : 0);
+            int hits = runs + StrandedHits(runs, ratio, random.NextDouble());
             int walks = random.NextDouble() < Clamp(BaseWalkRate * TeamOnBase(offense) / LeagueOnBase, 0, 0.9) ? 1 : 0;
             int errors = random.NextDouble() < ErrorRate ? 1 : 0;
+            hits = Math.Max(runs, Math.Min(hits, runs + MaxLeftOnBase - walks - errors));
             return new HalfInningLine(runs, hits, walks, errors);
+        }
+
+        /// <summary>
+        /// 득점보다 더 나오는 안타 (잔루로 남은 주자의 안타). 난수 하나(<paramref name="roll"/>)를 누적 확률 칸으로 나눈다:
+        /// 득점한 이닝은 3·2·1·0개 = 10·25·35·30%, 무득점 이닝은 2·1·0개 = 9·26·65% (확률은 팀 OPS / 리그 OPS 배, 합 ≤ 95%).
+        /// </summary>
+        public static int StrandedHits(int runs, double opsRatio, double roll)
+        {
+            double k = Clamp(opsRatio, 0, 3);
+            if (runs > 0)
+            {
+                double scale = Math.Min(k, 0.95 / (ScoredExtraHit3Rate + ScoredExtraHit2Rate + ScoredExtraHit1Rate));
+                double c3 = ScoredExtraHit3Rate * scale, c2 = c3 + ScoredExtraHit2Rate * scale, c1 = c2 + ScoredExtraHit1Rate * scale;
+                return roll < c3 ? 3 : roll < c2 ? 2 : roll < c1 ? 1 : 0;
+            }
+            double s = Math.Min(k, 0.95 / (ScorelessHit2Rate + ScorelessHit1Rate));
+            double d2 = ScorelessHit2Rate * s, d1 = d2 + ScorelessHit1Rate * s;
+            return roll < d2 ? 2 : roll < d1 ? 1 : 0;
         }
 
         /// <summary>1회부터 <paramref name="innings"/>회까지 원정·홈 반 이닝을 번갈아 계산한다.</summary>

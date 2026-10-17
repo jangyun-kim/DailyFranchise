@@ -9,7 +9,8 @@ namespace DailyFranchise.Sim
     /// <summary>
     /// 한 경기 박스스코어 만들기 (Phase 37). 장면 자리 ID(home_ = 내 구단, away_ = 상대) 기준으로 짓는다.
     /// 1) 퀵 시뮬레이션 구간 (<see cref="GeneratedGame"/>: 1~7회 · 8회초): 반 이닝마다 정해진 득점·안타·볼넷·실책 수를 그대로 지키며
-    ///    타순대로 타석을 나눈다 (<see cref="HalfInning"/>). 타순은 1번부터 이어지고, 그 반 이닝 투수는 수비 쪽 선발이다.
+    ///    타순대로 타석을 나눈다 (<see cref="HalfInning"/>). 타순은 1번부터 이어지고, 그 반 이닝 투수는 퀵 시뮬레이션 투수 운용
+    ///    (Phase 38, <see cref="GeneratedGame.PitcherFor"/>)이 정한 투수다 (선발이 5~6이닝 뒤 구원에게 넘긴다).
     /// 2) Play-by-Play 구간 (8회말부터, 풀 이닝은 1회부터): 장면의 타석 결과를 그대로 센다.
     ///    삼진·볼넷·안타(1~3루타·홈런)·범타·희생번트(타수 아님). 타점 = 그 타석에 들어온 점수. 실점은 그때 던지던 투수에게.
     /// 3) 승·패·세이브 (<see cref="Decide"/>): 득점이 난 순서대로 마지막 역전(앞서기 시작한 순간)을 찾는다.
@@ -61,10 +62,11 @@ namespace DailyFranchise.Sim
             {
                 for (int i = 0; i < early.Early.Innings; i++)
                 {
-                    units.Add(Half(box, OpponentPrefix, ref theirOrder, early.Early.AwayHalves[i], MyStarter, resolve, random));
-                    units.Add(Half(box, MyPrefix, ref myOrder, early.Early.HomeHalves[i], OpponentStarter, resolve, random));
+                    units.Add(Half(box, OpponentPrefix, ref theirOrder, early.Early.AwayHalves[i], early.PitcherFor(true, i), resolve, random));
+                    units.Add(Half(box, MyPrefix, ref myOrder, early.Early.HomeHalves[i], early.PitcherFor(false, i), resolve, random));
                 }
-                units.Add(Half(box, OpponentPrefix, ref theirOrder, early.EighthTop, MyStarter, resolve, random));
+                int eighth = early.Early.Innings;
+                units.Add(Half(box, OpponentPrefix, ref theirOrder, early.EighthTop, early.PitcherFor(true, eighth), resolve, random));
             }
             foreach (var e in path ?? Array.Empty<PitchEvent>())
                 units.Add(Record(box, e));
