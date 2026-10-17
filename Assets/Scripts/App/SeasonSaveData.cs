@@ -163,6 +163,8 @@ namespace DailyFranchise.App
         public string CallUp;
         /// <summary>부상(1)·회복(2) 기록 (Phase 36, <see cref="InjuryMark"/> 정수). 이적 기록·이전 파일은 0.</summary>
         public int Injury;
+        /// <summary>CPU 구단 스토브리그 AI의 영입·방출 (Phase 41). 없는 이전 파일은 false.</summary>
+        public bool Cpu;
     }
 
     [Serializable]

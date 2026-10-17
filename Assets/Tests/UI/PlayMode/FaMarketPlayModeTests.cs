@@ -537,5 +537,41 @@ namespace DailyFranchise.UI.Tests
             Assert.That(Root.Q("pd-stats").Query<Label>(className: "pd-stat__value").ToList().Select(l => l.text).Last(),
                 Is.EqualTo(season.Stats.BatterOf(backup.Id).PlateAppearances.ToString()), "시즌 기록 타일 = 누적 타석");
         }
+        [UnityTest]
+        public IEnumerator Phase41_CPU_방출로_FA_명단이_길어지면_쪽으로_나눠_1920x1080에_맞는다()
+        {
+            var r = RenderAt1080();
+            yield return null;
+            var manager = SeasonManager.Instance;
+            // 여러 해 CPU 방출이 쌓인 시장: 타 구단 퓨처스 16명을 자유계약으로
+            var released = manager.Rosters.Rosters.Where(t => t.Team != manager.Season.MyTeam && t.Team != Data_FreeAgent)
+                .SelectMany(t => t.Reserves.Take(2).Select(p => (t.Team, p))).Take(16).ToList();
+            foreach (var (team, p) in released)
+                manager.Season.AddSigning(SigningRecord.CpuRelease(p.Id, team), isBatter: !p.IsPitcher);
+            Assert.That(manager.Market.Count, Is.EqualTo(16));
+
+            Lobby.OpenFaMarket();
+            yield return null;
+            var fa = Lobby.FaMarket;
+            Assert.That(fa.MarketPageCount, Is.EqualTo(2));
+            Assert.That(Root.Q("fa-list").childCount, Is.EqualTo(FaMarketView.MarketPageSize));
+            Assert.That(Text("fa-trade-page"), Is.EqualTo("1 / 2쪽"));
+            Assert.That(Root.Q<Button>("fa-trade-prev").enabledSelf, Is.False);
+            AssertLayout("FA 명단 1쪽");
+            Submit(Root.Q<Button>("fa-trade-next"));
+            yield return null;
+            Assert.That(fa.MarketPage, Is.EqualTo(1));
+            Assert.That(Root.Q("fa-list").childCount, Is.EqualTo(16 - FaMarketView.MarketPageSize));
+            Assert.That(Text("fa-trade-page"), Is.EqualTo("2 / 2쪽"));
+            Assert.That(Root.Q<Button>("fa-trade-next").enabledSelf, Is.False);
+            AssertLayout("FA 명단 2쪽");
+            fa.SetPositionFilter("P");
+            yield return null;
+            Assert.That(fa.MarketPage, Is.Zero, "필터를 바꾸면 처음 쪽");
+            fa.Close();
+            Dispose(r);
+        }
+
+        const string Data_FreeAgent = LeagueRosterBook.FreeAgentTeam;
     }
 }

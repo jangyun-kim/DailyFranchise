@@ -50,6 +50,27 @@ namespace DailyFranchise.App
         public static SigningRecord Recovery(string team, string playerId) =>
             new SigningRecord(playerId, team, team, 0) { Mark = InjuryMark.Recovered };
 
+        /// <summary>
+        /// CPU 구단 스토브리그 AI의 영입·방출 (Phase 41, <see cref="CpuStoveLeague"/>). 장부는 CPU 영입 선수를 1군 정원이 차 있으면
+        /// 퓨처스 끝에 넣는다 (사용자 영입은 정원 검사를 협상 단계에서 하므로 그대로 1군).
+        /// </summary>
+        public bool ByCpu { get; private set; }
+
+        /// <summary>CPU 구단의 FA 영입 (자유계약 → 구단).</summary>
+        public static SigningRecord CpuSigning(string playerId, string team, long salary) =>
+            new SigningRecord(playerId, LeagueRosterBook.FreeAgentTeam, team, salary) { ByCpu = true };
+
+        /// <summary>CPU 구단의 방출 (구단 → 자유계약).</summary>
+        public static SigningRecord CpuRelease(string playerId, string team) =>
+            new SigningRecord(playerId, team, LeagueRosterBook.FreeAgentTeam, 0) { ByCpu = true };
+
+        /// <summary>저장 파일에서 되살린 기록에 CPU 표시를 붙인다 (이적 기록만).</summary>
+        public SigningRecord AsCpu()
+        {
+            if (IsTransfer && !IsTrade) ByCpu = true;
+            return this;
+        }
+
         /// <summary>부상·회복 기록이면 그 종류 (Phase 36). 이적·맞바꾸기 기록이면 None.</summary>
         public InjuryMark Mark { get; private set; }
 
@@ -269,7 +290,8 @@ namespace DailyFranchise.App
                 var player = Movable(from, s.PlayerId);
                 if (player == null) continue;
                 rosters[s.FromTeam] = Remove(from, player, injured);
-                rosters[s.ToTeam] = Add(to, player);
+                // CPU 영입만 정원이 차면 퓨처스로 (자유계약 명단으로 가는 방출은 늘 시장에 보이게 1군 쪽에 둔다)
+                rosters[s.ToTeam] = Add(to, player, futuresWhenFull: s.ByCpu && s.ToTeam != FreeAgentTeam);
                 applied.Add(s);
             }
         }

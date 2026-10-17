@@ -237,6 +237,24 @@ namespace DailyFranchise.App
         public static NewsItem NegotiationFailed(string team, string playerName, int year, string date) =>
             new NewsItem(NewsKind.NegotiationFailed, BreakingTag, team, $"{playerName}, {team}의 제안 거절… 협상 결렬", year, date);
 
+        /// <summary>CPU 구단의 FA 영입 (Phase 41): "[오피셜] LG 트윈스, 자유계약 시장에서 진세훈과 전격 계약!".</summary>
+        public static NewsItem CpuSigned(string team, string playerName, int year, string date) =>
+            new NewsItem(NewsKind.Signing, OfficialTag, team, $"{team}, 자유계약 시장에서 {WaGwa(playerName)} 전격 계약!", year, date);
+
+        /// <summary>뉴스 한 줄에 이름을 적는 방출 선수 수 (나머지는 "외 N명").</summary>
+        public const int CpuReleaseNames = 2;
+
+        /// <summary>
+        /// CPU 구단 방출 요약 (Phase 41): "[단독] 타 구단 베테랑 5명 방출, FA 시장 합류 (KIA 김선빈 · LG 김현수 외 3명)".
+        /// </summary>
+        public static NewsItem CpuReleases(IReadOnlyList<(string Team, string Name)> released, int year, string date)
+        {
+            var names = string.Join(" · ", released.Take(CpuReleaseNames).Select(r => $"{LobbyBriefing.TeamMark(r.Team)} {r.Name}"));
+            string more = released.Count > CpuReleaseNames ? $" 외 {released.Count - CpuReleaseNames}명" : "";
+            return new NewsItem(NewsKind.Release, ExclusiveTag, LeagueRosterBook.FreeAgentTeam,
+                $"타 구단 베테랑 {released.Count}명 방출, FA 시장 합류 " + Unbroken($"({names}{more})"), year, date);
+        }
+
         public static NewsItem Released(string team, string playerName, int year, string date) =>
             new NewsItem(NewsKind.Release, ExclusiveTag, team, $"{team}, 성적 부진으로 {playerName} 방출 결정.", year, date);
 

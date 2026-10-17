@@ -464,7 +464,9 @@ namespace DailyFranchise.App
             // Phase 32: 한국시리즈 우승 팀이 정해진 오프시즌에만 결산한다.
             if (_loading || Season.InProgress != null || Season.Phase != SeasonPhase.OffSeason) return null;
             // 선수 DB를 읽었으면 에이징 커브·은퇴까지 (Phase 29). 장부는 결산 직전 것 (나이·폼 덧씌운 상태).
-            LastRollover = Season.TransitionToNextSeason(Rosters, AgingRandom);
+            // Phase 41: 에이징·드래프트 뒤 CPU 구단 스토브리그 AI가 다시 짠 장부로 방출·영입한다.
+            LastRollover = Season.TransitionToNextSeason(Rosters, AgingRandom, rebuild: () => Database == null ? null
+                : LeagueRosterBook.Build(Database, Season.Signings, Season.Progression, Season.Rookies));
             PendingCampReport = LastRollover.Camp;
             LastReport = null; // 직전 경기 재정 변화는 지난 시즌 것
             LastScore = null;

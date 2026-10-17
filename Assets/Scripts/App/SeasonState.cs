@@ -941,8 +941,12 @@ namespace DailyFranchise.App
         /// 정규시즌만 치르고 바로 결산하는 경우(이전 저장 파일·테스트)를 위한 것으로, null이면 연도로 시드를 정한 난수를 쓴다
         /// (에이징 난수와 분리 — 에이징·드래프트 결과가 흔들리지 않게).
         /// </param>
+        /// <param name="rebuild">
+        /// 지금 시즌 기록(이적·변동치·신인)으로 장부를 다시 짜는 함수 (Phase 41). 주면 에이징·드래프트 뒤 CPU 구단 스토브리그 AI
+        /// (<see cref="CpuStoveLeague"/>)가 방출·FA 영입을 한다. null이면 하지 않는다.
+        /// </param>
         public SeasonRollover TransitionToNextSeason(LeagueRosterBook league = null, IRandomSource agingRandom = null,
-            IRandomSource postseasonRandom = null)
+            IRandomSource postseasonRandom = null, Func<LeagueRosterBook> rebuild = null)
         {
             if (InProgress != null) throw new InvalidOperationException($"경기 중에는 시즌을 넘기지 않는다: {InProgress.Number}");
             if (!IsSeasonFinished) throw new InvalidOperationException($"정규시즌이 끝나지 않았다: {NextIndex} / {_schedule.Count}");
@@ -971,6 +975,8 @@ namespace DailyFranchise.App
             NextIndex = 0;
             _lastDay.Clear();
 
+            // Phase 41: CPU 스토브리그는 지난 시즌 순위가 낮은 구단부터 (순위표를 비우기 전에 순서를 남긴다)
+            var stoveOrder = _standings.OrderByDescending(r => r.Rank).ThenBy(r => r.Team, StringComparer.Ordinal).Select(r => r.Team).ToList();
             foreach (var row in _standings)
             {
                 row.Wins = row.Losses = row.Draws = 0;
@@ -997,6 +1003,7 @@ namespace DailyFranchise.App
                 summary.Aging = OffseasonAging.Process(this, league, agingRandom);
                 DropRetiredFromLineup();
                 summary.Draft = RookieDraft.Process(this, league, agingRandom);
+                if (rebuild != null) summary.Stove = CpuStoveLeague.Process(this, rebuild, stoveOrder);
             }
             // 스프링캠프 (Phase 33): 캠프 포인트 지급과 내 구단 리포트
             CampPoints += SpringCamp.PointsPerSeason;
@@ -1054,7 +1061,7 @@ namespace DailyFranchise.App
                 Signings = _signings.Select(s => new SigningData
                 {
                     PlayerId = s.PlayerId, FromTeam = s.FromTeam, ToTeam = s.ToTeam, Salary = s.Salary, Trade = s.IsTrade, CallUp = s.CallUpId,
-                    Injury = (int)s.Mark,
+                    Injury = (int)s.Mark, Cpu = s.ByCpu,
                 }).ToList(),
                 BattingStats = Stats.Batters.Values.OrderBy(b => b.PlayerId, StringComparer.Ordinal)
                     .Select(b => new BattingStatData { Id = b.PlayerId, Line = b.Line }).ToList(),
@@ -1181,7 +1188,8 @@ namespace DailyFranchise.App
                         season._signings.Add(s.Injury == (int)InjuryMark.Injured ? SigningRecord.Injury(s.FromTeam, s.PlayerId)
                             : s.Injury == (int)InjuryMark.Recovered ? SigningRecord.Recovery(s.FromTeam, s.PlayerId)
                             : string.IsNullOrEmpty(s.CallUp)
-                            ? new SigningRecord(s.PlayerId, s.FromTeam, s.ToTeam, Scaled(s.Salary, money), s.Trade)
+                            ? (s.Cpu ? new SigningRecord(s.PlayerId, s.FromTeam, s.ToTeam, Scaled(s.Salary, money), s.Trade).AsCpu()
+                                : new SigningRecord(s.PlayerId, s.FromTeam, s.ToTeam, Scaled(s.Salary, money), s.Trade))
                             : SigningRecord.Move(s.FromTeam, s.PlayerId, s.CallUp));
             // 개인 성적이 없는 이전 저장 파일(Phase 37 이전)은 0에서 시작한다. ID가 빈 항목은 건너뛰고 음수는 0으로.
             if (data.BattingStats != null)
@@ -1384,6 +1392,9 @@ namespace DailyFranchise.App
         public AgingReport Aging { get; internal set; }
         /// <summary>신인 드래프트 결과 (Phase 30). 장부 없이 결산했으면 null.</summary>
         public DraftReport Draft { get; internal set; }
+
+        /// <summary>CPU 구단 스토브리그 결과 (Phase 41). 장부 재구성 함수 없이 결산했으면 null.</summary>
+        public CpuStoveReport Stove { get; internal set; }
         /// <summary>한국시리즈 우승 팀 (Phase 32). 시리즈가 없었으면 null.</summary>
         public string Champion { get; internal set; }
         /// <summary>내 구단이 한국시리즈에 나갔는지.</summary>

@@ -216,8 +216,18 @@ namespace DailyFranchise.UI.Tests
             Assert.That(start.text, Is.EqualTo("다음 경기 시작"));
             Assert.That(start.ClassListContains("btn--offseason"), Is.False);
             Assert.That(start.enabledSelf, Is.True);
-            Assert.That((manager.Season.Budget, manager.Season.FanApproval, manager.Season.TrustPoints, manager.Season.Signings.Count),
+            Assert.That((manager.Season.Budget, manager.Season.FanApproval, manager.Season.TrustPoints, manager.Season.Signings.Count(r => !r.ByCpu)),
                 Is.EqualTo((budget, fan, Mathf.Min(trust, FrontOfficeTrust.CarryOver), signings)), "예산·팬·TP·이적 기록 이월");
+            // Phase 41: 결산 때 CPU 구단 스토브리그 AI가 방출·영입 기록을 더한다 (뉴스 패널에도)
+            var stove = manager.LastRollover.Stove;
+            Assert.That(stove, Is.Not.Null);
+            Assert.That(manager.Season.Signings.Count(r => r.ByCpu), Is.EqualTo(stove.Releases.Count + stove.Signings.Count));
+            Assert.That(stove.Releases, Is.Not.Empty);
+            Assert.That(manager.Season.RecentNews.Any(n => n.Headline.StartsWith("타 구단 베테랑")), Is.True);
+            // FA 시장에 CPU가 내보낸 선수가 올라와 있다
+            var signedByCpu = new System.Collections.Generic.HashSet<string>(stove.Signings.Select(x => x.Player.Id));
+            Assert.That(manager.Market.Select(a => a.Id),
+                Is.SupersetOf(stove.Releases.Where(r => !signedByCpu.Contains(r.Player.Id)).Select(r => r.Player.Id)));
 
             // 즉시 저장: 껐다 켜도 2027 시즌 첫 경기부터.
             var saved = SaveManager.FromJson(File.ReadAllText(TestSavePath));

@@ -128,6 +128,7 @@ namespace DailyFranchise.App
         {
             PositionFilter = FilterKeyOf(positionOrKey);
             TradePage = 0;
+            MarketPage = 0;
             var sel = Selected;
             if (sel != null && !Matches(sel.Player, PositionFilter)) SelectedId = null;
             if (IsOpen) Refresh();
@@ -200,8 +201,25 @@ namespace DailyFranchise.App
         /// <summary>타 구단 명단의 쪽 수 (선수가 없어도 1).</summary>
         public int TradePageCount => Math.Max(1, TradePages().Count);
 
-        void PrevTradePage() => StepTradePage(-1);
-        void NextTradePage() => StepTradePage(1);
+        // Phase 41: 쪽 넘김 버튼은 지금 탭의 명단을 넘긴다 (FA 명단도 CPU 방출로 길어져 쪽으로 나눈다)
+        void PrevTradePage() { if (Tab == FaTab.Trade) StepTradePage(-1); else StepMarketPage(-1); }
+        void NextTradePage() { if (Tab == FaTab.Trade) StepTradePage(1); else StepMarketPage(1); }
+
+        /// <summary>FA 명단 한 쪽의 선수 줄 수 (1080p 한 화면 규칙).</summary>
+        public const int MarketPageSize = 13;
+
+        /// <summary>FA 명단의 지금 쪽 (0부터). 필터를 바꾸면 처음 쪽으로.</summary>
+        public int MarketPage { get; private set; }
+
+        /// <summary>FA 명단의 쪽 수 (선수가 없어도 1).</summary>
+        public int MarketPageCount => Math.Max(1, (FilteredMarket.Count + MarketPageSize - 1) / MarketPageSize);
+
+        /// <summary>FA 명단 쪽을 넘긴다 (처음·끝에서 멈춘다).</summary>
+        public void StepMarketPage(int delta)
+        {
+            MarketPage = Math.Max(0, Math.Min(MarketPageCount - 1, MarketPage + delta));
+            if (IsOpen && Tab == FaTab.Market) RenderList();
+        }
 
         /// <summary>타 구단 명단 쪽을 넘긴다 (처음·끝에서 멈춘다).</summary>
         public void StepTradePage(int delta)
@@ -393,7 +411,7 @@ namespace DailyFranchise.App
             Q<Label>("fa-head-ask").text = trade ? "트레이드 가치" : "요구액";
             Q("fa-list").style.display = trade ? DisplayStyle.None : DisplayStyle.Flex;
             Q("fa-trade-list").style.display = trade ? DisplayStyle.Flex : DisplayStyle.None;
-            Q("fa-trade-pager").style.display = trade ? DisplayStyle.Flex : DisplayStyle.None;
+            Q("fa-trade-pager").style.display = DisplayStyle.Flex;
             Q("fa-table").style.display = trade ? DisplayStyle.None : DisplayStyle.Flex;
             Q("fa-trade-panel").style.display = trade ? DisplayStyle.Flex : DisplayStyle.None;
         }
@@ -511,7 +529,8 @@ namespace DailyFranchise.App
             var list = Q("fa-list");
             list.Clear();
             var market = FilteredMarket;
-            foreach (var a in market)
+            MarketPage = Math.Max(0, Math.Min(MarketPageCount - 1, MarketPage));
+            foreach (var a in market.Skip(MarketPage * MarketPageSize).Take(MarketPageSize))
             {
                 var p = a.Player;
                 var row = new VisualElement { name = "fa-" + a.Id, userData = a.Id };
@@ -534,6 +553,9 @@ namespace DailyFranchise.App
                 : market.Count == 0
                 ? "시장에 남은 선수가 없습니다."
                 : $"요구액 = WAR 연봉 × (1 + 인기 보정 {StoveLeague.PremiumPercent(FranchiseFinance.MoodOf(_manager.Season.FanApproval))}%) · 팬 만족도가 높을수록 싸다";
+            Q<Label>("fa-trade-page").text = market.Count == 0 ? "—" : $"{MarketPage + 1} / {MarketPageCount}쪽";
+            _tradePrev.SetEnabled(MarketPage > 0);
+            _tradeNext.SetEnabled(MarketPage < MarketPageCount - 1);
             RenderSelection();
         }
 
