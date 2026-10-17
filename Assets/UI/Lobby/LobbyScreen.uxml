@@ -154,8 +154,8 @@
                         <ui:Label name="stat-note" class="stat-note" text="" />
                     </ui:VisualElement>
                     <ui:VisualElement name="team-leaders-panel" class="panel card card--flat dashboard__card--leaders">
-                        <ui:Label class="panel-title" text="팀 내 기록 1위 · 지난 시즌" />
-                        <ui:VisualElement name="team-leaders" />
+                        <ui:Label name="leaders-title" class="panel-title" text="팀 내 기록 1위" />
+                        <ui:VisualElement name="team-leaders" class="leaders-grid" />
                     </ui:VisualElement>
                 </ui:VisualElement>
             </ui:VisualElement>

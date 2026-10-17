@@ -1382,6 +1382,9 @@ Label {
     font-size: 14px;
     color: var(--muted);
     -unity-text-align: middle-left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .pd-swap-title {
@@ -1891,3 +1894,22 @@ Label {
 
 .news-tag--injury { color: var(--danger); }
 .news-tag--recovery { color: var(--good); }
+
+/* Phase 37: 팀 내 기록 1위 (이번 시즌) — 2열 (왼쪽 타자 · 오른쪽 투수) */
+.leaders-grid {
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+
+.lobby-row.lobby-row--leader-half {
+    width: 50%;
+}
+
+.lobby-row--leader-half > .col-leader-cat { width: 74px; }
+.lobby-row--leader-half > .col-leader-value { width: 78px; }
+
+.lobby-row--leader-empty > .col-leader-name,
+.lobby-row--leader-empty > .col-leader-value {
+    color: var(--muted);
+    -unity-font-style: normal;
+}

@@ -46,6 +46,8 @@ namespace DailyFranchise.App
         /// 타 구단끼리의 경기는 점수만 만들므로 그 선수들의 컨디션은 바뀌지 않는다.
         /// </summary>
         public IReadOnlyList<ConditionChange> Conditions = new List<ConditionChange>();
+        /// <summary>시즌 개인 성적에 더한 박스스코어 (Phase 37). 없었거나 한국시리즈 경기면 null.</summary>
+        public BoxScore Box;
         /// <summary>이 경기에서 다친 선수 (Phase 36, ID 순). 부상 난수·장부가 없으면 비어 있다.</summary>
         public IReadOnlyList<InjuryEvent> Injuries = new List<InjuryEvent>();
         /// <summary>이 경기를 끝으로 부상에서 회복한 선수 (Phase 36, ID 순).</summary>
@@ -75,6 +77,7 @@ namespace DailyFranchise.App
     ///    새로 해금한 팬덤 특전, 그날 타 구단 경기 중 큰 점수 차 경기 한 건.
     /// 6.5) 부상 (Phase 36, <see cref="InjuryRules"/>): 먼저 부상 선수의 남은 경기를 1씩 줄여 0이면 회복시키고([복귀] 뉴스 — 내 구단만),
     ///    부상 난수와 장부가 있으면 출장 선수(두 구단)의 부상을 경기 전 컨디션으로 판정해 퓨처스로 내린다([부상] 뉴스).
+    /// 6.7) 박스스코어가 있으면 시즌 개인 성적에 더한다 (Phase 37, 정규시즌 경기만 — 한국시리즈 기록은 시즌 성적에 넣지 않는다).
     /// 7) 곧바로 저장해, 로비로 돌아가기 전에 꺼져도 결과가 남는다.
     /// </summary>
     public static class PostGameProcessor
@@ -90,9 +93,10 @@ namespace DailyFranchise.App
         /// <param name="walkOff">9회 이후 말 공격에서 홈이 앞서며 끝났는지 (끝내기 뉴스).</param>
         /// <param name="injuryRandom">부상 판정 난수 (Phase 36). null이면 새 부상은 없다 (남은 경기는 그래도 준다).</param>
         /// <param name="book">경기 전 선수단 장부 (부상 선수의 소속·이름). null이면 새 부상은 없다.</param>
+        /// <param name="boxScore">선수 DB ID 기준 박스스코어 (Phase 37). null이면 개인 성적이 바뀌지 않는다.</param>
         public static PostGameReport Process(SeasonState season, GameScore finalScore, IRandomSource leagueRandom, SaveManager saves,
             GameParticipation participation = null, IRandomSource conditionRandom = null, int finalInning = 0, bool walkOff = false,
-            IRandomSource injuryRandom = null, LeagueRosterBook book = null)
+            IRandomSource injuryRandom = null, LeagueRosterBook book = null, BoxScore boxScore = null)
         {
             if (participation != null && conditionRandom == null)
                 throw new ArgumentNullException(nameof(conditionRandom), "출장 기록이 있으면 컨디션 난수가 필요하다.");
@@ -123,6 +127,8 @@ namespace DailyFranchise.App
                 ? PublishPostseasonNews(season, game, unlocked)
                 : PublishNews(season, game, mine, rankBefore, unlocked, finalInning, walkOff);
             news.AddRange(PublishInjuryNews(season, game, injuries, recoveries));
+            var box = postseason ? null : boxScore;
+            season.Stats.Add(box);
 
             return new PostGameReport
             {
@@ -140,6 +146,7 @@ namespace DailyFranchise.App
                 SlotsApplied = slots,
                 NewlyUnlocked = unlocked,
                 Conditions = conditions,
+                Box = box,
                 Injuries = injuries,
                 Recoveries = recoveries,
                 News = news,

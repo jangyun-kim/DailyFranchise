@@ -527,7 +527,8 @@ namespace DailyFranchise.App
             DetachGame();
             // 경기 화면은 일정의 원정·홈대로 그리지만, 내 구단 득점 기준으로 다시 맞춰 반영한다.
             if (Season.InProgress != null)
-                AdvanceSeason(Season.ScheduleScore(result.MyRuns, result.OpponentRuns), result.Participation, result.FinalInning, result.WalkOff);
+                AdvanceSeason(Season.ScheduleScore(result.MyRuns, result.OpponentRuns), result.Participation, result.FinalInning, result.WalkOff,
+                    result.BoxScore);
             Load(LobbyScene);
         }
 
@@ -540,13 +541,15 @@ namespace DailyFranchise.App
         /// <param name="participation">출장 기록. 있으면 두 구단 선수 컨디션을 바꾼다 (<see cref="ConditionRandom"/>).</param>
         /// <param name="finalInning">경기가 끝난 이닝 (뉴스용, 모르면 0).</param>
         /// <param name="walkOff">끝내기로 끝났는지 (뉴스용).</param>
-        public PostGameReport AdvanceSeason(GameScore finalScore, GameParticipation participation = null, int finalInning = 0, bool walkOff = false)
+        /// <param name="boxScore">선수 DB ID 기준 박스스코어 (시즌 개인 성적, Phase 37). null이면 성적이 바뀌지 않는다.</param>
+        public PostGameReport AdvanceSeason(GameScore finalScore, GameParticipation participation = null, int finalInning = 0, bool walkOff = false,
+            BoxScore boxScore = null)
         {
             if (Season.InProgress == null) return null;
             LastScore = finalScore;
             var book = Rosters; // 정산 전에 페이롤을 지금 선수단에 맞춘다 (부상 선수의 소속·이름도 이 장부로)
             LastReport = PostGameProcessor.Process(Season, finalScore, LeagueRandom, Saves, participation, ConditionRandom, finalInning, walkOff,
-                InjuryRandom, book);
+                InjuryRandom, book, boxScore);
             if (LastReport.Injuries.Count > 0 || LastReport.Recoveries.Count > 0) AfterInjuryChange();
             NewsChanged?.Invoke();
             return LastReport;

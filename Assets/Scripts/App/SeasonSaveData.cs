@@ -79,6 +79,10 @@ namespace DailyFranchise.App
         /// </summary>
         public List<ConditionData> Conditions = new List<ConditionData>();
 
+        /// <summary>이번 시즌 개인 성적 (Phase 37, 선수 ID 순). 없는 이전 저장 파일은 빈 목록 (전원 0).</summary>
+        public List<BattingStatData> BattingStats = new List<BattingStatData>();
+        public List<PitchingStatData> PitchingStats = new List<PitchingStatData>();
+
         /// <summary>부상 중인 선수와 남은 결장 경기 (Phase 36, 선수 ID 순). 없는 이전 저장 파일은 빈 목록 (전원 건강).</summary>
         public List<InjuryData> Injuries = new List<InjuryData>();
 
@@ -156,6 +160,20 @@ namespace DailyFranchise.App
         public string CallUp;
         /// <summary>부상(1)·회복(2) 기록 (Phase 36, <see cref="InjuryMark"/> 정수). 이적 기록·이전 파일은 0.</summary>
         public int Injury;
+    }
+
+    [Serializable]
+    public sealed class BattingStatData
+    {
+        public string Id;
+        public DailyFranchise.Sim.Data.BattingLine Line;
+    }
+
+    [Serializable]
+    public sealed class PitchingStatData
+    {
+        public string Id;
+        public DailyFranchise.Sim.Data.PitchingLine Line;
     }
 
     [Serializable]

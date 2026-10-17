@@ -413,7 +413,21 @@ namespace DailyFranchise.UI.Tests
             Assert.That(root.Q<Label>("stat-ra").text, Is.EqualTo(me.RunsAllowed.ToString()));
             Assert.That(root.Q<Label>("stat-diff").text, Is.EqualTo(me.RunDifferentialText));
             Assert.That(root.Q<Label>("stat-l10").text, Is.EqualTo("0승 1패"));
-            Assert.That(root.Q("team-leaders").childCount, Is.EqualTo(4), "타율·홈런·평균자책·세이브 1위");
+            // Phase 37: 이번 시즌 기록으로 — 타율·홈런·타점 | 다승·평균자책·세이브 (2열 6칸), 방금 경기 박스스코어가 쌓였다
+            Assert.That(root.Q("team-leaders").childCount, Is.EqualTo(6), "타율·홈런·타점·다승·평균자책·세이브 1위");
+            Assert.That(root.Q<Label>("leaders-title").text, Is.EqualTo($"팀 내 기록 1위 · {season.Year} 시즌 1경기"));
+            Assert.That(SeasonManager.Instance.LastReport.Box, Is.Not.Null, "실제 경기 화면을 거치면 박스스코어가 온다");
+            Assert.That(season.Stats.Batters.Values.Sum(b => b.PlateAppearances), Is.GreaterThan(0));
+            var lobbyView = Object.FindAnyObjectByType<LobbyController>();
+            var leadoff = SeasonManager.Instance.MyRoster.Lineup
+                .Select(p => season.Stats.BatterOf(p.Id)).OrderByDescending(b => b.PlateAppearances).First();
+            Assert.That(leadoff.HasRecord, Is.True);
+            Assert.That(lobbyView.OpenPlayer(leadoff.PlayerId), Is.True);
+            Assert.That(root.Q("pd-stat-0").Q<Label>(className: "pd-stat__value").text, Is.EqualTo(SeasonStatsText.Rate(leadoff.Average, leadoff.AtBats > 0)),
+                "선수 상세 타율 타일 = 이번 시즌 누적");
+            Assert.That(root.Q("pd-stat-5").Q<Label>(className: "pd-stat__value").text, Is.EqualTo(leadoff.PlateAppearances.ToString()));
+            Assert.That(root.Q<Label>("pd-season").text, Does.StartWith($"{season.Year} 시즌 1경기 · {leadoff.PlateAppearances}타석 · 지난 시즌 · "));
+            lobbyView.PlayerDetail.Close();
             Assert.That(root.Q<Label>("my-record").text, Does.StartWith($"{me.Rank}위 · {me.Wins}승 {me.Losses}패 {me.Draws}무 · 승률 {me.WinPctText}"));
 
             // 순위표 UI가 재정렬된 SeasonState와 행 단위로 일치하고, 승률 내림차순이다.

@@ -34,10 +34,19 @@ namespace DailyFranchise.Sim
         public int AwayErrors;
         public int HomeErrors;
 
+        /// <summary>
+        /// 반 이닝별 기록 (Phase 37 — 박스스코어가 선수별 타석으로 나눠 준다, <see cref="BoxScoreBuilder"/>).
+        /// 원정 = 회초, 홈 = 회말. 실책은 그 반 이닝 수비 팀의 실책.
+        /// </summary>
+        public readonly HalfInningLine[] AwayHalves;
+        public readonly HalfInningLine[] HomeHalves;
+
         public QuickSimResult(int innings)
         {
             AwayRuns = new int[innings];
             HomeRuns = new int[innings];
+            AwayHalves = new HalfInningLine[innings];
+            HomeHalves = new HalfInningLine[innings];
         }
 
         public int Innings => AwayRuns.Length;
@@ -154,12 +163,14 @@ namespace DailyFranchise.Sim
             for (int i = 0; i < innings; i++)
             {
                 var top = SimulateHalf(away, home, random);
+                result.AwayHalves[i] = top;
                 result.AwayRuns[i] = top.Runs;
                 result.AwayHits += top.Hits;
                 result.AwayWalks += top.Walks;
                 result.HomeErrors += top.Errors;
 
                 var bottom = SimulateHalf(home, away, random);
+                result.HomeHalves[i] = bottom;
                 result.HomeRuns[i] = bottom.Runs;
                 result.HomeHits += bottom.Hits;
                 result.HomeWalks += bottom.Walks;

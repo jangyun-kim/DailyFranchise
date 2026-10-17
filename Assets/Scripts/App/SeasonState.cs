@@ -489,6 +489,12 @@ namespace DailyFranchise.App
             return changes;
         }
 
+        /// <summary>
+        /// 이번 시즌 개인 성적 (Phase 37). 정규시즌 경기 결산마다 박스스코어를 더하고, 시즌을 넘기면 비운다. 시즌과 함께 저장된다.
+        /// 화면 표시용 — 경기 계산은 선수 DB 기록(+ 변동치)을 그대로 쓴다.
+        /// </summary>
+        public SeasonStatsTracker Stats { get; } = new SeasonStatsTracker();
+
         readonly Dictionary<string, InjuryData> _injuries = new Dictionary<string, InjuryData>();
 
         /// <summary>
@@ -976,6 +982,7 @@ namespace DailyFranchise.App
             foreach (var id in _conditions.Keys.ToList())
                 _conditions[id] = Math.Max(_conditions[id], PlayerCondition.Default);
             _lastStarters.Clear();
+            Stats.Reset(); // Phase 37: 새 시즌 개인 성적은 0에서
             // Phase 36: 겨울 동안 부상은 모두 낫는다 (선수는 퓨처스에 남고, 새 시즌에 1군 등록할 수 있다).
             foreach (var id in _injuries.Keys.OrderBy(x => x, StringComparer.Ordinal).ToList()) Heal(_injuries[id], league);
 
@@ -1049,6 +1056,10 @@ namespace DailyFranchise.App
                     PlayerId = s.PlayerId, FromTeam = s.FromTeam, ToTeam = s.ToTeam, Salary = s.Salary, Trade = s.IsTrade, CallUp = s.CallUpId,
                     Injury = (int)s.Mark,
                 }).ToList(),
+                BattingStats = Stats.Batters.Values.OrderBy(b => b.PlayerId, StringComparer.Ordinal)
+                    .Select(b => new BattingStatData { Id = b.PlayerId, Line = b.Line }).ToList(),
+                PitchingStats = Stats.Pitchers.Values.OrderBy(p => p.PlayerId, StringComparer.Ordinal)
+                    .Select(p => new PitchingStatData { Id = p.PlayerId, Line = p.Line }).ToList(),
                 Injuries = _injuries.Values.OrderBy(d => d.Id, StringComparer.Ordinal)
                     .Select(d => new InjuryData { Id = d.Id, Team = d.Team, Games = d.Games }).ToList(),
                 HasTrust = true,
@@ -1167,6 +1178,13 @@ namespace DailyFranchise.App
                             : string.IsNullOrEmpty(s.CallUp)
                             ? new SigningRecord(s.PlayerId, s.FromTeam, s.ToTeam, Scaled(s.Salary, money), s.Trade)
                             : SigningRecord.Move(s.FromTeam, s.PlayerId, s.CallUp));
+            // 개인 성적이 없는 이전 저장 파일(Phase 37 이전)은 0에서 시작한다. ID가 빈 항목은 건너뛰고 음수는 0으로.
+            if (data.BattingStats != null)
+                foreach (var b in data.BattingStats)
+                    if (b != null) season.Stats.Restore(b.Id, b.Line, null);
+            if (data.PitchingStats != null)
+                foreach (var p in data.PitchingStats)
+                    if (p != null) season.Stats.Restore(p.Id, null, p.Line);
             // 부상 목록이 없는 이전 저장 파일(Phase 36 이전)은 전원 건강. ID·구단이 빈 항목과 남은 경기 0 이하는 건너뛴다
             // (부상 기록 없이 남은 경기만 있으면 자리는 그대로 두고 1군 등록만 막는다).
             if (data.Injuries != null)

@@ -106,11 +106,13 @@ namespace DailyFranchise.UI.Tests
         public void 선수_상세_기록_타일과_컨디션_안내()
         {
             var batter = Mine.AtOrder(1); // 구자욱
-            Assert.That(PlayerDetailView.StatTiles(batter).Select(t => t.label), Is.EqualTo(new[] { "타율", "출루율", "OPS", "홈런", "도루", "WAR" }));
-            Assert.That(PlayerDetailView.StatTiles(batter)[0].value, Is.EqualTo(".343"));
-            Assert.That(PlayerDetailView.StatTiles(batter)[2].value, Is.EqualTo("1.044"));
+            // Phase 37: 타일은 이번 시즌 누적 기록 — 시즌 첫 경기 전이면 비율은 "-.---", 개수는 0 (지난 시즌 .343은 아래 줄에만)
+            var stats = new SeasonStatsTracker();
+            Assert.That(PlayerDetailView.StatTiles(batter, stats).Select(t => t.label), Is.EqualTo(new[] { "타율", "출루율", "OPS", "홈런", "타점", "타석" }));
+            Assert.That(PlayerDetailView.StatTiles(batter, stats).Select(t => t.value), Is.EqualTo(new[] { "-.---", "-.---", "-.---", "0", "0", "0" }));
             var pitcher = Mine.Starters[0];
-            Assert.That(PlayerDetailView.StatTiles(pitcher).Select(t => t.label), Is.EqualTo(new[] { "ERA", "FIP", "WHIP", "승-패", "세이브·홀드", "WAR" }));
+            Assert.That(PlayerDetailView.StatTiles(pitcher, stats).Select(t => t.label), Is.EqualTo(new[] { "평균자책", "이닝", "승-패", "세이브", "탈삼진", "경기" }));
+            Assert.That(PlayerDetailView.StatTiles(pitcher, stats).Select(t => t.value), Is.EqualTo(new[] { "-.--", "0", "0-0", "0", "0", "0" }));
 
             Assert.That(PlayerDetailView.ConditionNote(batter, PlayerCondition.Tired), Is.EqualTo("벤치에서 한 경기 쉬면 보통으로 회복합니다."));
             Assert.That(PlayerDetailView.ConditionNote(batter, PlayerCondition.Exhausted), Does.Contain("휴식이 필요합니다"));

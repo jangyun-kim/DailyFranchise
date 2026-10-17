@@ -18,14 +18,18 @@ namespace DailyFranchise.UI
         public readonly int FinalInning;
         /// <summary>9회 이후 말 공격에서 홈이 앞서며 끝났다 (끝내기, Phase 28).</summary>
         public readonly bool WalkOff;
+        /// <summary>선수 DB ID 기준 박스스코어 (시즌 개인 성적, Phase 37). 선수 DB가 없는 경기(더미)면 null.</summary>
+        public readonly BoxScore BoxScore;
 
-        public GameResult(GameScore score, TeamSide myTeamSide, GameParticipation participation = null, int finalInning = 0, bool walkOff = false)
+        public GameResult(GameScore score, TeamSide myTeamSide, GameParticipation participation = null, int finalInning = 0, bool walkOff = false,
+            BoxScore boxScore = null)
         {
             Score = score;
             MyTeamSide = myTeamSide;
             Participation = participation;
             FinalInning = finalInning;
             WalkOff = walkOff;
+            BoxScore = boxScore;
         }
 
         public int MyRuns => MyTeamSide == TeamSide.Home ? Score.Home : Score.Away;

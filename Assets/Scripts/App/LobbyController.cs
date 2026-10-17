@@ -925,26 +925,49 @@ namespace DailyFranchise.App
             return recent.Games < 10 ? $"{text} · 최근 전적 {recent.Games}경기 기준" : text;
         }
 
-        /// <summary>팀 내 기록 1위 (지난 시즌 기록, 라인업 적용 선수단). 선수 DB가 없으면 비운다.</summary>
+        /// <summary>팀 내 기록 1위 칸 순서 (2열 — 왼쪽 타자, 오른쪽 투수).</summary>
+        static readonly SeasonLeaderCategory[] LeaderLayout =
+        {
+            SeasonLeaderCategory.BattingAverage, SeasonLeaderCategory.Wins,
+            SeasonLeaderCategory.HomeRuns, SeasonLeaderCategory.Era,
+            SeasonLeaderCategory.RunsBattedIn, SeasonLeaderCategory.Saves,
+        };
+
+        /// <summary>
+        /// 팀 내 기록 1위 (Phase 37 — 이번 시즌 누적 기록, <see cref="SeasonLeaders"/>): 왼쪽 타율·홈런·타점, 오른쪽 다승·평균자책·세이브.
+        /// 아직 기록이 없는 부문은 "—". 선수 DB가 없으면 비운다.
+        /// </summary>
         void RenderLeaders()
         {
             var container = Q("team-leaders");
             container.Clear();
+            var season = _manager.Season;
+            Q<Label>("leaders-title").text = $"팀 내 기록 1위 · {season.Year} 시즌" + (season.GamesPlayed > 0 ? $" {season.GamesPlayed}경기" : "");
             var roster = _manager.MyRoster;
             if (roster == null)
             {
                 container.Add(Cell(_manager.IsDatabaseReady ? "내 구단 선수 데이터가 없습니다." : "선수 데이터 불러오는 중…", "news-empty"));
                 return;
             }
-            foreach (var leader in RosterAnalyzer.Leaders(roster))
+            var leaders = SeasonLeaders.For(roster, season.Stats, season.GamesPlayed).ToDictionary(l => l.Category);
+            foreach (var category in LeaderLayout)
             {
+                var leader = leaders[category];
                 var row = Row("lobby-row",
                     Cell(leader.CategoryText, "col-leader-cat"),
-                    Cell(leader.Player.Name, "col-leader-name"),
-                    Cell(leader.Player.Position, "col-leader-role"),
+                    Cell(leader.Player?.Name ?? "기록 없음", "col-leader-name"),
                     Cell(leader.ValueText, "col-leader-value"));
-                row.name = "leader-" + leader.Category;
+                row.name = "leader-" + category;
                 row.AddToClassList("lobby-row--leader");
+                row.AddToClassList("lobby-row--leader-half");
+                row.EnableInClassList("lobby-row--leader-empty", leader.Player == null);
+                if (leader.Player != null)
+                {
+                    string id = leader.Player.Id;
+                    row.tooltip = $"{leader.Player.Name} · {PositionMatcher.Label(leader.Player.Position)} · 누르면 선수 상세";
+                    row.AddToClassList("lobby-row--clickable");
+                    row.RegisterCallback<ClickEvent>(_ => OpenPlayer(id));
+                }
                 container.Add(row);
             }
         }

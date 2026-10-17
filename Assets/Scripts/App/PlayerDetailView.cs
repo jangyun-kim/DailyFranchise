@@ -260,7 +260,7 @@ namespace DailyFranchise.App
 
             var stats = Q("pd-stats");
             stats.Clear();
-            var tiles = StatTiles(p);
+            var tiles = StatTiles(p, season.Stats);
             for (int i = 0; i < tiles.Count; i++)
             {
                 var tile = new VisualElement { name = "pd-stat-" + i };
@@ -269,7 +269,7 @@ namespace DailyFranchise.App
                 tile.Add(Cell(tiles[i].value, "pd-stat__value"));
                 stats.Add(tile);
             }
-            Q<Label>("pd-season").text = "지난 시즌 · " + ScenarioRosterSource.SeasonLineText(p)
+            Q<Label>("pd-season").text = SeasonCaption(p, season) + " · 지난 시즌 · " + ScenarioRosterSource.SeasonLineText(p)
                 + (Math.Abs(p.Form) >= 0.005 ? $" · 에이징 폼 {AgingCurve.FormText(p.Form)}" : "");
 
             bool other = IsOtherTeam;
@@ -580,22 +580,43 @@ namespace DailyFranchise.App
             }
         }
 
-        public static IReadOnlyList<(string label, string value)> StatTiles(PlayerData p)
+        /// <summary>
+        /// 기록 타일 6개 (Phase 37 — 이번 시즌 누적 기록, <see cref="SeasonState.Stats"/>). 지난 시즌(선수 DB) 기록은 아래 한 줄로만 보인다.
+        /// 타자: 타율 · 출루율 · OPS · 홈런 · 타점 · 타석. 투수: 평균자책 · 이닝 · 승-패 · 세이브 · 탈삼진 · 경기.
+        /// 기록이 없으면 비율은 "-.---", 평균자책은 "-.--", 개수는 0 (0으로 나누지 않는다).
+        /// </summary>
+        public static IReadOnlyList<(string label, string value)> StatTiles(PlayerData p, SeasonStatsTracker stats)
         {
+            if (stats == null) throw new ArgumentNullException(nameof(stats));
             var inv = CultureInfo.InvariantCulture;
-            string Rate(double v) => v <= 0 ? "—" : v.ToString(v < 1 ? ".000" : "0.000", inv);
-            string Fixed(double v) => v == 0 ? "—" : v.ToString("0.00", inv);
             if (p.IsPitcher)
+            {
+                var s = stats.PitcherOf(p.Id);
                 return new[]
                 {
-                    ("ERA", Fixed(p.Era)), ("FIP", Fixed(p.Fip)), ("WHIP", Fixed(p.Whip)),
-                    ("승-패", $"{p.Wins}-{p.Losses}"), ("세이브·홀드", $"{p.Saves}·{p.Holds}"), ("WAR", Fixed(p.War)),
+                    ("평균자책", SeasonStatsText.Era(s)), ("이닝", SeasonStatsText.Innings(s.Outs)), ("승-패", $"{s.Wins}-{s.Losses}"),
+                    ("세이브", s.Saves.ToString(inv)), ("탈삼진", s.Strikeouts.ToString(inv)), ("경기", s.Games.ToString(inv)),
                 };
+            }
+            var b = stats.BatterOf(p.Id);
             return new[]
             {
-                ("타율", Rate(p.BattingAverage)), ("출루율", Rate(p.OnBasePercentage)), ("OPS", Rate(p.Ops)),
-                ("홈런", p.HomeRuns.ToString(inv)), ("도루", p.StolenBases.ToString(inv)), ("WAR", Fixed(p.War)),
+                ("타율", SeasonStatsText.Rate(b.Average, b.AtBats > 0)), ("출루율", SeasonStatsText.Rate(b.OnBase, b.AtBats + b.Walks > 0)),
+                ("OPS", SeasonStatsText.Rate(b.Ops, b.AtBats > 0)), ("홈런", b.HomeRuns.ToString(inv)), ("타점", b.RunsBattedIn.ToString(inv)),
+                ("타석", b.PlateAppearances.ToString(inv)),
             };
+        }
+
+        /// <summary>"2026 시즌 3경기 · 13타석" / "2026 시즌 2경기 · 8 1/3이닝" / "2026 시즌 기록 없음".</summary>
+        public static string SeasonCaption(PlayerData p, SeasonState season)
+        {
+            if (p.IsPitcher)
+            {
+                var s = season.Stats.PitcherOf(p.Id);
+                return s.HasRecord ? $"{season.Year} 시즌 {s.Games}경기 · {SeasonStatsText.Innings(s.Outs)}이닝" : $"{season.Year} 시즌 기록 없음";
+            }
+            var b = season.Stats.BatterOf(p.Id);
+            return b.HasRecord ? $"{season.Year} 시즌 {b.Games}경기 · {b.PlateAppearances}타석" : $"{season.Year} 시즌 기록 없음";
         }
 
         /// <summary>교체 후보: 선발 타자면 벤치 선수 (같은 수비군 먼저, 컨디션 좋은 순), 벤치면 선발 타자 (컨디션 나쁜 순).</summary>

@@ -254,7 +254,7 @@ namespace DailyFranchise.UI
             }
             var score = FinalScore();
             var (inning, walkOff) = FinalInningInfo(score);
-            handler(new GameResult(score, _roster.MyTeam, Participation(), inning, walkOff));
+            handler(new GameResult(score, _roster.MyTeam, Participation(), inning, walkOff, BuildBoxScore()));
         }
 
         /// <summary>
@@ -316,6 +316,19 @@ namespace DailyFranchise.UI
             foreach (var id in path.Select(e => e.PitcherId).Concat(new[] { MyStarterId, CpuStarterId }).Distinct())
                 game.AddPitches(source.Resolve(id)?.Id, _roster.GetPlayer(id).PitchesBeforeScene + path.Count(e => e.PitcherId == id));
             return game;
+        }
+
+        /// <summary>
+        /// 이 경기 박스스코어 (Phase 37, <see cref="BoxScoreBuilder"/>): 퀵 시뮬레이션 구간(1~7회·8회초)은 반 이닝 기록을 타순대로 나누고,
+        /// 장면 구간은 경기 끝 경로(<see cref="FinalPath"/>)의 타석 결과 그대로. 선수 DB ID로 바꿔 넘긴다 (더미 자리는 뺀다).
+        /// 선수단이 실리지 않은 더미 경기면 null.
+        /// </summary>
+        public BoxScore BuildBoxScore()
+        {
+            if (!(_roster is ScenarioRosterSource source) || _events == null) return null;
+            var random = _generated == null ? null : new SeededRandom(BoxScoreBuilder.SeedFor(_generated));
+            var box = BoxScoreBuilder.Build(_generated, FinalPath(), source.Resolve, random);
+            return box.Remap(id => source.Resolve(id)?.Id);
         }
 
         /// <summary>장면 선수의 오늘 컨디션 문구 ("컨디션 좋음 (4/5)"). 선수 데이터나 컨디션을 모르면 null.</summary>
