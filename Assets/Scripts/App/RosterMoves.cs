@@ -19,6 +19,8 @@ namespace DailyFranchise.App
         SameSide,
         /// <summary>타자와 투수 — 타자는 타자(벤치), 투수는 투수(불펜)끼리만.</summary>
         Mismatch,
+        /// <summary>부상 중인 선수 (Phase 36) — 회복할 때까지 1군에 올릴 수 없다.</summary>
+        Injured,
     }
 
     /// <summary>맞바꾸기 한 번의 결과.</summary>
@@ -58,11 +60,12 @@ namespace DailyFranchise.App
         static PlayerData Find(TeamRoster r, string id) =>
             LeagueRosterBook.AllOf(r).Concat(r.Reserves).FirstOrDefault(p => p.Id == id);
 
-        /// <summary>이 선수가 맞바꾸기에 나설 수 있는지 (1군 벤치·불펜 또는 퓨처스, 대체 선수 제외).</summary>
-        public static bool IsMovable(TeamRoster my, string id)
+        /// <summary>이 선수가 맞바꾸기에 나설 수 있는지 (1군 벤치·불펜 또는 퓨처스, 대체 선수·부상 선수 제외).</summary>
+        public static bool IsMovable(TeamRoster my, string id, SeasonState season = null)
         {
             var side = SideOf(my, id);
-            return (side == Side.Bench || side == Side.Bullpen || side == Side.Futures) && !LeagueRosterBook.IsReplacement(Find(my, id));
+            return (side == Side.Bench || side == Side.Bullpen || side == Side.Futures) && !LeagueRosterBook.IsReplacement(Find(my, id))
+                   && season?.IsInjured(id) != true;
         }
 
         /// <summary>선발 타순·로테이션 선수인지 (먼저 벤치·불펜으로 옮겨야 한다).</summary>
@@ -77,16 +80,16 @@ namespace DailyFranchise.App
 
         /// <summary>
         /// 맞바꿀 수 있는 상대 (명단 순서): 벤치 타자 → 퓨처스 타자, 불펜 투수 → 퓨처스 투수, 퓨처스 타자 → 벤치, 퓨처스 투수 → 불펜.
-        /// 선발 타순·로테이션 선수나 내 선수가 아니면 빈 목록.
+        /// 선발 타순·로테이션 선수나 내 선수가 아니면 빈 목록. <paramref name="season"/>이 있으면 부상 선수는 나서지도, 상대로 나오지도 않는다 (Phase 36).
         /// </summary>
-        public static IReadOnlyList<PlayerData> Partners(TeamRoster my, string id)
+        public static IReadOnlyList<PlayerData> Partners(TeamRoster my, string id, SeasonState season = null)
         {
-            if (!IsMovable(my, id)) return Array.Empty<PlayerData>();
+            if (!IsMovable(my, id, season)) return Array.Empty<PlayerData>();
             var p = Find(my, id);
             IEnumerable<PlayerData> pool = SideOf(my, id) == Side.Futures
                 ? (p.IsPitcher ? my.Bullpen : my.Bench)
                 : my.Reserves.Where(x => x.IsPitcher == p.IsPitcher);
-            return pool.Where(x => !LeagueRosterBook.IsReplacement(x)).ToList();
+            return pool.Where(x => !LeagueRosterBook.IsReplacement(x) && season?.IsInjured(x.Id) != true).ToList();
         }
 
         /// <summary>두 선수(순서 무관 — 한 명은 1군 벤치·불펜, 한 명은 퓨처스)를 맞바꿀 수 있는지.</summary>
@@ -97,6 +100,7 @@ namespace DailyFranchise.App
             Side sa = SideOf(my, a), sb = SideOf(my, b);
             if (sa == Side.None || sb == Side.None || a == b) return RosterMoveBlock.NotMine;
             if (LeagueRosterBook.IsReplacement(Find(my, a)) || LeagueRosterBook.IsReplacement(Find(my, b))) return RosterMoveBlock.NotMine;
+            if (season.IsInjured(a) || season.IsInjured(b)) return RosterMoveBlock.Injured;
             if (sa == Side.Lineup || sa == Side.Rotation || sb == Side.Lineup || sb == Side.Rotation) return RosterMoveBlock.Starter;
             if ((sa == Side.Futures) == (sb == Side.Futures)) return RosterMoveBlock.SameSide;
             if (Find(my, a).IsPitcher != Find(my, b).IsPitcher) return RosterMoveBlock.Mismatch;
@@ -130,6 +134,7 @@ namespace DailyFranchise.App
                 case RosterMoveBlock.Starter: return "선발 라인업(1~9번)·선발 로테이션 선수는 먼저 벤치·불펜으로 옮긴 뒤 말소할 수 있습니다.";
                 case RosterMoveBlock.SameSide: return "1군 벤치·불펜 한 명과 퓨처스 한 명을 맞바꿉니다.";
                 case RosterMoveBlock.Mismatch: return "타자는 타자(벤치)와, 투수는 투수(불펜)와만 맞바꿀 수 있습니다.";
+                case RosterMoveBlock.Injured: return "부상 중인 선수는 회복할 때까지 1군에 등록할 수 없습니다.";
                 default: return "";
             }
         }

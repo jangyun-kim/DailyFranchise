@@ -1867,3 +1867,27 @@ Label {
 .unity-button.pd-offer:disabled {
     opacity: 0.35;
 }
+
+/* Phase 36: 부상 (✚ 부상(N경기)) — 부상자 명단 줄·칩, 선수 상세 컨디션 자리, 타 구단 명단, 뉴스 말머리 */
+.futures-rookies--injured {
+    color: var(--danger);
+    -unity-font-style: bold;
+}
+
+.futures-chip--injured {
+    border-color: var(--danger);
+    color: var(--danger);
+    -unity-font-style: bold;
+}
+
+.pd-cond--injured {
+    color: var(--danger);
+}
+
+.fa-row--injured > Label.fa-col-team {
+    color: var(--danger);
+    -unity-font-style: bold;
+}
+
+.news-tag--injury { color: var(--danger); }
+.news-tag--recovery { color: var(--good); }

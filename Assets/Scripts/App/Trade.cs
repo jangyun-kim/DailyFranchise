@@ -70,6 +70,8 @@ namespace DailyFranchise.App
         RosterFull,
         /// <summary>교환 뒤 페이롤이 시즌 캡을 넘는다 (페이롤이 줄어드는 교환은 막지 않는다).</summary>
         SalaryCap,
+        /// <summary>보낼 선수나 받을 선수가 부상 중이다 (Phase 36).</summary>
+        Injured,
     }
 
     /// <summary>받은 선수가 들어갈 자리.</summary>
@@ -213,6 +215,7 @@ namespace DailyFranchise.App
                 break;
             }
             if (q.Theirs == null) return Blocked(q, TradeBlock.NotAvailable);
+            if (season.IsInjured(q.Mine.Id) || season.IsInjured(q.Theirs.Id)) return Blocked(q, TradeBlock.Injured);
 
             q.MySalary = StoveLeague.SalaryOf(q.Mine, season.MyTeam, season.Signings);
             q.TheirSalary = StoveLeague.SalaryOf(q.Theirs, q.Partner, season.Signings);
@@ -293,6 +296,7 @@ namespace DailyFranchise.App
                 case TradeBlock.RosterFull:
                     return $"교환 뒤 1군 정원({RosterLimits.MaxRoster}명 · 벤치 {RosterLimits.MaxBench} · 불펜 {RosterLimits.MaxBullpen})을 넘습니다.";
                 case TradeBlock.SalaryCap: return "교환 뒤 페이롤이 샐러리캡을 넘어 제안할 수 없습니다.";
+                case TradeBlock.Injured: return "부상 중인 선수는 트레이드할 수 없습니다.";
                 default: throw new ArgumentOutOfRangeException(nameof(block), block, null);
             }
         }

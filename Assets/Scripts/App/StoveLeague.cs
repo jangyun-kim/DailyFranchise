@@ -38,6 +38,27 @@ namespace DailyFranchise.App
             return new SigningRecord(sendDownId, team, team, 0) { CallUpId = callUpId };
         }
 
+        /// <summary>
+        /// 부상 (Phase 36): <paramref name="playerId"/>가 부상으로 1군에서 퓨처스로 내려간다 (이미 퓨처스면 자리는 그대로). 빈자리는 장부가
+        /// 메운다 (<see cref="LeagueRosterBook"/>). 회복 기록(<see cref="Recovery"/>)이 나올 때까지 그 선수는 1군에 올라오지 않는다.
+        /// 같은 구단 안이라 연봉 기록이 아니다.
+        /// </summary>
+        public static SigningRecord Injury(string team, string playerId) =>
+            new SigningRecord(playerId, team, team, 0) { Mark = InjuryMark.Injured };
+
+        /// <summary>부상 회복 (Phase 36): 퓨처스에 그대로 있고, 다시 1군 등록·빈자리 콜업 대상이 된다.</summary>
+        public static SigningRecord Recovery(string team, string playerId) =>
+            new SigningRecord(playerId, team, team, 0) { Mark = InjuryMark.Recovered };
+
+        /// <summary>부상·회복 기록이면 그 종류 (Phase 36). 이적·맞바꾸기 기록이면 None.</summary>
+        public InjuryMark Mark { get; private set; }
+
+        /// <summary>부상·회복 기록인지 (Phase 36).</summary>
+        public bool IsInjuryMark => Mark != InjuryMark.None;
+
+        /// <summary>계약이 따라오는 이적 기록인지 (영입·방출·트레이드). 맞바꾸기·부상·회복 기록은 아니다.</summary>
+        public bool IsTransfer => !IsRosterMove && !IsInjuryMark;
+
         /// <summary>1군 ↔ 퓨처스 맞바꾸기에서 1군으로 올라온 선수 (Phase 35). 이적 기록이면 null.</summary>
         public string CallUpId { get; private set; }
 
@@ -54,6 +75,14 @@ namespace DailyFranchise.App
         public long Salary { get; }
 
         public bool IsRelease => ToTeam == LeagueRosterBook.FreeAgentTeam;
+    }
+
+    /// <summary>부상 기록 종류 (Phase 36, <see cref="SigningRecord.Mark"/>).</summary>
+    public enum InjuryMark
+    {
+        None = 0,
+        Injured = 1,
+        Recovered = 2,
     }
 
     /// <summary>1군 정원 (Phase 25). 선발 9 + 벤치 5 + 선발 로테이션 5 + 불펜 7 = 26.</summary>
@@ -111,12 +140,20 @@ namespace DailyFranchise.App
         public const string FreeAgentTeam = "자유계약";
 
         readonly Dictionary<string, TeamRoster> _rosters;
+        readonly HashSet<string> _injured;
 
-        LeagueRosterBook(Dictionary<string, TeamRoster> rosters, IReadOnlyList<SigningRecord> applied)
+        LeagueRosterBook(Dictionary<string, TeamRoster> rosters, IReadOnlyList<SigningRecord> applied, HashSet<string> injured)
         {
             _rosters = rosters;
             Applied = applied;
+            _injured = injured;
         }
+
+        /// <summary>
+        /// 기록상 부상 중인 선수 (Phase 36 — 부상 기록 뒤 회복 기록이 아직 없는 선수). 퓨처스에 있고, 빈자리 콜업·맞바꾸기로 올라오지 않는다.
+        /// 남은 경기 수는 시즌이 들고 있다 (<see cref="SeasonState.Injuries"/>).
+        /// </summary>
+        public IReadOnlyCollection<string> Injured => _injured;
 
         /// <summary>실제로 적용된 이적 기록 (건너뛴 것 제외).</summary>
         public IReadOnlyList<SigningRecord> Applied { get; }
@@ -162,9 +199,10 @@ namespace DailyFranchise.App
             if (rookies != null) AddRookies(rosters, rookies);
             rosters[FreeAgentTeam] = new TeamRoster(FreeAgentTeam, null, null, null, null);
             var applied = new List<SigningRecord>();
-            ApplySignings(rosters, signings, applied);
-            if (progression != null && progression.Count > 0) ApplyProgression(rosters, progression);
-            return new LeagueRosterBook(rosters, applied);
+            var injured = new HashSet<string>();
+            ApplySignings(rosters, signings, applied, injured);
+            if (progression != null && progression.Count > 0) ApplyProgression(rosters, progression, injured);
+            return new LeagueRosterBook(rosters, applied, injured);
         }
 
         /// <summary>
@@ -175,23 +213,41 @@ namespace DailyFranchise.App
         {
             var rosters = new Dictionary<string, TeamRoster>(_rosters);
             var applied = Applied.ToList();
-            ApplySignings(rosters, extra, applied);
-            return new LeagueRosterBook(rosters, applied);
+            var injured = new HashSet<string>(_injured);
+            ApplySignings(rosters, extra, applied, injured);
+            return new LeagueRosterBook(rosters, applied, injured);
         }
 
         /// <summary>
         /// 이적 기록을 차례로 적용한다. 1군뿐 아니라 퓨처스 선수도 옮길 수 있다 (Phase 34 트레이드).
         /// 트레이드 한 쌍(연달아 놓인, 서로 구단을 맞바꾼 두 기록)은 함께 적용하고, 한쪽이라도 맞지 않으면 둘 다 건너뛴다.
+        /// 부상 기록(Phase 36)은 그 선수를 퓨처스로 내리고 <paramref name="injured"/>에 넣는다 (<see cref="InjureOut"/>), 회복 기록은 뺀다.
+        /// 그 사이의 빈자리 콜업(김헌곤 룰 포함)·맞바꾸기는 그때 부상 중인 선수를 올리지 않는다 — 다시 짜도 그때와 같은 선수단.
         /// </summary>
-        static void ApplySignings(Dictionary<string, TeamRoster> rosters, IEnumerable<SigningRecord> signings, List<SigningRecord> applied)
+        static void ApplySignings(Dictionary<string, TeamRoster> rosters, IEnumerable<SigningRecord> signings, List<SigningRecord> applied,
+            HashSet<string> injured)
         {
             var list = (signings ?? Enumerable.Empty<SigningRecord>()).ToList();
             for (int i = 0; i < list.Count; i++)
             {
                 var s = list[i];
+                if (s != null && s.IsInjuryMark)
+                {
+                    if (!rosters.TryGetValue(s.FromTeam, out var club)) continue;
+                    var found = AllOf(club).Concat(club.Reserves).FirstOrDefault(p => p.Id == s.PlayerId);
+                    if (found == null || IsReplacement(found)) continue;
+                    if (s.Mark == InjuryMark.Injured)
+                    {
+                        injured.Add(s.PlayerId);
+                        rosters[s.FromTeam] = InjureOut(club, found, injured);
+                    }
+                    else injured.Remove(s.PlayerId);
+                    applied.Add(s);
+                    continue;
+                }
                 if (s != null && s.IsRosterMove)
                 {
-                    if (rosters.TryGetValue(s.FromTeam, out var team) && TryMove(team, s.PlayerId, s.CallUpId, out var moved))
+                    if (rosters.TryGetValue(s.FromTeam, out var team) && TryMove(team, s.PlayerId, s.CallUpId, out var moved, injured))
                     {
                         rosters[s.FromTeam] = moved;
                         applied.Add(s);
@@ -201,7 +257,7 @@ namespace DailyFranchise.App
                 if (s == null || s.FromTeam == s.ToTeam) continue;
                 if (s.IsTrade && i + 1 < list.Count && IsTradePair(s, list[i + 1]))
                 {
-                    if (ApplyTrade(rosters, s, list[i + 1]))
+                    if (ApplyTrade(rosters, s, list[i + 1], injured))
                     {
                         applied.Add(s);
                         applied.Add(list[i + 1]);
@@ -212,7 +268,7 @@ namespace DailyFranchise.App
                 if (!rosters.TryGetValue(s.FromTeam, out var from) || !rosters.TryGetValue(s.ToTeam, out var to)) continue;
                 var player = Movable(from, s.PlayerId);
                 if (player == null) continue;
-                rosters[s.FromTeam] = Remove(from, player);
+                rosters[s.FromTeam] = Remove(from, player, injured);
                 rosters[s.ToTeam] = Add(to, player);
                 applied.Add(s);
             }
@@ -224,10 +280,11 @@ namespace DailyFranchise.App
         /// 퓨처스 순번을 잇는다 — 1군 정원·벤치·불펜 수가 그대로다. 선발 로테이션 투수·대체 선수·종류가 다르면 false (바꾸지 않는다).
         /// 사용자 라인업 카드는 따로 고친다 (<see cref="SeasonState.AddRosterMove"/>) — 카드의 선발 타자는 막는 쪽이 호출한 곳이다.
         /// </summary>
-        public static bool TryMove(TeamRoster r, string downId, string upId, out TeamRoster moved)
+        /// <param name="injured">부상 중인 선수 (Phase 36). 올릴 선수가 여기 있으면 false.</param>
+        public static bool TryMove(TeamRoster r, string downId, string upId, out TeamRoster moved, IReadOnlyCollection<string> injured = null)
         {
             moved = r;
-            if (r == null) return false;
+            if (r == null || injured != null && injured.Contains(upId)) return false;
             var up = r.Reserves.FirstOrDefault(p => p.Id == upId);
             var down = r.Lineup.Concat(r.Bench).Concat(r.Bullpen).FirstOrDefault(p => p.Id == downId);
             if (up == null || down == null || IsReplacement(up) || IsReplacement(down) || up.IsPitcher != down.IsPitcher) return false;
@@ -252,14 +309,14 @@ namespace DailyFranchise.App
             return p == null || IsReplacement(p) ? null : p;
         }
 
-        static bool ApplyTrade(Dictionary<string, TeamRoster> rosters, SigningRecord a, SigningRecord b)
+        static bool ApplyTrade(Dictionary<string, TeamRoster> rosters, SigningRecord a, SigningRecord b, ISet<string> injured)
         {
             if (!rosters.TryGetValue(a.FromTeam, out var x) || !rosters.TryGetValue(b.FromTeam, out var y)) return false;
             var pa = Movable(x, a.PlayerId);
             var pb = Movable(y, b.PlayerId);
             if (pa == null || pb == null) return false;
-            rosters[a.FromTeam] = Swap(x, pa, pb);
-            rosters[b.FromTeam] = Swap(y, pb, pa);
+            rosters[a.FromTeam] = Swap(x, pa, pb, injured);
+            rosters[b.FromTeam] = Swap(y, pb, pa, injured);
             return true;
         }
 
@@ -270,7 +327,7 @@ namespace DailyFranchise.App
         /// - 내준 선수가 선발 로테이션 투수이고 받은 선수가 투수: 받은 투수가 그 순번을 잇는다.
         /// - 그 밖에는 내준 뒤의 1군 빈자리(타자 벤치·투수 불펜), 없으면 퓨처스.
         /// </summary>
-        static TeamRoster Swap(TeamRoster from, PlayerData outgoing, PlayerData incoming)
+        static TeamRoster Swap(TeamRoster from, PlayerData outgoing, PlayerData incoming, ISet<string> injured)
         {
             var arriving = incoming.CloneAs(incoming.IsPitcher ? RosterRole.Bullpen : RosterRole.Bench, 0, incoming.Position);
             arriving.Team = from.Team;
@@ -281,7 +338,7 @@ namespace DailyFranchise.App
                 starters[rotation] = arriving.CloneAs(RosterRole.Starter, outgoing.Order, outgoing.Position);
                 return new TeamRoster(from.Team, from.Lineup, from.Bench, starters, from.Bullpen, from.Reserves);
             }
-            var removed = Remove(from, outgoing, arriving, out bool started);
+            var removed = Remove(from, outgoing, arriving, injured, out bool started);
             return started ? removed : Add(removed, arriving, futuresWhenFull: true);
         }
 
@@ -298,7 +355,8 @@ namespace DailyFranchise.App
         }
 
         /// <summary>은퇴 선수를 빼고, 변동치가 있는 선수에 나이·폼을 덧씌운다 (Phase 29).</summary>
-        static void ApplyProgression(Dictionary<string, TeamRoster> rosters, IReadOnlyDictionary<string, PlayerProgression> progression)
+        static void ApplyProgression(Dictionary<string, TeamRoster> rosters, IReadOnlyDictionary<string, PlayerProgression> progression,
+            ISet<string> injured)
         {
             foreach (var team in rosters.Keys.ToList())
             {
@@ -308,7 +366,7 @@ namespace DailyFranchise.App
                     r = new TeamRoster(r.Team, r.Lineup, r.Bench, r.Starters, r.Bullpen,
                         r.Reserves.Where(p => !(progression.TryGetValue(p.Id, out var d) && d.Retired)).ToList());
                 foreach (var gone in AllOf(r).Where(p => progression.TryGetValue(p.Id, out var d) && d.Retired).ToList())
-                    r = Remove(r, AllOf(r).First(p => p.Id == gone.Id));
+                    r = Remove(r, AllOf(r).First(p => p.Id == gone.Id), injured);
                 if (AllOf(r).Concat(r.Reserves).Any(p => progression.ContainsKey(p.Id)))
                     r = new TeamRoster(r.Team, Overlay(r.Lineup, progression), Overlay(r.Bench, progression),
                         Overlay(r.Starters, progression), Overlay(r.Bullpen, progression), Overlay(r.Reserves, progression));
@@ -341,10 +399,11 @@ namespace DailyFranchise.App
                 : new TeamRoster(to.Team, to.Lineup, to.Bench.Append(moved).ToList(), to.Starters, to.Bullpen, to.Reserves);
         }
 
-        static TeamRoster Remove(TeamRoster from, PlayerData player) => Remove(from, player, null, out _);
+        static TeamRoster Remove(TeamRoster from, PlayerData player, ISet<string> injured) => Remove(from, player, null, injured, out _);
 
         /// <param name="preferred">빈 타순의 맨 앞 후보 (트레이드로 받은 선수, 아직 선수단 밖). 그 선수가 메웠으면 <paramref name="preferredStarted"/>.</param>
-        static TeamRoster Remove(TeamRoster from, PlayerData player, PlayerData preferred, out bool preferredStarted)
+        /// <param name="injured">부상 중인 선수 (Phase 36) — 퓨처스에서 빈 타순을 메울 때 건너뛴다.</param>
+        static TeamRoster Remove(TeamRoster from, PlayerData player, PlayerData preferred, ISet<string> injured, out bool preferredStarted)
         {
             preferredStarted = false;
             var lineup = from.Lineup.ToList();
@@ -357,7 +416,7 @@ namespace DailyFranchise.App
             if (hole >= 0)
             {
                 var gone = lineup[hole];
-                var pick = PositionMatcher.Pick(gone.Position, preferred == null ? null : new[] { preferred }, bench, reserves);
+                var pick = PositionMatcher.Pick(gone.Position, preferred == null ? null : new[] { preferred }, bench, Healthy(reserves, injured));
                 if (pick != null && pick == preferred) preferredStarted = true;
                 else if (pick != null)
                 {
@@ -377,6 +436,98 @@ namespace DailyFranchise.App
             }
             return new TeamRoster(from.Team, lineup, Renumber(bench, RosterRole.Bench), Renumber(starters, RosterRole.Starter),
                 Renumber(bullpen, RosterRole.Bullpen), reserves.Count == from.Reserves.Count ? from.Reserves : reserves);
+        }
+
+        static IEnumerable<PlayerData> Healthy(IEnumerable<PlayerData> reserves, ICollection<string> injured) =>
+            injured == null || injured.Count == 0 ? reserves : reserves.Where(p => !injured.Contains(p.Id));
+
+        /// <summary>
+        /// 부상 강등 (Phase 36): 1군 선수를 퓨처스 끝으로 내리고 빈자리를 메운다 (이미 퓨처스면 그대로). <paramref name="injured"/>(이 선수 포함)는 올리지 않는다.
+        /// - 선발 타자: 김헌곤 룰 (<see cref="PositionMatcher"/>: 벤치 같은 위치 → 퓨처스 같은 위치 → 벤치 같은 수비군 → 퓨처스 같은 수비군).
+        ///   벤치에서 올라왔으면 벤치 빈자리에 퓨처스 타자를 올린다. 맞는 선수가 없으면 대체 선수.
+        /// - 벤치: 퓨처스 타자 (같은 수비 위치·수비군 먼저, 없으면 첫 타자)를 벤치 끝에 올린다.
+        /// - 선발 로테이션: 퓨처스 첫 투수가 그 순번을 잇는다. 없으면 빼고 순번을 다시 매긴다 (선발이 없으면 불펜 첫 투수 → 대체 투수).
+        /// - 불펜: 퓨처스 첫 투수를 불펜 끝에 올린다.
+        /// 퓨처스에 올릴 선수가 없으면 그 자리는 빈 채로 둔다 (1군 정원이 하나 준다).
+        /// </summary>
+        static TeamRoster InjureOut(TeamRoster from, PlayerData player, ISet<string> injured)
+        {
+            if (from.Reserves.Any(p => p.Id == player.Id)) return from;
+            var lineup = from.Lineup.ToList();
+            var bench = from.Bench.ToList();
+            var starters = from.Starters.ToList();
+            var bullpen = from.Bullpen.ToList();
+            var reserves = from.Reserves.ToList();
+            PlayerData NextBatter(string position) =>
+                PositionMatcher.Pick(position, Healthy(reserves, injured)) ?? Healthy(reserves, injured).FirstOrDefault(p => !p.IsPitcher);
+            PlayerData NextPitcher() => Healthy(reserves, injured).FirstOrDefault(p => p.IsPitcher);
+
+            int hole = lineup.FindIndex(p => p.Id == player.Id);
+            int benchAt = bench.FindIndex(p => p.Id == player.Id);
+            int rotation = starters.FindIndex(p => p.Id == player.Id);
+            if (hole >= 0)
+            {
+                var pick = PositionMatcher.Pick(player.Position, bench, Healthy(reserves, injured));
+                if (pick != null && bench.Remove(pick))
+                {
+                    var up = NextBatter(pick.Position);
+                    if (up != null)
+                    {
+                        reserves.Remove(up);
+                        bench.Add(up);
+                    }
+                }
+                else if (pick != null) reserves.Remove(pick);
+                lineup[hole] = pick != null ? pick.CloneAs(RosterRole.Lineup, player.Order, player.Position) : ReplacementBatter(from.Team, player);
+            }
+            else if (benchAt >= 0)
+            {
+                bench.RemoveAt(benchAt);
+                var up = NextBatter(player.Position);
+                if (up != null)
+                {
+                    reserves.Remove(up);
+                    bench.Add(up);
+                }
+            }
+            else if (rotation >= 0)
+            {
+                var up = NextPitcher();
+                if (up != null)
+                {
+                    reserves.Remove(up);
+                    starters[rotation] = up.CloneAs(RosterRole.Starter, player.Order, up.Position);
+                }
+                else
+                {
+                    starters.RemoveAt(rotation);
+                    if (starters.Count == 0)
+                    {
+                        if (bullpen.Count > 0)
+                        {
+                            starters.Add(bullpen[0].CloneAs(RosterRole.Starter, 1, bullpen[0].Position));
+                            bullpen.RemoveAt(0);
+                        }
+                        else starters.Add(ReplacementPitcher(from.Team, player));
+                    }
+                }
+            }
+            else
+            {
+                bullpen.RemoveAll(p => p.Id == player.Id);
+                var up = NextPitcher();
+                if (up != null)
+                {
+                    reserves.Remove(up);
+                    bullpen.Add(up);
+                }
+            }
+            var lowered = player.CloneAs(player.IsPitcher ? RosterRole.Bullpen : RosterRole.Bench,
+                reserves.Count == 0 ? 1 : reserves.Max(p => p.Order) + 1, player.Position);
+            lowered.Team = from.Team;
+            reserves.Add(lowered);
+            return new TeamRoster(from.Team, lineup, Renumber(bench, RosterRole.Bench), Renumber(starters, RosterRole.Starter),
+                Renumber(bullpen, RosterRole.Bullpen), reserves);
         }
 
         static List<PlayerData> Renumber(List<PlayerData> players, RosterRole role) =>
@@ -463,6 +614,8 @@ namespace DailyFranchise.App
         /// <summary>예산 &lt; 위약금.</summary>
         Budget,
         InGame,
+        /// <summary>부상 중인 선수 (Phase 36).</summary>
+        Injured,
     }
 
     /// <summary>방출 한 번의 결과.</summary>
@@ -541,7 +694,7 @@ namespace DailyFranchise.App
         {
             long? contract = null;
             foreach (var s in signings ?? Enumerable.Empty<SigningRecord>())
-                if (!s.IsRosterMove && s.PlayerId == p.Id && s.ToTeam == team) contract = s.Salary;
+                if (s.IsTransfer && s.PlayerId == p.Id && s.ToTeam == team) contract = s.Salary;
             return contract ?? (LeagueRosterBook.IsReplacement(p) ? FrontOfficeTrust.MinSalary : FrontOfficeTrust.SalaryOf(p.War));
         }
 
@@ -633,6 +786,7 @@ namespace DailyFranchise.App
             if (season.InProgress != null) return ReleaseBlock.InGame;
             var mine = book?.Get(season.MyTeam);
             if (mine == null || playerId == null) return ReleaseBlock.NotMine;
+            if (season.IsInjured(playerId) && LeagueRosterBook.AllOf(mine).Concat(mine.Reserves).Any(p => p.Id == playerId)) return ReleaseBlock.Injured;
             if (mine.Starters.Any(p => p.Id == playerId)) return ReleaseBlock.Starter;
             if (LeagueRosterBook.IsReplacement(mine.Lineup.FirstOrDefault(p => p.Id == playerId))) return ReleaseBlock.NotMine;
             if (!mine.Lineup.Concat(mine.Bench).Concat(mine.Bullpen).Any(p => p.Id == playerId)) return ReleaseBlock.NotMine;
@@ -684,6 +838,7 @@ namespace DailyFranchise.App
                 case ReleaseBlock.Starter: return "선발 로테이션 투수는 방출할 수 없습니다.";
                 case ReleaseBlock.Budget: return "예산이 위약금보다 적어 방출할 수 없습니다.";
                 case ReleaseBlock.InGame: return "경기 중에는 방출할 수 없습니다.";
+                case ReleaseBlock.Injured: return "부상 중인 선수는 방출할 수 없습니다.";
                 default: throw new ArgumentOutOfRangeException(nameof(block), block, null);
             }
         }

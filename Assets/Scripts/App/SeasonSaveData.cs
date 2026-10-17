@@ -79,6 +79,9 @@ namespace DailyFranchise.App
         /// </summary>
         public List<ConditionData> Conditions = new List<ConditionData>();
 
+        /// <summary>부상 중인 선수와 남은 결장 경기 (Phase 36, 선수 ID 순). 없는 이전 저장 파일은 빈 목록 (전원 건강).</summary>
+        public List<InjuryData> Injuries = new List<InjuryData>();
+
         /// <summary>구단별 직전 선발 (선발 로테이션 순번, Phase 22). 없는 이전 저장 파일은 1번부터.</summary>
         public List<LastStarterData> LastStarters = new List<LastStarterData>();
 
@@ -151,6 +154,18 @@ namespace DailyFranchise.App
         public bool Trade;
         /// <summary>1군 ↔ 퓨처스 맞바꾸기에서 올라온 선수 (Phase 35 — PlayerId가 말소된 선수). 이적 기록·이전 파일은 비어 있다.</summary>
         public string CallUp;
+        /// <summary>부상(1)·회복(2) 기록 (Phase 36, <see cref="InjuryMark"/> 정수). 이적 기록·이전 파일은 0.</summary>
+        public int Injury;
+    }
+
+    [Serializable]
+    public sealed class InjuryData
+    {
+        public string Id;
+        /// <summary>부상 당시 소속 (회복 기록을 남길 구단).</summary>
+        public string Team;
+        /// <summary>회복까지 남은 경기 (1 이상).</summary>
+        public int Games;
     }
 
     [Serializable]

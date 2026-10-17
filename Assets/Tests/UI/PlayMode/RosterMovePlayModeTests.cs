@@ -23,6 +23,7 @@ namespace DailyFranchise.UI.Tests
         {
             DestroyManager();
             SeasonManager.SavePathOverride = TestSavePath;
+            SeasonManager.InjuryRandomOverride = new DailyFranchise.Sim.ScriptedRandom(0.999); // 우연한 부상 없이 (Phase 36)
             SeasonManager.LoadDatabaseSynchronously = true;
             DeleteSave();
             SceneManager.LoadScene(SeasonManager.LobbyScene);
@@ -35,6 +36,7 @@ namespace DailyFranchise.UI.Tests
             DestroyManager();
             DeleteSave();
             SeasonManager.SavePathOverride = null;
+            SeasonManager.InjuryRandomOverride = null;
             SeasonManager.LoadDatabaseSynchronously = false;
             yield return null;
         }

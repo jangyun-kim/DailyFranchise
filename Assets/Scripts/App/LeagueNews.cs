@@ -42,6 +42,10 @@ namespace DailyFranchise.App
         Championship = 14,
         /// <summary>1:1 트레이드 성사 (Phase 34).</summary>
         Trade = 15,
+        /// <summary>경기 중 부상 (Phase 36).</summary>
+        Injury = 16,
+        /// <summary>부상 회복 (Phase 36).</summary>
+        Recovery = 17,
     }
 
     /// <summary>
@@ -97,6 +101,8 @@ namespace DailyFranchise.App
         public const string DraftTag = "[드래프트]";
         public const string PostseasonTag = "[한국시리즈]";
         public const string ChampionTag = "[챔피언]";
+        public const string InjuryTag = "[부상]";
+        public const string RecoveryTag = "[복귀]";
 
         /// <summary>두 팀 득점 합이 이 이상이면 난타전.</summary>
         public const int SlugfestRuns = 15;
@@ -219,6 +225,14 @@ namespace DailyFranchise.App
             int space = headline.LastIndexOf(' ', nb);
             return space < 0 ? headline : headline.Substring(0, space) + "\n" + headline.Substring(space + 1);
         }
+
+        /// <summary>"[부상] 삼성 라이온즈 구자욱, 경기 중 부상으로 4경기 결장!" (Phase 36).</summary>
+        public static NewsItem Injured(string team, string playerName, int games, int year, string date) =>
+            new NewsItem(NewsKind.Injury, InjuryTag, team, $"{team} {playerName}, 경기 중 부상으로 {games}경기 결장!", year, date);
+
+        /// <summary>"[복귀] 삼성 라이온즈 구자욱, 부상 털고 퓨처스 복귀!" (Phase 36).</summary>
+        public static NewsItem Recovered(string team, string playerName, int year, string date) =>
+            new NewsItem(NewsKind.Recovery, RecoveryTag, team, $"{team} {playerName}, 부상 털고 퓨처스 복귀!", year, date);
 
         public static NewsItem NegotiationFailed(string team, string playerName, int year, string date) =>
             new NewsItem(NewsKind.NegotiationFailed, BreakingTag, team, $"{playerName}, {team}의 제안 거절… 협상 결렬", year, date);

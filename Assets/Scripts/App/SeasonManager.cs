@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using DailyFranchise.App.Data;
 using DailyFranchise.Sim;
 using DailyFranchise.Sim.Data;
@@ -79,6 +80,15 @@ namespace DailyFranchise.App
         /// 순위·경기 결과의 결정론을 흔들지 않게 한다. 테스트는 고정 Seed를 넣는다.
         /// </summary>
         public IRandomSource ConditionRandom { get; set; } = SeededRandom.FromClock();
+
+        /// <summary>
+        /// 부상 판정 난수 (Phase 36, <see cref="InjuryRules"/>). 컨디션·타 구단 경기 난수와 분리한다.
+        /// 처음 만들어질 때 <see cref="InjuryRandomOverride"/>가 있으면 그것을 쓴다 (PlayMode 테스트가 우연한 부상 없이 돌도록).
+        /// </summary>
+        public IRandomSource InjuryRandom { get; set; }
+
+        /// <summary>새로 만들어지는 SeasonManager의 부상 난수 (테스트용). null이면 시계 시드.</summary>
+        public static IRandomSource InjuryRandomOverride { get; set; }
 
         /// <summary>
         /// 저장 파일 경로 재지정. null이면 <see cref="SaveManager.DefaultPath"/>.
@@ -295,6 +305,7 @@ namespace DailyFranchise.App
             }
             Instance = this;
             DontDestroyOnLoad(gameObject);
+            InjuryRandom = InjuryRandomOverride ?? SeededRandom.FromClock();
             Saves = new SaveManager(SavePathOverride ?? SaveManager.DefaultPath);
             Season = Saves.LoadOrCreate(SeasonState.CreateDummy, out var status);
             LoadStatus = status;
@@ -533,10 +544,48 @@ namespace DailyFranchise.App
         {
             if (Season.InProgress == null) return null;
             LastScore = finalScore;
-            _ = Rosters; // 정산 전에 페이롤을 지금 선수단에 맞춘다
-            LastReport = PostGameProcessor.Process(Season, finalScore, LeagueRandom, Saves, participation, ConditionRandom, finalInning, walkOff);
+            var book = Rosters; // 정산 전에 페이롤을 지금 선수단에 맞춘다 (부상 선수의 소속·이름도 이 장부로)
+            LastReport = PostGameProcessor.Process(Season, finalScore, LeagueRandom, Saves, participation, ConditionRandom, finalInning, walkOff,
+                InjuryRandom, book);
+            if (LastReport.Injuries.Count > 0 || LastReport.Recoveries.Count > 0) AfterInjuryChange();
             NewsChanged?.Invoke();
             return LastReport;
+        }
+
+        /// <summary>부상·회복 뒤: 장부·페이롤을 다시 짜고, 사용자 라인업 카드를 김헌곤 룰로 고쳐(못 고치면 기본 라인업) 저장한다.</summary>
+        void AfterInjuryChange()
+        {
+            _ = Rosters;
+            if (Season.MyLineup != null) Season.MyLineup = CurrentLineup;
+            Saves?.Save(Season);
+            StoveChanged?.Invoke();
+            LineupChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// 부상을 강제로 낸다 (Phase 36 — 디버그·수동 검증용). 리그 장부에 있는 선수면 퓨처스로 내리고 [부상] 뉴스를 낸다.
+        /// 경기 중이거나 선수를 못 찾거나 이미 부상 중이면 false.
+        /// </summary>
+        public bool ForceInjury(string playerId, int games)
+        {
+            if (_loading || Season.InProgress != null || Rosters == null || Season.IsInjured(playerId)) return false;
+            var roster = Rosters.Rosters.FirstOrDefault(r => r.Team != LeagueRosterBook.FreeAgentTeam
+                && LeagueRosterBook.AllOf(r).Concat(r.Reserves).Any(p => p.Id == playerId && !LeagueRosterBook.IsReplacement(p)));
+            if (roster == null) return false;
+            var player = LeagueRosterBook.AllOf(roster).Concat(roster.Reserves).First(p => p.Id == playerId);
+            Season.Injure(roster.Team, playerId, games);
+            Season.AddNews(NewsWriter.Injured(roster.Team, player.Name, Season.InjuryGamesOf(playerId), Season.Year, Season.NewsDate));
+            AfterInjuryChange();
+            NewsChanged?.Invoke();
+            return true;
+        }
+
+        /// <summary>인스펙터 메뉴 (에디터 Play 중): 내 구단 선발 1번 타자를 5경기 부상으로.</summary>
+        [ContextMenu("Debug/Injure my lineup #1 (5 games)")]
+        void DebugInjureLeadoff()
+        {
+            var first = MyRoster?.Lineup.FirstOrDefault(p => !LeagueRosterBook.IsReplacement(p));
+            if (first != null) ForceInjury(first.Id, 5);
         }
 
         void DetachGame()

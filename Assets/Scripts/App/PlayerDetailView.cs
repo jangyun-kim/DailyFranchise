@@ -252,9 +252,11 @@ namespace DailyFranchise.App
             Q<Label>("pd-role").text = IsOtherTeam ? $"{Team} · {FaMarketView.RoleText(roster, p, roster.Reserves.Contains(p))}" : RoleText(roster, p);
 
             var condition = Q<Label>("pd-condition");
-            condition.text = "컨디션 " + PlayerCondition.Label(cond);
-            for (int i = PlayerCondition.Min; i <= PlayerCondition.Max; i++) condition.EnableInClassList("pd-cond--" + i, i == cond);
-            Q<Label>("pd-condition-note").text = ConditionNote(p, cond);
+            int injury = season.InjuryGamesOf(p.Id);
+            condition.text = injury > 0 ? InjuryRules.Badge(injury) : "컨디션 " + PlayerCondition.Label(cond);
+            for (int i = PlayerCondition.Min; i <= PlayerCondition.Max; i++) condition.EnableInClassList("pd-cond--" + i, injury == 0 && i == cond);
+            condition.EnableInClassList("pd-cond--injured", injury > 0);
+            Q<Label>("pd-condition-note").text = injury > 0 ? InjuryRules.LockedText(injury) : ConditionNote(p, cond);
 
             var stats = Q("pd-stats");
             stats.Clear();
@@ -323,7 +325,7 @@ namespace DailyFranchise.App
         public bool PressMove()
         {
             var roster = _manager.MyRoster;
-            if (IsOtherTeam || PlayerId == null || roster == null || !RosterMoves.IsMovable(roster, PlayerId)) return false;
+            if (IsOtherTeam || PlayerId == null || roster == null || !RosterMoves.IsMovable(roster, PlayerId, _manager.Season)) return false;
             MovePicking = !MovePicking;
             MovePage = 0;
             _moveText = "";
@@ -358,12 +360,15 @@ namespace DailyFranchise.App
         {
             bool futures = RosterMoves.IsFutures(roster, p.Id);
             bool starter = RosterMoves.IsStarter(roster, p.Id);
-            var partners = RosterMoves.Partners(roster, p.Id);
+            var partners = RosterMoves.Partners(roster, p.Id, _manager.Season);
             string where = p.IsPitcher ? "불펜" : "벤치";
-            _moveButton.text = MovePicking ? "취소" : futures ? $"1군 등록 · {where}와 맞바꾸기" : "1군 말소 · 퓨처스와 맞바꾸기";
+            int injury = _manager.Season.InjuryGamesOf(p.Id);
+            _moveButton.text = MovePicking ? "취소" : injury > 0 ? "1군 등록 불가 · 부상 중"
+                : futures ? $"1군 등록 · {where}와 맞바꾸기" : "1군 말소 · 퓨처스와 맞바꾸기";
             bool open = _manager.Season.InProgress == null && !starter && partners.Count > 0;
             _moveButton.SetEnabled(open || MovePicking);
-            Q<Label>("pd-move-note").text = starter ? RosterMoves.BlockText(RosterMoveBlock.Starter)
+            Q<Label>("pd-move-note").text = injury > 0 ? InjuryRules.LockedText(injury)
+                : starter ? RosterMoves.BlockText(RosterMoveBlock.Starter)
                 : partners.Count == 0 ? (futures ? $"1군 {where}에 맞바꿀 선수가 없습니다." : $"퓨처스에 맞바꿀 {(p.IsPitcher ? "투수" : "타자")}가 없습니다.")
                 : futures ? $"1군 {where} 한 명과 자리를 바꿉니다 · 정원 그대로"
                 : $"퓨처스 {(p.IsPitcher ? "투수" : "타자")} 한 명과 자리를 바꿉니다 · 정원 그대로";
@@ -409,7 +414,13 @@ namespace DailyFranchise.App
                 : $"트레이드 가치 {TradeEvaluator.ValueText(value)} · 연봉 {Won(target.Salary)} · " +
                   $"CPU 요구 가치 {TradeEvaluator.ValueText(TradeEvaluator.RequiredValue(value))} 이상 (프리미엄 5%)";
             _tradeButton.text = TradePicking ? "제안 취소" : "트레이드 제안";
-            _tradeButton.SetEnabled(season.InProgress == null);
+            bool injured = season.IsInjured(p.Id);
+            _tradeButton.SetEnabled(season.InProgress == null && !injured);
+            if (injured)
+            {
+                TradePicking = false;
+                Q<Label>("pd-trade-note").text = TradeDesk.BlockText(TradeBlock.Injured) + " " + InjuryRules.LockedText(season.InjuryGamesOf(p.Id));
+            }
             var result = Q<Label>("pd-trade-result");
             result.text = _tradeText;
             result.EnableInClassList("pd-trade__result--rejected", _tradeText.Length > 0 && _tradeRejected);
@@ -472,7 +483,7 @@ namespace DailyFranchise.App
         /// <summary>[트레이드 제안] / [제안 취소]: 보낼 내 선수 목록을 열고 닫는다. 타 구단 선수가 아니면 false.</summary>
         public bool PressTrade()
         {
-            if (!IsOtherTeam || PlayerId == null) return false;
+            if (!IsOtherTeam || PlayerId == null || _manager.Season.IsInjured(PlayerId)) return false;
             TradePicking = !TradePicking;
             _tradeText = "";
             OfferGroup = 0;
@@ -662,7 +673,9 @@ namespace DailyFranchise.App
                 _releaseButton.SetEnabled(false);
                 _releaseButton.EnableInClassList("pd-release--armed", false);
                 _releaseButton.text = "방출";
-                _releaseButton.tooltip = Q<Label>("pd-release-note").text = "퓨처스 선수는 방출할 수 없습니다 (1군 선수만).";
+                _releaseButton.tooltip = Q<Label>("pd-release-note").text = _manager.Season.IsInjured(p.Id)
+                    ? StoveLeague.ReleaseBlockText(ReleaseBlock.Injured)
+                    : "퓨처스 선수는 방출할 수 없습니다 (1군 선수만).";
                 return;
             }
             var block = StoveLeague.CheckRelease(_manager.Season, _manager.Rosters, p.Id);

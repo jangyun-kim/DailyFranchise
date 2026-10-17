@@ -333,8 +333,10 @@ namespace DailyFranchise.App
                     row.AddToClassList("fa-row");
                     row.AddToClassList("fa-row--item");
                     row.EnableInClassList("fa-row--futures", t.Futures);
+                    int injury = _manager.Season.InjuryGamesOf(p.Id);
+                    row.EnableInClassList("fa-row--injured", injury > 0);
                     row.Add(Cell(p.Name, "fa-col-name"));
-                    row.Add(Cell(RoleText(roster, p, t.Futures), "fa-col-team"));
+                    row.Add(Cell(injury > 0 ? InjuryRules.ShortBadge(injury) : RoleText(roster, p, t.Futures), "fa-col-team"));
                     row.Add(Cell(p.Position, "fa-col-pos"));
                     row.Add(Cell(p.Age > 0 ? p.Age + "세" : "—", "fa-col-age"));
                     row.Add(Cell(p.War.ToString("0.00", CultureInfo.InvariantCulture), "fa-col-war"));

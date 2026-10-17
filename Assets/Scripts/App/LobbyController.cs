@@ -235,6 +235,8 @@ namespace DailyFranchise.App
                 case NewsWriter.WalkOffTag: return "news-tag--walkoff";
                 case NewsWriter.PostseasonTag: return "news-tag--postseason";
                 case NewsWriter.ChampionTag: return "news-tag--champion";
+                case NewsWriter.InjuryTag: return "news-tag--injury";
+                case NewsWriter.RecoveryTag: return "news-tag--recovery";
                 default: return null;
             }
         }
@@ -615,18 +617,36 @@ namespace DailyFranchise.App
         void RenderFuturesRookies(TeamRoster roster)
         {
             var label = Q<Label>("futures-rookies");
-            var rookies = roster?.Reserves.Where(RookieGenerator.IsRookie).ToList() ?? new List<PlayerData>();
-            SetVisible(label, rookies.Count > 0);
-            label.text = rookies.Count == 0 ? ""
+            var season = _manager.Season;
+            // Phase 36: 부상자 명단 (퓨처스에 내려간 부상 선수, 남은 경기 많은 순) — 신인 줄 앞에, 칩도 먼저
+            var injured = roster?.Reserves.Where(p => season.IsInjured(p.Id))
+                .OrderByDescending(p => season.InjuryGamesOf(p.Id)).ThenBy(p => p.Id, StringComparer.Ordinal).ToList() ?? new List<PlayerData>();
+            var rookies = roster?.Reserves.Where(p => RookieGenerator.IsRookie(p) && !season.IsInjured(p.Id)).ToList() ?? new List<PlayerData>();
+            SetVisible(label, rookies.Count > 0 || injured.Count > 0);
+            string rookieText = rookies.Count == 0 ? ""
                 : $"퓨처스 신인 {rookies.Count}명 · {rookies[0].Name} {rookies[0].Position} {rookies[0].Age}세"
                   + (rookies.Count > 1 ? $" 외 {rookies.Count - 1}명" : "");
-            label.tooltip = string.Join("\n", rookies.Select(p => $"{p.Name} ({p.Memo}) · {PositionMatcher.Label(p.Position)} · {p.Age}세 · {StoveLeague.KeyStat(p)}"));
+            label.text = injured.Count == 0 ? rookieText
+                : $"{InjuryRules.Icon} 부상자 명단 {injured.Count}명" + (rookies.Count > 0 ? $" · 퓨처스 신인 {rookies.Count}명" : "");
+            label.EnableInClassList("futures-rookies--injured", injured.Count > 0);
+            label.tooltip = string.Join("\n", injured.Select(p => $"{p.Name} · {PositionMatcher.Label(p.Position)} · {InjuryRules.BadgeText(season.InjuryGamesOf(p.Id))}")
+                .Concat(rookies.Select(p => $"{p.Name} ({p.Memo}) · {PositionMatcher.Label(p.Position)} · {p.Age}세 · {StoveLeague.KeyStat(p)}")));
 
-            // Phase 33: 신인 칩 (최근 지명 먼저, 최대 FuturesChipsShown개) — 누르면 선수 상세 (특별 훈련)
             var chips = Q("futures-chips");
             chips.Clear();
-            SetVisible(chips, rookies.Count > 0);
-            foreach (var p in rookies.AsEnumerable().Reverse().Take(FuturesChipsShown))
+            SetVisible(chips, rookies.Count > 0 || injured.Count > 0);
+            foreach (var p in injured.Take(FuturesChipsShown))
+            {
+                string id = p.Id;
+                var chip = Cell($"{p.Name} {InjuryRules.ShortBadge(season.InjuryGamesOf(id))}", "futures-chip");
+                chip.AddToClassList("futures-chip--injured");
+                chip.name = "inj-" + id;
+                chip.tooltip = $"{InjuryRules.LockedText(season.InjuryGamesOf(id))} · 누르면 선수 상세";
+                chip.RegisterCallback<ClickEvent>(_ => OpenPlayer(id));
+                chips.Add(chip);
+            }
+            // Phase 33: 신인 칩 (최근 지명 먼저, 부상 칩과 합쳐 최대 FuturesChipsShown개) — 누르면 선수 상세 (특별 훈련)
+            foreach (var p in rookies.AsEnumerable().Reverse().Take(Math.Max(0, FuturesChipsShown - injured.Count)))
             {
                 string id = p.Id;
                 var chip = Cell($"{p.Name} {p.Position} {p.Age}", "futures-chip");

@@ -489,6 +489,87 @@ namespace DailyFranchise.App
             return changes;
         }
 
+        readonly Dictionary<string, InjuryData> _injuries = new Dictionary<string, InjuryData>();
+
+        /// <summary>
+        /// 부상 중인 선수 → 회복까지 남은 경기 (Phase 36, <see cref="InjuryRules"/>). 없는 선수는 건강하다. 시즌과 함께 저장된다.
+        /// 선수단 자리(퓨처스 강등·빈자리)는 이적 기록 목록의 부상·회복 기록으로 장부가 다시 짠다 (<see cref="SigningRecord.Injury"/>).
+        /// </summary>
+        public IReadOnlyDictionary<string, int> Injuries => _injuries.ToDictionary(kv => kv.Key, kv => kv.Value.Games);
+
+        /// <summary>회복까지 남은 경기. 건강하면 0.</summary>
+        public int InjuryGamesOf(string playerId) =>
+            playerId != null && _injuries.TryGetValue(playerId, out var d) ? d.Games : 0;
+
+        public bool IsInjured(string playerId) => InjuryGamesOf(playerId) > 0;
+
+        /// <summary>
+        /// 부상을 남긴다: 남은 경기, 퓨처스로 내리는 부상 기록 (사용자 라인업 카드는 SeasonManager가 장부를 다시 짠 뒤 고친다).
+        /// 이미 부상 중이면 남은 경기만 늘리고(긴 쪽) 기록은 더하지 않는다. 경기 수는 1 이상으로 맞춘다.
+        /// </summary>
+        public void Injure(string team, string playerId, int games)
+        {
+            if (string.IsNullOrEmpty(team) || string.IsNullOrEmpty(playerId)) throw new ArgumentException("구단·선수 ID가 비어 있다.");
+            games = Math.Max(1, games);
+            if (_injuries.TryGetValue(playerId, out var d))
+            {
+                d.Games = Math.Max(d.Games, games);
+                return;
+            }
+            _injuries[playerId] = new InjuryData { Id = playerId, Team = team, Games = games };
+            _signings.Add(SigningRecord.Injury(team, playerId));
+        }
+
+        /// <summary>
+        /// 경기 출장 기록으로 부상을 판정한다 (Phase 36, <see cref="InjuryRules.Roll"/>). 대상: 그 경기에 출장한 선수 중 장부 1군에 있는 선수
+        /// (대체 선수·이미 부상 중인 선수 제외). 확률은 경기 전 컨디션 (<paramref name="conditions"/>의 Before, 없으면 지금 컨디션).
+        /// </summary>
+        public List<InjuryEvent> ApplyInjuries(GameParticipation game, IEnumerable<ConditionChange> conditions, LeagueRosterBook book,
+            IRandomSource random)
+        {
+            if (game == null) throw new ArgumentNullException(nameof(game));
+            if (book == null) throw new ArgumentNullException(nameof(book));
+            var before = (conditions ?? Enumerable.Empty<ConditionChange>()).GroupBy(c => c.PlayerId).ToDictionary(g => g.Key, g => g.First().Before);
+            var candidates = game.Roster.Where(id => game.Played(id) && !IsInjured(id) && !id.StartsWith(LeagueRosterBook.ReplacementPrefix, StringComparison.Ordinal))
+                .Where(id => book.Find(id).roster is TeamRoster r && r.Team != LeagueRosterBook.FreeAgentTeam);
+            var events = new List<InjuryEvent>();
+            foreach (var (id, games) in InjuryRules.Roll(candidates, id => before.TryGetValue(id, out int c) ? c : ConditionOf(id), random))
+            {
+                var (roster, player) = book.Find(id);
+                Injure(roster.Team, id, games);
+                events.Add(new InjuryEvent(id, roster.Team, player.Name, games));
+            }
+            return events;
+        }
+
+        /// <summary>
+        /// 경기 하나가 끝났다: 부상 선수의 남은 경기를 1씩 줄이고, 0이 되면 회복 (컨디션 보통, 회복 기록 — 퓨처스에서 1군 등록 대기).
+        /// <paramref name="book"/>은 이름을 찾는 데만 쓴다 (없으면 ID).
+        /// </summary>
+        /// <returns>이번에 회복한 선수 (ID 순).</returns>
+        public List<InjuryEvent> TickInjuries(LeagueRosterBook book = null)
+        {
+            var healed = new List<InjuryEvent>();
+            foreach (var id in _injuries.Keys.OrderBy(x => x, StringComparer.Ordinal).ToList())
+            {
+                var d = _injuries[id];
+                if (--d.Games > 0) continue;
+                healed.Add(Heal(d, book));
+            }
+            return healed;
+        }
+
+        InjuryEvent Heal(InjuryData d, LeagueRosterBook book)
+        {
+            _injuries.Remove(d.Id);
+            SetCondition(d.Id, PlayerCondition.Normal);
+            _signings.Add(SigningRecord.Recovery(d.Team, d.Id));
+            var name = book?.Get(d.Team) is TeamRoster r
+                ? LeagueRosterBook.AllOf(r).Concat(r.Reserves).FirstOrDefault(p => p.Id == d.Id)?.Name
+                : null;
+            return new InjuryEvent(d.Id, d.Team, name ?? d.Id, 0);
+        }
+
         readonly Dictionary<string, PlayerProgression> _progression = new Dictionary<string, PlayerProgression>();
 
         /// <summary>
@@ -895,6 +976,8 @@ namespace DailyFranchise.App
             foreach (var id in _conditions.Keys.ToList())
                 _conditions[id] = Math.Max(_conditions[id], PlayerCondition.Default);
             _lastStarters.Clear();
+            // Phase 36: 겨울 동안 부상은 모두 낫는다 (선수는 퓨처스에 남고, 새 시즌에 1군 등록할 수 있다).
+            foreach (var id in _injuries.Keys.OrderBy(x => x, StringComparer.Ordinal).ToList()) Heal(_injuries[id], league);
 
             CloseTrustSeason();
             Phase = SeasonPhase.RegularSeason;
@@ -964,7 +1047,10 @@ namespace DailyFranchise.App
                 Signings = _signings.Select(s => new SigningData
                 {
                     PlayerId = s.PlayerId, FromTeam = s.FromTeam, ToTeam = s.ToTeam, Salary = s.Salary, Trade = s.IsTrade, CallUp = s.CallUpId,
+                    Injury = (int)s.Mark,
                 }).ToList(),
+                Injuries = _injuries.Values.OrderBy(d => d.Id, StringComparer.Ordinal)
+                    .Select(d => new InjuryData { Id = d.Id, Team = d.Team, Games = d.Games }).ToList(),
                 HasTrust = true,
                 TrustPoints = TrustPoints,
                 TrustEarnedThisSeason = TrustEarnedThisSeason,
@@ -1076,9 +1162,17 @@ namespace DailyFranchise.App
             if (data.Signings != null)
                 foreach (var s in data.Signings)
                     if (s != null && !string.IsNullOrEmpty(s.PlayerId) && !string.IsNullOrEmpty(s.FromTeam) && !string.IsNullOrEmpty(s.ToTeam))
-                        season._signings.Add(string.IsNullOrEmpty(s.CallUp)
+                        season._signings.Add(s.Injury == (int)InjuryMark.Injured ? SigningRecord.Injury(s.FromTeam, s.PlayerId)
+                            : s.Injury == (int)InjuryMark.Recovered ? SigningRecord.Recovery(s.FromTeam, s.PlayerId)
+                            : string.IsNullOrEmpty(s.CallUp)
                             ? new SigningRecord(s.PlayerId, s.FromTeam, s.ToTeam, Scaled(s.Salary, money), s.Trade)
                             : SigningRecord.Move(s.FromTeam, s.PlayerId, s.CallUp));
+            // 부상 목록이 없는 이전 저장 파일(Phase 36 이전)은 전원 건강. ID·구단이 빈 항목과 남은 경기 0 이하는 건너뛴다
+            // (부상 기록 없이 남은 경기만 있으면 자리는 그대로 두고 1군 등록만 막는다).
+            if (data.Injuries != null)
+                foreach (var i in data.Injuries)
+                    if (i != null && !string.IsNullOrEmpty(i.Id) && !string.IsNullOrEmpty(i.Team) && i.Games > 0)
+                        season._injuries[i.Id] = new InjuryData { Id = i.Id, Team = i.Team, Games = i.Games };
             // 컨디션 목록이 없는 이전 저장 파일(Phase 21 이전)은 전원 보통(3)에서 시작한다 (기록 없음 = 보통).
             // ID가 빈 항목은 건너뛰고, 범위 밖 값은 1~5로 맞춘다.
             if (data.Conditions != null)

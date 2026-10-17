@@ -46,6 +46,10 @@ namespace DailyFranchise.App
         /// 타 구단끼리의 경기는 점수만 만들므로 그 선수들의 컨디션은 바뀌지 않는다.
         /// </summary>
         public IReadOnlyList<ConditionChange> Conditions = new List<ConditionChange>();
+        /// <summary>이 경기에서 다친 선수 (Phase 36, ID 순). 부상 난수·장부가 없으면 비어 있다.</summary>
+        public IReadOnlyList<InjuryEvent> Injuries = new List<InjuryEvent>();
+        /// <summary>이 경기를 끝으로 부상에서 회복한 선수 (Phase 36, ID 순).</summary>
+        public IReadOnlyList<InjuryEvent> Recoveries = new List<InjuryEvent>();
         /// <summary>이 경기로 발행한 리그 뉴스 (Phase 28, 발행 순). 저장 전에 시즌 뉴스에 들어간다.</summary>
         public IReadOnlyList<NewsItem> News = new List<NewsItem>();
         /// <summary>한국시리즈 경기였는지 (Phase 32 — 정규시즌 순위표·타 구단 경기는 바뀌지 않는다).</summary>
@@ -69,6 +73,8 @@ namespace DailyFranchise.App
     /// 5) 출장 기록이 있으면 두 구단 선수 컨디션을 바꾼다 (<see cref="ConditionRules"/>, 전용 난수).
     /// 6) 리그 뉴스를 발행한다 (Phase 28, <see cref="NewsWriter"/>): 내 경기 결과(끝내기·난타전·대승 등) 한 건, 선두 등극,
     ///    새로 해금한 팬덤 특전, 그날 타 구단 경기 중 큰 점수 차 경기 한 건.
+    /// 6.5) 부상 (Phase 36, <see cref="InjuryRules"/>): 먼저 부상 선수의 남은 경기를 1씩 줄여 0이면 회복시키고([복귀] 뉴스 — 내 구단만),
+    ///    부상 난수와 장부가 있으면 출장 선수(두 구단)의 부상을 경기 전 컨디션으로 판정해 퓨처스로 내린다([부상] 뉴스).
     /// 7) 곧바로 저장해, 로비로 돌아가기 전에 꺼져도 결과가 남는다.
     /// </summary>
     public static class PostGameProcessor
@@ -82,8 +88,11 @@ namespace DailyFranchise.App
         /// </param>
         /// <param name="finalInning">경기가 끝난 이닝 (뉴스용, 모르면 0).</param>
         /// <param name="walkOff">9회 이후 말 공격에서 홈이 앞서며 끝났는지 (끝내기 뉴스).</param>
+        /// <param name="injuryRandom">부상 판정 난수 (Phase 36). null이면 새 부상은 없다 (남은 경기는 그래도 준다).</param>
+        /// <param name="book">경기 전 선수단 장부 (부상 선수의 소속·이름). null이면 새 부상은 없다.</param>
         public static PostGameReport Process(SeasonState season, GameScore finalScore, IRandomSource leagueRandom, SaveManager saves,
-            GameParticipation participation = null, IRandomSource conditionRandom = null, int finalInning = 0, bool walkOff = false)
+            GameParticipation participation = null, IRandomSource conditionRandom = null, int finalInning = 0, bool walkOff = false,
+            IRandomSource injuryRandom = null, LeagueRosterBook book = null)
         {
             if (participation != null && conditionRandom == null)
                 throw new ArgumentNullException(nameof(conditionRandom), "출장 기록이 있으면 컨디션 난수가 필요하다.");
@@ -106,9 +115,14 @@ namespace DailyFranchise.App
             var finance = season.ApplyFinance(new FinanceChange(income.BudgetDelta - expense, income.FanDelta));
             var unlocked = season.UpdateFandomUnlocks();
             var conditions = participation == null ? new List<ConditionChange>() : season.ApplyConditions(participation, conditionRandom);
+            var recoveries = season.TickInjuries(book);
+            var injuries = participation != null && injuryRandom != null && book != null
+                ? season.ApplyInjuries(participation, conditions, book, injuryRandom)
+                : new List<InjuryEvent>();
             var news = postseason
                 ? PublishPostseasonNews(season, game, unlocked)
                 : PublishNews(season, game, mine, rankBefore, unlocked, finalInning, walkOff);
+            news.AddRange(PublishInjuryNews(season, game, injuries, recoveries));
 
             return new PostGameReport
             {
@@ -126,6 +140,8 @@ namespace DailyFranchise.App
                 SlotsApplied = slots,
                 NewlyUnlocked = unlocked,
                 Conditions = conditions,
+                Injuries = injuries,
+                Recoveries = recoveries,
                 News = news,
                 MyRunsScored = mine.RunsFor(season.MyTeam),
                 MyRunsAllowed = mine.RunsAgainst(season.MyTeam),
@@ -137,6 +153,18 @@ namespace DailyFranchise.App
                 ChampionAward = champion != null && champion == season.MyTeam ? season.ChampionAward : null,
                 Saved = saves != null && saves.Save(season),
             };
+        }
+
+        /// <summary>[복귀] (내 구단 선수만) → [부상] (두 구단) 뉴스를 시즌 피드에 넣고 돌려준다.</summary>
+        static List<NewsItem> PublishInjuryNews(SeasonState season, ScheduledGame game, IEnumerable<InjuryEvent> injuries,
+            IEnumerable<InjuryEvent> recoveries)
+        {
+            var news = recoveries.Where(r => r.Team == season.MyTeam)
+                .Select(r => NewsWriter.Recovered(r.Team, r.Name, season.Year, game.Date))
+                .Concat(injuries.Select(i => NewsWriter.Injured(i.Team, i.Name, i.Games, season.Year, game.Date)))
+                .ToList();
+            foreach (var n in news) season.AddNews(n);
+            return news;
         }
 
         /// <summary>한국시리즈 경기: 시즌이 낸 경기 결과·우승 뉴스에 새 팬덤 특전 뉴스만 더한다 (선두 등극·타 구단 소식 없음).</summary>

@@ -25,6 +25,7 @@ namespace DailyFranchise.UI.Tests
         {
             DestroyManager();
             SeasonManager.SavePathOverride = TestSavePath;
+            SeasonManager.InjuryRandomOverride = new DailyFranchise.Sim.ScriptedRandom(0.999); // 우연한 부상 없이 (Phase 36)
             SeasonManager.LoadDatabaseSynchronously = true;
             SeasonManager.DatabaseOverride = MasterDatabase.FromCsv(
                 Resources.Load<TextAsset>(MasterDatabase.TeamsResource).text,
@@ -40,6 +41,7 @@ namespace DailyFranchise.UI.Tests
             DestroyManager();
             DeleteSave();
             SeasonManager.SavePathOverride = null;
+            SeasonManager.InjuryRandomOverride = null;
             SeasonManager.LoadDatabaseSynchronously = false;
             SeasonManager.DatabaseOverride = null;
             yield return null;
@@ -254,6 +256,39 @@ namespace DailyFranchise.UI.Tests
             Assert.That(Root.Q("fa-trade-panel").resolvedStyle.display, Is.EqualTo(DisplayStyle.None));
             Assert.That(Root.Q("fa-list").childCount, Is.Zero, "Phase 35: FA 시장은 자유계약 선수만 — LG 선수는 타 구단 명단(트레이드)에만");
             Assert.That(Root.Q<Button>("fa-tab-market").ClassListContains("fa-tab--active"), Is.True);
+        }
+
+        [UnityTest, Timeout(120000)]
+        public IEnumerator Phase36_타_구단_부상_선수는_명단에_부상_표시가_나고_트레이드_제안이_잠긴다()
+        {
+            var manager = SeasonManager.Instance;
+            var r = RenderAt1080();
+            yield return null;
+            Assert.That(manager.ForceInjury("BW004", 4), Is.True); // LG 선발 4번 진세훈
+            Assert.That(manager.Rosters.Get("LG 트윈스").Reserves.Any(p => p.Id == "BW004"), Is.True, "그 구단 퓨처스로");
+
+            Lobby.OpenFaMarket();
+            yield return null;
+            var fa = Lobby.FaMarket;
+            Submit(Root.Q<Button>("fa-tab-trade"));
+            yield return null;
+            for (int guard = 0; guard < 5 && fa.TradePage < fa.TradePageOf("BW004"); guard++)
+            {
+                Submit(Root.Q<Button>("fa-trade-next"));
+                yield return null;
+            }
+            var row = Root.Q("fa-trade-BW004");
+            Assert.That(row.Q<Label>(className: "fa-col-team").text, Is.EqualTo("✚ 부상(4)"));
+            Assert.That(row.ClassListContains("fa-row--injured"), Is.True);
+
+            Click(row);
+            yield return null;
+            Assert.That(Text("pd-condition"), Is.EqualTo("✚ 부상(4경기)"));
+            Assert.That(Root.Q<Button>("pd-trade").enabledSelf, Is.False);
+            Assert.That(Text("pd-trade-note"), Does.StartWith("부상 중인 선수는 트레이드할 수 없습니다."));
+            Assert.That(Lobby.PlayerDetail.PressTrade(), Is.False);
+            AssertLayout("타 구단 부상 선수 상세");
+            Dispose(r);
         }
     }
 }
